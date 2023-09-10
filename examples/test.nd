@@ -1,0 +1,34 @@
+let func: ({ option: boolean, text: string = "hello" } -> !) = x =>
+	print x.option
+	print x.text
+
+func { option: true } // prints true & hello
+
+// Taking in a mixture of structs and values as arguments
+let another_func: ( 
+	int 
+	{ 
+		op: (int -> int) = x => 
+			x * 2
+		op2: (int -> int) = x =>
+			x * x
+	}
+-> int) = x ops =>
+		let val = ops.op(x)
+		let val2 = ops.op2(val)
+		  // return works as expected
+		return val2
+
+print another_func(2, {}) // prints "16" as (2 * 2) * (2 * 2) = 16
+print another_func(2, { op: x => x + 4 }) // prints "36" as (2 + 4) * (2 + 4) = 36
+
+// Multiline "lambdas"
+print another_func(
+	1, 
+	{
+		op2: x => 
+			let some_value = do_something(x)
+			print some_value
+			x
+	}
+)
