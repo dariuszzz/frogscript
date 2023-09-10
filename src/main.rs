@@ -104,6 +104,12 @@ enum TokenKind {
     NotEqual,
     NoneType,
     Dot,
+    Ampersand,
+    Pipe,
+    Caret,
+    Tilde,
+    RShift,
+    LShift,
 
     Identifier(Identifier),
 }
@@ -347,6 +353,8 @@ impl Lexer {
                 '<' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::LessEqual);
+                    } else if self.match_char('<') {
+                        self.add_token(TokenKind::LShift);
                     } else {
                         self.add_token(TokenKind::AngleLeft);
                     }
@@ -354,6 +362,8 @@ impl Lexer {
                 '>' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::GreaterEqual);
+                    } else if self.match_char('>') {
+                        self.add_token(TokenKind::RShift);
                     } else {
                         self.add_token(TokenKind::AngleRight);
                     }
@@ -412,6 +422,10 @@ impl Lexer {
                     }
                 }
                 '.' => self.add_token(TokenKind::Dot),
+                '&' => self.add_token(TokenKind::Ampersand),
+                '^' => self.add_token(TokenKind::Caret),
+                '~' => self.add_token(TokenKind::Tilde),
+                '|' => self.add_token(TokenKind::Pipe),
                 '"' => self.parse_string(),
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
@@ -420,4 +434,4 @@ impl Lexer {
             }
         } 
     }
-}
+} 
