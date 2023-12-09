@@ -69,12 +69,13 @@ enum Identifier {
     Use,
     Export,
     From,
+    Implicit,
+    As,
 }
 
 
 #[derive(Clone, Debug)]
 enum TokenKind {
-    Literal(Literal),
     ParenLeft,
     ParenRight,
     CurlyLeft,
@@ -85,6 +86,7 @@ enum TokenKind {
     AngleRight,
     Comma,
     Colon,
+    DoubleColon,
     Plus,
     PlusEqual,
     Mod,
@@ -110,7 +112,12 @@ enum TokenKind {
     Tilde,
     RShift,
     LShift,
-
+    Tab,
+    Newline,
+    TrianglePipe,
+    Dollar,
+    
+    Literal(Literal),
     Identifier(Identifier),
 }
 
@@ -315,6 +322,8 @@ impl Lexer {
             ("use", Identifier::Use),
             ("export", Identifier::Export),
             ("from", Identifier::From),
+            ("implicit", Identifier::Implicit),
+            ("as", Identifier::Implicit),
         ]);
 
         while let Some(c) = self.peek() {
@@ -387,7 +396,13 @@ impl Lexer {
                     }
                 }
                 ',' => self.add_token(TokenKind::Comma),
-                ':' => self.add_token(TokenKind::Colon),
+                ':' => { 
+                    if self.match_char(':') {
+                        self.add_token(TokenKind::DoubleColon)
+                    } else {
+                        self.add_token(TokenKind::Colon)
+                    }
+                }
                 '+' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::PlusEqual);
@@ -421,11 +436,19 @@ impl Lexer {
                         self.add_token(TokenKind::Slash);
                     }
                 }
+                '|' => {
+                    if self.match_char('>') {
+                        self.add_token(TokenKind::TrianglePipe)
+                    } else {
+                        self.add_token(TokenKind::Pipe)
+                    }
+                }
+                '\n' => self.add_token(TokenKind::Newline),
                 '.' => self.add_token(TokenKind::Dot),
                 '&' => self.add_token(TokenKind::Ampersand),
                 '^' => self.add_token(TokenKind::Caret),
                 '~' => self.add_token(TokenKind::Tilde),
-                '|' => self.add_token(TokenKind::Pipe),
+                '$' => self.add_token(TokenKind::Dollar),
                 '"' => self.parse_string(),
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
