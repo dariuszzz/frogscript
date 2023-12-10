@@ -16,7 +16,6 @@ let another_func: ! =>
 
 /*
 multiline comment
-/*
 nested multiline comment
 end of outer multiline comment
 */

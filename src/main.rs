@@ -143,6 +143,7 @@ enum TokenKind {
     Newline,
     TrianglePipe,
     Dollar,
+    Indentation(u32),
     
     Literal(Literal),
     Identifier(Identifier),
@@ -185,7 +186,7 @@ struct Lexer {
     line: usize,
     line_char: usize,
     lexeme_start: usize,
-    parsing_multiline_comment: NestedParsingCount
+    parsing_multiline_comment: NestedParsingCount,
 }
 
 impl Lexer {
@@ -197,7 +198,7 @@ impl Lexer {
             line: 1,
             line_char: 0,
             lexeme_start: 0,
-            parsing_multiline_comment: NestedParsingCount::None
+            parsing_multiline_comment: NestedParsingCount::None,
         }
     }
 
@@ -413,6 +414,22 @@ impl Lexer {
             self.add_token(TokenKind::Identifier(Identifier::Custom(lexeme.to_owned())));
         }
     }
+
+    fn parse_indent(&mut self, c: char) {
+        let mut indentation_level = if c == ' ' { 1 } else if c == '\t' { 4 } else { 0 };
+        while let Some(c) = self.peek() {
+            if c == ' ' {
+                indentation_level += 1;
+            } else if c == '\t' {
+                indentation_level += 4;
+            } else {
+                break;
+            }
+            self.advance();
+        }
+        self.add_token(TokenKind::Indentation(indentation_level));
+    }
+
     
     fn parse(&mut self) -> Result<Vec<Token>, String> {
         while !self.is_at_end() {
@@ -518,7 +535,11 @@ impl Lexer {
                 '"' => self.parse_string()?,
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
-                c if c.is_ascii_whitespace() => {},
+                c if c.is_ascii_whitespace() => {
+                    if self.line_char == 1 {
+                        self.parse_indent(c);
+                    }
+                },
                 c => return Err(format!("Unexpected char at {}:{} - {c}", self.line, self.line_char))
             }
         }
