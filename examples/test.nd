@@ -17,9 +17,7 @@ let another_func: ! =>
 /*
 multiline comment
 /*
-
 nested multiline comment
-*/
 end of outer multiline comment
 */
 
@@ -38,6 +36,6 @@ print another_func(
 
 :: x: int
 :: f: (int -> int)
-let pipe: int => 
+let 1pipe: int => 
 	x
 	|> f
