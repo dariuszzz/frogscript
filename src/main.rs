@@ -11,7 +11,18 @@ struct MyOptions {
 #[derive(Debug, Options)]
 enum Command {
     #[options(help = "parse a file")]
-    Parse(ParseOpts)
+    Parse(ParseOpts),
+    #[options(help = "lex a file")]
+    Lex(LexOpts)
+}
+
+#[derive(Debug, Options)]
+struct LexOpts {
+    #[options(free)]
+    free: Vec<String>,
+
+    #[options(help = "file to lex")]
+    file: String
 }
 
 #[derive(Debug, Options)]
@@ -28,11 +39,27 @@ fn main() {
     let opts = MyOptions::parse_args_default_or_exit();
 
     match opts.command.expect("No command given") {
+        Command::Lex(opts) => {
+            let path = Path::new(&opts.file);
+            let file_contents = fs::read_to_string(path).expect("Failed to read file");
+            let mut lexer = Lexer::new(file_contents);
+            match lexer.parse() {
+                Err(err) => eprintln!("Error parsing: {err}"),
+                Ok(tokens) => {
+                    for token in &tokens {
+                        println!("{token:?}");
+                    }
+                }
+            }
+        }
         Command::Parse(opts) => {
             let path = Path::new(&opts.file);
             let file_contents = fs::read_to_string(path).expect("Failed to read file");
             let mut lexer = Lexer::new(file_contents);
-            lexer.parse();
+            match lexer.parse() {
+                Err(err) => eprintln!("Error parsing: {err}"),
+                Ok(tokens) => {}
+            }
         }
     }
 }
@@ -100,8 +127,8 @@ enum TokenKind {
     Minus,
     MinusEqual,
     Slash,
-    Comment(String),
-    MultilineComment(String),
+    Comment,
+    MultilineComment,
     Power,
     NotEqual,
     NoneType,
@@ -121,7 +148,7 @@ enum TokenKind {
     Identifier(Identifier),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Token {
     kind: TokenKind,
     start: usize,
@@ -178,10 +205,6 @@ impl Lexer {
         self.current >= self.source_file.len()
     }
 
-    fn error_unexpected_char(&self, ch: char) {
-        println!("Unexpected char at {}:{} - {ch}", self.line, self.line_char);
-    }
-
     fn advance(&mut self) -> char {
         self.current += 1;
         self.line_char += 1;
@@ -234,13 +257,10 @@ impl Lexer {
                 lexeme: self.source_file.get(self.lexeme_start..self.current).unwrap().to_owned()
             }
         );
-
-        println!("Added token: {:?}", self.tokens[self.tokens.len() - 1].kind);
     }
 
-    fn parse_multiline_comment(&mut self) {
+    fn parse_multiline_comment(&mut self) -> Result<(), String> {
         self.parsing_multiline_comment = NestedParsingCount::Count(1);
-
         while let (Some(c), Some(nc)) = (self.peek(), self.peek_next()) {
             if c == '/' && nc == '*' {
                 self.parsing_multiline_comment.increment();
@@ -257,14 +277,22 @@ impl Lexer {
             self.advance();
         }
 
-        self.advance();
-        self.advance();
+        match self.parsing_multiline_comment {
+            NestedParsingCount::Count(count) if count != 0 => Err(format!("Unterminated multiline comment")),
+            NestedParsingCount::Count(_) => {
+                self.parsing_multiline_comment = NestedParsingCount::None;
+                self.advance();
+                self.advance();
+        
+                self.add_token(TokenKind::MultilineComment);
 
-        let comment = self.source_file.get(self.lexeme_start..self.current).unwrap().trim_end().to_owned();
-        self.add_token(TokenKind::MultilineComment(comment));
+                Ok(())
+            },
+            NestedParsingCount::None => unreachable!()
+        }
     }
 
-    fn parse_string(&mut self) {
+    fn parse_string(&mut self) -> Result<(), String> {
         let starting_line = self.line;
         let starting_line_char = self.line_char;
         if self.consume_until('"') {
@@ -274,9 +302,10 @@ impl Lexer {
                 start: self.lexeme_start + 1,
                 lexeme: string 
             });
-            println!("Added token: {:?}", self.tokens[self.tokens.len() - 1].kind);
+
+            return Ok(())
         } else {
-            println!("Unterminated string starting at: {starting_line}:{starting_line_char}");
+            return Err(format!("Unterminated string"))
         }
     }
 
@@ -385,7 +414,7 @@ impl Lexer {
         }
     }
     
-    fn parse(&mut self) {
+    fn parse(&mut self) -> Result<Vec<Token>, String> {
         while !self.is_at_end() {
             self.lexeme_start = self.current;
             let c = self.advance();
@@ -465,11 +494,10 @@ impl Lexer {
                 '/' => {
                     if self.match_char('/') {
                         if self.consume_until('\n') {
-                            let comment = self.source_file.get((self.lexeme_start)..(self.current)).unwrap().trim_end().to_owned();
-                            self.add_token(TokenKind::Comment(comment));
+                            self.add_token(TokenKind::Comment);
                         }
                     } else if self.match_char('*') {
-                        self.parse_multiline_comment();
+                        self.parse_multiline_comment()?;
                     } else {
                         self.add_token(TokenKind::Slash);
                     }
@@ -487,12 +515,14 @@ impl Lexer {
                 '^' => self.add_token(TokenKind::Caret),
                 '~' => self.add_token(TokenKind::Tilde),
                 '$' => self.add_token(TokenKind::Dollar),
-                '"' => self.parse_string(),
+                '"' => self.parse_string()?,
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
                 c if c.is_ascii_whitespace() => {},
-                c => self.error_unexpected_char(c),   
+                c => return Err(format!("Unexpected char at {}:{} - {c}", self.line, self.line_char))
             }
-        } 
+        }
+
+        return Ok(self.tokens.clone())
     }
 } 
