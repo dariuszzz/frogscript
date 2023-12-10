@@ -1,40 +1,8 @@
-:: x: { option: boolean, text: string = "hello" }
-let func: ! =>
-	print x.option
-	print x.text
-
-func { option: true } // prints true & hello
-
-// Taking in a mixture of structs and values as arguments
-:: x: int 
-:: ops: { op1: (int -> int), op2: (int -> int) } 
-let another_func: ! =>
-	let val = ops.op(x)
-	let val2 = ops.op2(val)
-	// return works as expected
-	return val2
-
-/*
-multiline comment
-nested multiline comment
-end of outer multiline comment
-*/
-
-print another_func(2, { op: $1 + 4, op2: $1 * $1 }) // prints "36" as (2 + 4) * (2 + 4) = 36
-
-// Multiline "lambdas"
-print another_func(
-	1, 
-	{
-		op2: x =>
-			let some_value = do_something(x)
-			print some_value
-			x
-	}
-)
+:: x: int
+:: y: #&int
+:: z: &int
+:: w: #int
+export fn funcname => 
 
 :: x: int
-:: f: (int -> int)
-let 1pipe: int => 
-	x
-	|> f
+export fn siema => 
