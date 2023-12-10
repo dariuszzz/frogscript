@@ -16,6 +16,11 @@ let another_func: ! =>
 
 /*
 multiline comment
+/*
+
+nested multiline comment
+*/
+end of outer multiline comment
 */
 
 print another_func(2, { op: $1 + 4, op2: $1 * $1 }) // prints "36" as (2 + 4) * (2 + 4) = 36

@@ -100,8 +100,8 @@ enum TokenKind {
     Minus,
     MinusEqual,
     Slash,
-    Comment,
-    MultilineComment,
+    Comment(String),
+    MultilineComment(String),
     Power,
     NotEqual,
     NoneType,
@@ -128,6 +128,29 @@ struct Token {
     lexeme: String,
 }
 
+#[derive(Debug)]
+enum NestedParsingCount {
+    None,
+    Count(i32)
+}
+
+impl NestedParsingCount {
+    fn increment(&mut self) {
+        match self {
+            Self::None => {},
+            Self::Count(c) => *c = *c + 1
+        }
+    }
+
+    fn decrement(&mut self) {
+        match self {
+            Self::None => {},
+            Self::Count(c) => *c = *c - 1
+        }
+    }
+}
+
+
 struct Lexer {
     source_file: String,
     tokens: Vec<Token>,
@@ -135,6 +158,7 @@ struct Lexer {
     line: usize,
     line_char: usize,
     lexeme_start: usize,
+    parsing_multiline_comment: NestedParsingCount
 }
 
 impl Lexer {
@@ -145,7 +169,8 @@ impl Lexer {
             current: 0,
             line: 1,
             line_char: 0,
-            lexeme_start: 0
+            lexeme_start: 0,
+            parsing_multiline_comment: NestedParsingCount::None
         }
     }
 
@@ -214,9 +239,20 @@ impl Lexer {
     }
 
     fn parse_multiline_comment(&mut self) {
+        self.parsing_multiline_comment = NestedParsingCount::Count(1);
+
         while let (Some(c), Some(nc)) = (self.peek(), self.peek_next()) {
+            if c == '/' && nc == '*' {
+                self.parsing_multiline_comment.increment();
+            }
             if c == '*' && nc == '/' {
-                break;
+                self.parsing_multiline_comment.decrement();
+
+                match self.parsing_multiline_comment {
+                    NestedParsingCount::Count(count) if count == 0 => break,
+                    NestedParsingCount::Count(_) => {}
+                    NestedParsingCount::None => unreachable!()
+                }
             }
             self.advance();
         }
@@ -224,7 +260,8 @@ impl Lexer {
         self.advance();
         self.advance();
 
-        self.add_token(TokenKind::MultilineComment);
+        let comment = self.source_file.get(self.lexeme_start..self.current).unwrap().trim_end().to_owned();
+        self.add_token(TokenKind::MultilineComment(comment));
     }
 
     fn parse_string(&mut self) {
@@ -428,7 +465,8 @@ impl Lexer {
                 '/' => {
                     if self.match_char('/') {
                         if self.consume_until('\n') {
-                            self.add_token(TokenKind::Comment);
+                            let comment = self.source_file.get((self.lexeme_start)..(self.current)).unwrap().trim_end().to_owned();
+                            self.add_token(TokenKind::Comment(comment));
                         }
                     } else if self.match_char('*') {
                         self.parse_multiline_comment();
