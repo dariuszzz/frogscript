@@ -6,6 +6,7 @@ pub enum Type {
     Uint,
     Float,
     String,
+    Boolean,
 }
 
 #[derive(Debug, Clone)]
@@ -148,12 +149,47 @@ impl Parser {
 
         return Ok(tokens)
     }
+    
+    fn collect_pattern(&mut self, pattern: &[(TokenKind, bool)]) -> Result<Vec<Token>, String> {
+
+        let mut tokens = Vec::new();
+
+        for (token_kind, opt) in pattern {
+            match self.peek() {
+                Some(Token { kind, .. }) if kind == *token_kind => tokens.push(self.advance()),
+                Some(Token { kind, .. }) if !opt => return Err(format!("Token {token_kind:?} missing, found: {kind:?}").to_owned()),
+                _ if !opt => return Err(format!("Token {token_kind:?} not found.").to_owned()),
+                _ => {}
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    fn safe_collect_pattern(&mut self, pattern: &[(TokenKind, bool)]) -> Option<Vec<Token>> {
+
+        let mut tokens = Vec::new();
+        let starting_pos = self.current;
+
+        for (token_kind, opt) in pattern {
+            match (self.peek(), token_kind) {
+                (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::Custom(_))) => tokens.push(self.advance()),
+                (Some(Token { kind, .. }), _) if kind == *token_kind => tokens.push(self.advance()),
+                _ if !opt => {
+                    // roll back
+                    self.current = starting_pos;
+                    return None;
+                }
+                // didnt match but also was optional so who cares
+                _ => {}
+            }
+        }
+
+
+        Some(tokens)
+    }
 
     fn parse_fn_with_args(&mut self, module: &mut Module, t: Token) -> Result<(), String> {
-
-        let arg_list_tokens = self.collect_until(|token| token.kind == TokenKind::Identifier(crate::lexer::Identifier::Fn))?;
-
-        let arg_tokens = arg_list_tokens.split(|token| token.kind == TokenKind::DoubleColon).collect::<Vec<_>>();
 
         let mut function_def = FunctionDef {
             export: false,
@@ -163,9 +199,21 @@ impl Parser {
             function_body: CodeBlock::default()
         };
 
-        for (arg_idx, arg) in arg_tokens.into_iter().enumerate() {
+        self.current -= 1;
 
-            let mut arg_iter = arg.iter();
+        while let Some(arg_tokens) = self.safe_collect_pattern(
+            &[
+                (TokenKind::DoubleColon, false),
+                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
+                (TokenKind::Colon, false),
+                (TokenKind::Hash, true),
+                (TokenKind::Ampersand, true),
+                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
+                (TokenKind::Newline, false),
+            ]
+        ) {
+
+            let mut arg_iter = arg_tokens.iter();
 
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
@@ -173,6 +221,8 @@ impl Parser {
                 is_implicit: false,
                 is_reference: false
             };
+
+            let _double_colon = arg_iter.next();
 
             match arg_iter.next().unwrap().clone().kind {
                 TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
@@ -182,53 +232,152 @@ impl Parser {
             let _colon = arg_iter.next();
 
             // god save me
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Float)) {
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("bool".to_owned()))) {
+                arg_def.arg_type = Type::Boolean
+            }
+
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("float".to_owned()))) {
                 arg_def.arg_type = Type::Float
             }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Int)) {
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("int".to_owned()))) {
                 arg_def.arg_type = Type::Int
             }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Uint)) {
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("uint".to_owned()))) {
                 arg_def.arg_type = Type::Uint
             }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::String)) {
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("string".to_owned()))) {
                 arg_def.arg_type = Type::String
             }
             // Will implement implicit sometime else
-            // if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Hash) {
-            //     arg_def.is_implicit = true
-            // }
+            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Hash) {
+                arg_def.is_implicit = true
+            }
             if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Ampersand) {
                 arg_def.is_reference = true
             }
 
             function_def.argument_list.push(arg_def);
+
         }
+
+        if let Some(fn_decl_tokens) = self.safe_collect_pattern(
+            &[
+                (TokenKind::Identifier(Identifier::Export), true),
+                (TokenKind::Identifier(Identifier::Fn), false),
+                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
+                (TokenKind::Colon, true),
+                (TokenKind::Identifier(Identifier::Custom(String::new())), true),
+                (TokenKind::FatArrow, false)
+            ]
+        ) {
+            let mut fn_decl_iter = fn_decl_tokens.iter();
+
+            if let Some(_) = fn_decl_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Export)) {
+                function_def.export = true;
+            }
+
+            let Token { kind, .. } = fn_decl_iter.find(|t| match t.kind {
+                TokenKind::Identifier(Identifier::Custom(_)) => true,
+                _ => false
+            }).unwrap();
+
+            match kind {
+                TokenKind::Identifier(Identifier::Custom(fn_name)) => function_def.func_name = fn_name.to_owned(),
+                _ => unreachable!()
+            }
+
+            if let Some(_) = fn_decl_iter.clone().find(|t| t.kind == TokenKind::Colon) {
+                let Token { kind, .. } = fn_decl_iter.find(|t| match t.kind {
+                    TokenKind::Identifier(Identifier::Custom(_)) => true,
+                    _ => false
+                }).unwrap();
+
+                function_def.return_type = match kind {
+                    TokenKind::Identifier(Identifier::Custom(ret_type)) => match ret_type.as_ref() {
+                        "int" => Type::Int,
+                        "uint" => Type::Uint,
+                        "float" => Type::Float,
+                        "string" => Type::String,
+                        "bool" => Type::Boolean,
+                        _ => return Err("invalid return type".to_owned())
+                    }
+                    _ => return Err("missing return type".to_owned())
+                }
+            }
+
+        } else {
+            return Err("Missing tokens in '(export) fn funcname'".to_owned())
+        }
+
+
+        // let arg_tokens = arg_list_tokens.split(|token| token.kind == TokenKind::DoubleColon).collect::<Vec<_>>();
+
+        // for (arg_idx, arg) in arg_tokens.into_iter().enumerate() {
+
+        //     let mut arg_iter = arg.iter();
+
+        //     let mut arg_def = FunctionArgument {
+        //         arg_name: String::new(),
+        //         arg_type: Type::Uint,
+        //         is_implicit: false,
+        //         is_reference: false
+        //     };
+
+        //     match arg_iter.next().unwrap().clone().kind {
+        //         TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
+        //         _ => return Err("Invalid arg name".to_owned())
+        //     };
+
+        //     let _colon = arg_iter.next();
+
+        //     // god save me
+        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Float)) {
+        //         arg_def.arg_type = Type::Float
+        //     }
+        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Int)) {
+        //         arg_def.arg_type = Type::Int
+        //     }
+        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Uint)) {
+        //         arg_def.arg_type = Type::Uint
+        //     }
+        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::String)) {
+        //         arg_def.arg_type = Type::String
+        //     }
+        //     // Will implement implicit sometime else
+        //     // if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Hash) {
+        //     //     arg_def.is_implicit = true
+        //     // }
+        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Ampersand) {
+        //         arg_def.is_reference = true
+        //     }
+
+        //     function_def.argument_list.push(arg_def);
+        // }
 
         // this doesnt work cuz args are collected with collect until Fn so this ends up as a part of the args
-        if let Some(Token { kind: TokenKind::Identifier(Identifier::Export), .. }) = self.peek() {
-            function_def.export = true;
-            self.advance();
-        }
+        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Export), .. }) = self.peek() {
+        //     function_def.export = true;
+        //     self.advance();
+        // }
         
-        if let Some(Token { kind: TokenKind::Identifier(Identifier::Fn), .. }) = self.peek() {
-            self.advance();
-        } else {
-            return Err("'fn' keyword missing in function def".to_owned())
-        }
+        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Fn), .. }) = self.peek() {
+        //     self.advance();
+        // } else {
+        //     return Err("'fn' keyword missing in function def".to_owned())
+        // }
 
-        if let Some(Token { kind: TokenKind::Identifier(Identifier::Custom(name)), .. }) = self.peek() {
-            self.advance();
-            function_def.func_name = name;
-        } else {
-            return Err("'fn' keyword missing in function def".to_owned());
-        }
+        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Custom(name)), .. }) = self.peek() {
+        //     self.advance();
+        //     function_def.func_name = name;
+        // } else {
+        //     return Err("'fn' keyword missing in function def".to_owned());
+        // }
 
-        if let Some(Token { kind: TokenKind::FatArrow, .. }) = self.peek() {
-            self.advance();
-        } else {
-            return Err("'=>' missing in function def".to_owned());
-        }
+        // if let Some(Token { kind: TokenKind::FatArrow, .. }) = self.peek() {
+        //     self.advance();
+        // } else {
+        //     return Err("'=>' missing in function def".to_owned());
+        // }
 
         module.function_defs.push(function_def);
 
