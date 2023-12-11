@@ -2,7 +2,7 @@
 :: y: #&int
 :: z: &int
 :: w: #int
-export fn funcname => 
+fn funcname => 
 
 :: x: int
 export fn siema => 

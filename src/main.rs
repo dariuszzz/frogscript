@@ -79,7 +79,7 @@ fn main() -> Result<(), String> {
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
             let module = parser.parse_file(filename)?;
 
-            println!("{module:?}");
+            println!("{module:#?}");
         }
         Command::Transpile(opts) => {
             let path = Path::new(&opts.file);
