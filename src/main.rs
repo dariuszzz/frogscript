@@ -75,6 +75,11 @@ fn main() -> Result<(), String> {
             let mut lexer = Lexer::new(file_contents);
             let tokens = lexer.parse()?;
             
+            let tokens = tokens
+                .into_iter()
+                .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
+                .collect::<Vec<_>>();
+
             let mut parser = Parser::new(tokens);
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
             let module = parser.parse_file(filename)?;

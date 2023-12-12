@@ -1,5 +1,8 @@
-:: x: int
-:: y: &int
-:: z: <&int>
-:: w: <int>
+:: x: <int>
+:: y: &string
 fn funcname => 
+
+:: x: int
+// siema
+:: w: uint
+export fn fankszyn: string => 

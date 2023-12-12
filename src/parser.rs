@@ -4,11 +4,13 @@ use crate::lexer::{Token, TokenKind, Literal, Identifier};
 
 #[derive(Debug, Clone)]
 pub enum Type {
+    Infer, 
     Int,
     Uint,
     Float,
     String,
     Boolean,
+    Custom(String),
 }
 
 #[derive(Debug, Clone)]
@@ -114,20 +116,16 @@ impl Parser {
 
     // skips comments
     fn advance(&mut self) -> Token {
-        let mut next = 0;
-        while let Some(token) = self.peek(next) {
-            match token.kind {
-                TokenKind::MultilineComment | TokenKind::Comment => {
-                    next += 1;
-                }
-                _ => {
-                    self.current += next + 1;
-                    return token
-                }
+        match self.peek(0) {
+            Some(t) => {
+                self.current += 1;
+                t
+            },
+            None => {
+                self.current += 1;
+                Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: "".to_owned() }
             }
         }
-
-        Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: "".to_owned() }
     }
 
     fn peek(&mut self, n: usize) -> Option<Token> {
@@ -182,7 +180,7 @@ impl Parser {
         let mut tokens = HashMap::new();
         let starting_pos = self.current;
 
-        for (opt, key, token_kind) in pattern {
+        for (opt, key, token_kind) in pattern {  
             match (self.peek(0), token_kind) {
                 (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
                 (Some(Token { kind, .. }), _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
@@ -200,69 +198,14 @@ impl Parser {
         Some(tokens)
     }
 
-    fn parse_fn_with_args(&mut self, module: &mut Module, t: Token) -> Result<(), String> {
-
+    fn parse_fn_no_args(&mut self, module: &mut Module, args: Vec<FunctionArgument>) -> Result<(), String> {
         let mut function_def = FunctionDef {
             export: false,
             func_name: String::new(),
-            argument_list: Vec::new(),
-            return_type: Type::Uint,
+            argument_list: args,
+            return_type: Type::Infer,
             function_body: CodeBlock::default()
         };
-
-        while let Some(arg_tokens) = self.safe_collect_pattern(
-            &[
-                (false, "double_colon",     TokenKind::DoubleColon),
-                (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (false, "colon",            TokenKind::Colon),
-                (true,  "implicit_open",    TokenKind::AngleLeft),
-                (true,  "reference_mark",   TokenKind::Ampersand),
-                (false, "type",             TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (true,  "implicit_close",   TokenKind::AngleRight),
-                (false, "nl",               TokenKind::Newline),
-            ]
-        ) {
-            let mut arg_def = FunctionArgument {
-                arg_name: String::new(),
-                arg_type: Type::Uint,
-                is_implicit: false,
-                is_reference: false
-            };
-
-            let name_token = arg_tokens.get("var_name").unwrap().clone();
-            match name_token.kind {
-                TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
-                _ => unreachable!()
-            };
-
-            let type_token = arg_tokens.get("type").unwrap().clone();
-            match type_token.kind {
-                TokenKind::Identifier(Identifier::Custom(type_name)) => { 
-                    match type_name.as_str() {
-                        "bool" => arg_def.arg_type = Type::Boolean,
-                        "string" => arg_def.arg_type = Type::String,
-                        "float" => arg_def.arg_type = Type::Float,
-                        "int" => arg_def.arg_type = Type::Int,
-                        "uint" => arg_def.arg_type = Type::Uint,
-                        _ => todo!("implement custom types")
-                    }
-                }
-                _ => unreachable!()
-            };
-
-            // god save me
-            if let Some(_) = arg_tokens.get("reference_mark") {
-                arg_def.is_reference = true;
-            }
-
-            match (arg_tokens.get("implicit_open"), arg_tokens.get("implicit_close")) {
-                (Some(_), Some(_)) => arg_def.is_implicit = true,
-                (None, None) => {}
-                _ => return Err(format!("Unclosed implicit tag"))
-            }
-
-            function_def.argument_list.push(arg_def);
-        }
 
         if let Some(fn_decl_tokens) = self.safe_collect_pattern(
             &[
@@ -291,9 +234,10 @@ impl Parser {
                                 "float" => function_def.return_type = Type::Float,
                                 "int" => function_def.return_type = Type::Int,
                                 "uint" => function_def.return_type = Type::Uint,
-                                _ => todo!("implement custom types")
+                                _ => function_def.return_type = Type::Custom(type_name) 
                             }
                         }
+                        TokenKind::ParenLeft => todo!("implement function type parsing"),
                         _ => unreachable!()
                     }
                 }
@@ -311,6 +255,68 @@ impl Parser {
         module.function_defs.push(function_def);
 
         Ok(())
+    }
+
+    fn parse_fn_with_args(&mut self, module: &mut Module) -> Result<(), String> {
+
+        let mut argument_list = Vec::new();
+
+        while let Some(arg_tokens) = self.safe_collect_pattern(
+            &[
+                (false, "double_colon",     TokenKind::DoubleColon),
+                (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (false, "colon",            TokenKind::Colon),
+                (true,  "implicit_open",    TokenKind::AngleLeft),
+                (true,  "reference_mark",   TokenKind::Ampersand),
+                (false, "type",             TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (true,  "implicit_close",   TokenKind::AngleRight),
+                (false, "nl",               TokenKind::Newline),
+            ]
+        ) {
+            let mut arg_def = FunctionArgument {
+                arg_name: String::new(),
+                arg_type: Type::Uint,
+                is_implicit: false,
+                is_reference: false
+            };
+
+            let name_token = arg_tokens.get("var_name").unwrap().clone();
+            match name_token.kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
+                _ => unreachable!(),
+            };
+
+            let type_token = arg_tokens.get("type").unwrap().clone();
+            match type_token.kind {
+                TokenKind::Identifier(Identifier::Custom(type_name)) => { 
+                    match type_name.as_str() {
+                        "bool" => arg_def.arg_type = Type::Boolean,
+                        "string" => arg_def.arg_type = Type::String,
+                        "float" => arg_def.arg_type = Type::Float,
+                        "int" => arg_def.arg_type = Type::Int,
+                        "uint" => arg_def.arg_type = Type::Uint,
+                        _ => arg_def.arg_type = Type::Custom(type_name) 
+                    }
+                }
+                TokenKind::ParenLeft => todo!("implement function type parsing"),
+                _ => unreachable!()
+            };
+
+            // god save me
+            if let Some(_) = arg_tokens.get("reference_mark") {
+                arg_def.is_reference = true;
+            }
+
+            match (arg_tokens.get("implicit_open"), arg_tokens.get("implicit_close")) {
+                (Some(_), Some(_)) => arg_def.is_implicit = true,
+                (None, None) => {}
+                _ => return Err(format!("Unclosed implicit tag"))
+            }
+
+            argument_list.push(arg_def);
+        }
+
+        self.parse_fn_no_args(module, argument_list)
     }
 
     pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
@@ -338,7 +344,7 @@ impl Parser {
                 TokenKind::AngleRight => todo!(),
                 TokenKind::Comma => todo!(),
                 TokenKind::Colon => todo!(),
-                TokenKind::DoubleColon => self.parse_fn_with_args(&mut module, t)?,
+                TokenKind::DoubleColon => self.parse_fn_with_args(&mut module)?,
                 TokenKind::Plus => todo!(),
                 TokenKind::PlusEqual => todo!(),
                 TokenKind::Mod => todo!(),
@@ -365,14 +371,20 @@ impl Parser {
                 TokenKind::RShift => todo!(),
                 TokenKind::LShift => todo!(),
                 TokenKind::Tab => todo!(),
-                TokenKind::Newline => {},
+                TokenKind::Newline => { self.advance(); },
                 TokenKind::TrianglePipe => todo!(),
                 TokenKind::Dollar => todo!(),
-                TokenKind::Indentation(_) => {},
+                TokenKind::Indentation(_) => { self.advance(); },
                 TokenKind::Literal(_) => todo!(),
-                TokenKind::Identifier(e) => println!("{e:?}"),
+                TokenKind::Identifier(iden) => { 
+                    match iden {
+                        Identifier::Export 
+                        | Identifier::Fn => self.parse_fn_no_args(&mut module, Vec::new())?,
+                        _ => { self.advance(); }
+                    }
+                }
                 TokenKind::Hash => todo!(),
-            }
+            };
 
         }
 
