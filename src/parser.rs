@@ -5,6 +5,7 @@ use crate::lexer::{Token, TokenKind, Literal, Identifier};
 #[derive(Debug, Clone)]
 pub enum Type {
     Infer, 
+    Void,
     Int,
     Uint,
     Float,
@@ -234,10 +235,10 @@ impl Parser {
                                 "float" => function_def.return_type = Type::Float,
                                 "int" => function_def.return_type = Type::Int,
                                 "uint" => function_def.return_type = Type::Uint,
+                                "void" => function_def.return_type = Type::Void,
                                 _ => function_def.return_type = Type::Custom(type_name) 
                             }
                         }
-                        TokenKind::ParenLeft => todo!("implement function type parsing"),
                         _ => unreachable!()
                     }
                 }
@@ -295,10 +296,10 @@ impl Parser {
                         "float" => arg_def.arg_type = Type::Float,
                         "int" => arg_def.arg_type = Type::Int,
                         "uint" => arg_def.arg_type = Type::Uint,
+                        "void" => arg_def.arg_type = Type::Void,
                         _ => arg_def.arg_type = Type::Custom(type_name) 
                     }
                 }
-                TokenKind::ParenLeft => todo!("implement function type parsing"),
                 _ => unreachable!()
             };
 

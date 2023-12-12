@@ -5,4 +5,4 @@ fn funcname =>
 :: x: int
 // siema
 :: w: uint
-export fn fankszyn: string => 
+export fn fankszyn => 
