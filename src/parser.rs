@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
 
 #[derive(Debug, Clone)]
@@ -10,14 +12,15 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone)]
-pub struct Statement {
+pub enum Expression {
+
 
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CodeBlock  {
     pub indentation: usize,
-    pub statements: Vec<Statement>
+    pub statements: Vec<Expression>
 }
 
 #[derive(Debug, Clone)]
@@ -106,22 +109,30 @@ impl Parser {
     }
     
     fn is_at_end(&self) -> bool {
-        self.current >= self.tokens.len()
+        self.current >= self.tokens.len() - 1
     }
 
+    // skips comments
     fn advance(&mut self) -> Token {
-        self.current += 1;
-        self.tokens.get(self.current - 1).unwrap().clone()
+        let mut next = 0;
+        while let Some(token) = self.peek(next) {
+            match token.kind {
+                TokenKind::MultilineComment | TokenKind::Comment => {
+                    next += 1;
+                }
+                _ => {
+                    self.current += next + 1;
+                    return token
+                }
+            }
+        }
+
+        Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: "".to_owned() }
     }
 
-    fn peek(&mut self) -> Option<Token> {
+    fn peek(&mut self, n: usize) -> Option<Token> {
         if self.is_at_end() { return None }
-        return self.tokens.get(self.current).and_then(|t| Some(t.clone()))
-    }
-
-    fn peek_next(&mut self) -> Option<Token> {
-        if self.is_at_end() { return None }
-        return self.tokens.get(self.current + 1).and_then(|t| Some(t.clone()))
+        return self.tokens.get(self.current + n).and_then(|t| Some(t.clone()))
     }
 
     fn match_token(&mut self, expected: Token) -> bool {
@@ -138,7 +149,7 @@ impl Parser {
     where F: Fn(Token) -> bool 
     {
         let mut tokens = Vec::new();
-        while let Some(t) = self.peek() {
+        while let Some(t) = self.peek(0) {
             if until(t) { break }
             tokens.push(self.advance());
         }
@@ -155,7 +166,7 @@ impl Parser {
         let mut tokens = Vec::new();
 
         for (token_kind, opt) in pattern {
-            match self.peek() {
+            match self.peek(0) {
                 Some(Token { kind, .. }) if kind == *token_kind => tokens.push(self.advance()),
                 Some(Token { kind, .. }) if !opt => return Err(format!("Token {token_kind:?} missing, found: {kind:?}").to_owned()),
                 _ if !opt => return Err(format!("Token {token_kind:?} not found.").to_owned()),
@@ -166,15 +177,15 @@ impl Parser {
         Ok(tokens)
     }
 
-    fn safe_collect_pattern(&mut self, pattern: &[(TokenKind, bool)]) -> Option<Vec<Token>> {
+    fn safe_collect_pattern(&mut self, pattern: &[(bool, &str, TokenKind)]) -> Option<HashMap<String, Token>> {
 
-        let mut tokens = Vec::new();
+        let mut tokens = HashMap::new();
         let starting_pos = self.current;
 
-        for (token_kind, opt) in pattern {
-            match (self.peek(), token_kind) {
-                (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::Custom(_))) => tokens.push(self.advance()),
-                (Some(Token { kind, .. }), _) if kind == *token_kind => tokens.push(self.advance()),
+        for (opt, key, token_kind) in pattern {
+            match (self.peek(0), token_kind) {
+                (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
+                (Some(Token { kind, .. }), _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
                 _ if !opt => {
                     // roll back
                     self.current = starting_pos;
@@ -199,22 +210,18 @@ impl Parser {
             function_body: CodeBlock::default()
         };
 
-        self.current -= 1;
-
         while let Some(arg_tokens) = self.safe_collect_pattern(
             &[
-                (TokenKind::DoubleColon, false),
-                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
-                (TokenKind::Colon, false),
-                (TokenKind::Hash, true),
-                (TokenKind::Ampersand, true),
-                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
-                (TokenKind::Newline, false),
+                (false, "double_colon",     TokenKind::DoubleColon),
+                (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (false, "colon",            TokenKind::Colon),
+                (true,  "implicit_open",    TokenKind::AngleLeft),
+                (true,  "reference_mark",   TokenKind::Ampersand),
+                (false, "type",             TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (true,  "implicit_close",   TokenKind::AngleRight),
+                (false, "nl",               TokenKind::Newline),
             ]
         ) {
-
-            let mut arg_iter = arg_tokens.iter();
-
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
                 arg_type: Type::Uint,
@@ -222,162 +229,84 @@ impl Parser {
                 is_reference: false
             };
 
-            let _double_colon = arg_iter.next();
-
-            match arg_iter.next().unwrap().clone().kind {
+            let name_token = arg_tokens.get("var_name").unwrap().clone();
+            match name_token.kind {
                 TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
-                _ => return Err("Invalid arg name".to_owned())
+                _ => unreachable!()
             };
 
-            let _colon = arg_iter.next();
+            let type_token = arg_tokens.get("type").unwrap().clone();
+            match type_token.kind {
+                TokenKind::Identifier(Identifier::Custom(type_name)) => { 
+                    match type_name.as_str() {
+                        "bool" => arg_def.arg_type = Type::Boolean,
+                        "string" => arg_def.arg_type = Type::String,
+                        "float" => arg_def.arg_type = Type::Float,
+                        "int" => arg_def.arg_type = Type::Int,
+                        "uint" => arg_def.arg_type = Type::Uint,
+                        _ => todo!("implement custom types")
+                    }
+                }
+                _ => unreachable!()
+            };
 
             // god save me
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("bool".to_owned()))) {
-                arg_def.arg_type = Type::Boolean
+            if let Some(_) = arg_tokens.get("reference_mark") {
+                arg_def.is_reference = true;
             }
 
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("float".to_owned()))) {
-                arg_def.arg_type = Type::Float
-            }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("int".to_owned()))) {
-                arg_def.arg_type = Type::Int
-            }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("uint".to_owned()))) {
-                arg_def.arg_type = Type::Uint
-            }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Custom("string".to_owned()))) {
-                arg_def.arg_type = Type::String
-            }
-            // Will implement implicit sometime else
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Hash) {
-                arg_def.is_implicit = true
-            }
-            if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Ampersand) {
-                arg_def.is_reference = true
+            match (arg_tokens.get("implicit_open"), arg_tokens.get("implicit_close")) {
+                (Some(_), Some(_)) => arg_def.is_implicit = true,
+                (None, None) => {}
+                _ => return Err(format!("Unclosed implicit tag"))
             }
 
             function_def.argument_list.push(arg_def);
-
         }
 
         if let Some(fn_decl_tokens) = self.safe_collect_pattern(
             &[
-                (TokenKind::Identifier(Identifier::Export), true),
-                (TokenKind::Identifier(Identifier::Fn), false),
-                (TokenKind::Identifier(Identifier::Custom(String::new())), false),
-                (TokenKind::Colon, true),
-                (TokenKind::Identifier(Identifier::Custom(String::new())), true),
-                (TokenKind::FatArrow, false)
+                (true,  "export",   TokenKind::Identifier(Identifier::Export)),
+                (false, "fn_key",   TokenKind::Identifier(Identifier::Fn)),
+                (false, "func_name",TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (true,  "colon",    TokenKind::Colon),
+                (true,  "ret_type", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (false, "arrow",    TokenKind::FatArrow)
             ]
         ) {
-            let mut fn_decl_iter = fn_decl_tokens.iter();
+            let name_token = fn_decl_tokens.get("func_name").unwrap().clone();
+            match name_token.kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => function_def.func_name = name,
+                _ => unreachable!()
+            };
 
-            if let Some(_) = fn_decl_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Export)) {
+            match (fn_decl_tokens.get("colon"), fn_decl_tokens.get("ret_type")) {
+                (Some(_), Some(ret_type_token)) => {
+                    let ret_type_token = ret_type_token.clone();
+                    match ret_type_token.kind {
+                        TokenKind::Identifier(Identifier::Custom(type_name)) => { 
+                            match type_name.as_str() {
+                                "bool" => function_def.return_type = Type::Boolean,
+                                "string" => function_def.return_type = Type::String,
+                                "float" => function_def.return_type = Type::Float,
+                                "int" => function_def.return_type = Type::Int,
+                                "uint" => function_def.return_type = Type::Uint,
+                                _ => todo!("implement custom types")
+                            }
+                        }
+                        _ => unreachable!()
+                    }
+                }
+                (None, None) => {}
+                _ => return Err(format!("Unfinished fn return type"))
+            }
+
+            if let Some(_) = fn_decl_tokens.get("export") {
                 function_def.export = true;
             }
-
-            let Token { kind, .. } = fn_decl_iter.find(|t| match t.kind {
-                TokenKind::Identifier(Identifier::Custom(_)) => true,
-                _ => false
-            }).unwrap();
-
-            match kind {
-                TokenKind::Identifier(Identifier::Custom(fn_name)) => function_def.func_name = fn_name.to_owned(),
-                _ => unreachable!()
-            }
-
-            if let Some(_) = fn_decl_iter.clone().find(|t| t.kind == TokenKind::Colon) {
-                let Token { kind, .. } = fn_decl_iter.find(|t| match t.kind {
-                    TokenKind::Identifier(Identifier::Custom(_)) => true,
-                    _ => false
-                }).unwrap();
-
-                function_def.return_type = match kind {
-                    TokenKind::Identifier(Identifier::Custom(ret_type)) => match ret_type.as_ref() {
-                        "int" => Type::Int,
-                        "uint" => Type::Uint,
-                        "float" => Type::Float,
-                        "string" => Type::String,
-                        "bool" => Type::Boolean,
-                        _ => return Err("invalid return type".to_owned())
-                    }
-                    _ => return Err("missing return type".to_owned())
-                }
-            }
-
         } else {
             return Err("Missing tokens in '(export) fn funcname'".to_owned())
         }
-
-
-        // let arg_tokens = arg_list_tokens.split(|token| token.kind == TokenKind::DoubleColon).collect::<Vec<_>>();
-
-        // for (arg_idx, arg) in arg_tokens.into_iter().enumerate() {
-
-        //     let mut arg_iter = arg.iter();
-
-        //     let mut arg_def = FunctionArgument {
-        //         arg_name: String::new(),
-        //         arg_type: Type::Uint,
-        //         is_implicit: false,
-        //         is_reference: false
-        //     };
-
-        //     match arg_iter.next().unwrap().clone().kind {
-        //         TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
-        //         _ => return Err("Invalid arg name".to_owned())
-        //     };
-
-        //     let _colon = arg_iter.next();
-
-        //     // god save me
-        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Float)) {
-        //         arg_def.arg_type = Type::Float
-        //     }
-        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Int)) {
-        //         arg_def.arg_type = Type::Int
-        //     }
-        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::Uint)) {
-        //         arg_def.arg_type = Type::Uint
-        //     }
-        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Identifier(Identifier::String)) {
-        //         arg_def.arg_type = Type::String
-        //     }
-        //     // Will implement implicit sometime else
-        //     // if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Hash) {
-        //     //     arg_def.is_implicit = true
-        //     // }
-        //     if let Some(_) = arg_iter.clone().find(|t| t.kind == TokenKind::Ampersand) {
-        //         arg_def.is_reference = true
-        //     }
-
-        //     function_def.argument_list.push(arg_def);
-        // }
-
-        // this doesnt work cuz args are collected with collect until Fn so this ends up as a part of the args
-        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Export), .. }) = self.peek() {
-        //     function_def.export = true;
-        //     self.advance();
-        // }
-        
-        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Fn), .. }) = self.peek() {
-        //     self.advance();
-        // } else {
-        //     return Err("'fn' keyword missing in function def".to_owned())
-        // }
-
-        // if let Some(Token { kind: TokenKind::Identifier(Identifier::Custom(name)), .. }) = self.peek() {
-        //     self.advance();
-        //     function_def.func_name = name;
-        // } else {
-        //     return Err("'fn' keyword missing in function def".to_owned());
-        // }
-
-        // if let Some(Token { kind: TokenKind::FatArrow, .. }) = self.peek() {
-        //     self.advance();
-        // } else {
-        //     return Err("'=>' missing in function def".to_owned());
-        // }
 
         module.function_defs.push(function_def);
 
@@ -394,8 +323,11 @@ impl Parser {
 
         while !self.is_at_end() {
             self.expr_start = self.current;
-            let t = self.advance();
+            let t = self.peek(0);
+            if let None = t { break; }
+            let t = t.unwrap();
             match t.kind {
+                TokenKind::EOF => unreachable!(),
                 TokenKind::ParenLeft => todo!(),
                 TokenKind::ParenRight => todo!(),
                 TokenKind::CurlyLeft => todo!(),

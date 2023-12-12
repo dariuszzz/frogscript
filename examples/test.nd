@@ -1,8 +1,5 @@
 :: x: int
-:: y: #&int
-:: z: &int
-:: w: #int
+:: y: &int
+:: z: <&int>
+:: w: <int>
 fn funcname => 
-
-:: x: int
-export fn siema => 
