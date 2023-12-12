@@ -12,6 +12,7 @@ pub enum Literal {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Identifier {
+    _MatchAnyCustom,
     Custom(String),
     Let,
     Final,
@@ -36,6 +37,7 @@ pub enum Identifier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
+    EOF,
     ParenLeft,
     ParenRight,
     CurlyLeft,
@@ -86,7 +88,8 @@ pub enum TokenKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
-    pub start: usize,
+    pub start_line: usize,
+    pub start_char: usize,
     pub lexeme: String,
 }
 
@@ -120,6 +123,8 @@ pub struct Lexer {
     pub line: usize,
     pub line_char: usize,
     pub lexeme_start: usize,
+    pub lexeme_start_line: usize,
+    pub lexeme_start_line_char: usize,
     pub parsing_multiline_comment: NestedParsingCount,
 }
 
@@ -132,6 +137,8 @@ impl Lexer {
             line: 1,
             line_char: 0,
             lexeme_start: 0,
+            lexeme_start_line: 0,
+            lexeme_start_line_char: 0,
             parsing_multiline_comment: NestedParsingCount::None,
         }
     }
@@ -188,7 +195,8 @@ impl Lexer {
         self.tokens.push(
             Token {
                 kind,
-                start: self.lexeme_start,
+                start_line: self.lexeme_start_line,
+                start_char: self.lexeme_start_line_char,
                 lexeme: self.source_file.get(self.lexeme_start..self.current).unwrap().to_owned()
             }
         );
@@ -234,7 +242,8 @@ impl Lexer {
             let string = self.source_file.get((self.lexeme_start + 1)..(self.current - 1)).unwrap().to_owned();
             self.tokens.push(Token { 
                 kind: TokenKind::Literal(Literal::String(string.clone())),
-                start: self.lexeme_start + 1,
+                start_char: self.lexeme_start_line_char,
+                start_line: self.lexeme_start_line,
                 lexeme: string 
             });
 
@@ -364,6 +373,8 @@ impl Lexer {
     pub fn parse(&mut self) -> Result<Vec<Token>, String> {
         while !self.is_at_end() {
             self.lexeme_start = self.current;
+            self.lexeme_start_line = self.line;
+            self.lexeme_start_line_char = self.line_char + 1;
             let c = self.advance();
             match c {
                 '(' => self.add_token(TokenKind::ParenLeft),
