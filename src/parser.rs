@@ -444,7 +444,7 @@ impl Parser {
             arguments: vec![called_on]
         };
 
-        match self.advance() {
+        let expr = match self.advance() {
             Token { kind: TokenKind::ParenLeft, .. } => {
                 loop {
                     if let Some(next_token) = self.peek(0) {
@@ -461,9 +461,16 @@ impl Parser {
                     }
                 }
 
-                return Ok(Expression::FunctionCall(call))
+                Expression::FunctionCall(call)
             }
             _ => todo!("implement no parens for single arg")
+        };
+
+        match self.peek(0) {
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr)
         }
     }
 
@@ -473,7 +480,7 @@ impl Parser {
             arguments: Vec::new()
         };
 
-        match self.advance() {
+        let expr = match self.advance() {
             Token { kind: TokenKind::ParenLeft, .. } => {
                 loop {
                     if let Some(next_token) = self.peek(0) {
@@ -490,9 +497,16 @@ impl Parser {
                     }
                 }
 
-                return Ok(Expression::FunctionCall(call))
+                Expression::FunctionCall(call)
             }
             _ => todo!("implement no parens for single arg")
+        };
+        
+        match self.peek(0) {
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr)
         }
     }
 
