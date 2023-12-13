@@ -13,6 +13,7 @@ mut implicit referencja_latajaca: &float = 23.4
 let stringi: string = 102 * ("siema" - "elo") + 2
 let dupa = (((1 + 2) + 3) + 4) + 5
 let dupa = fankszyn(2 + 2, siema("elo"))
+let dupa = (2 + 2).fankszyn(siema("elo"))
 
 /*
 let fankszyn_siema: uint = siema 2.fankszyn()

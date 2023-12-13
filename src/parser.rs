@@ -43,7 +43,6 @@ pub struct VariableDecl  {
 #[derive(Debug, Clone)]
 pub struct FunctionCall  {
     pub func_name: String,
-    pub called_on: Option<Box<Expression>>,
     pub arguments: Vec<Expression>,
 }
 
@@ -431,13 +430,46 @@ impl Parser {
     }
 
     pub fn parse_method_call(&mut self, called_on: Expression) -> Result<Expression, String> {
-        todo!()
+        // consume dot
+        self.advance();
+
+        let name = if let Token { kind: TokenKind::Identifier(Identifier::Custom(func_name)), .. } = self.advance() {
+            func_name
+        } else {
+            return Err(format!("no func name found"));
+        };
+
+        let mut call = FunctionCall { 
+            func_name: name, 
+            arguments: vec![called_on]
+        };
+
+        match self.advance() {
+            Token { kind: TokenKind::ParenLeft, .. } => {
+                loop {
+                    if let Some(next_token) = self.peek(0) {
+                        match next_token.kind {
+                            TokenKind::ParenRight => {
+                                self.advance();
+                                break;
+                            }
+                            TokenKind::Comma => {
+                                self.advance();
+                            }
+                            _ => call.arguments.push(self.parse_expression()?)
+                        }
+                    }
+                }
+
+                return Ok(Expression::FunctionCall(call))
+            }
+            _ => todo!("implement no parens for single arg")
+        }
     }
 
     pub fn parse_standalone_function_call(&mut self, name: String) -> Result<Expression, String> {
         let mut call = FunctionCall { 
             func_name: name, 
-            called_on: None, 
             arguments: Vec::new()
         };
 
