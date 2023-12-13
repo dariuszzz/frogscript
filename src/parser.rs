@@ -43,7 +43,7 @@ pub struct VariableDecl  {
 #[derive(Debug, Clone)]
 pub struct FunctionCall  {
     pub func_name: String,
-    pub called_on: Box<Expression>,
+    pub called_on: Option<Box<Expression>>,
     pub arguments: Vec<Expression>,
 }
 
@@ -435,7 +435,33 @@ impl Parser {
     }
 
     pub fn parse_standalone_function_call(&mut self, name: String) -> Result<Expression, String> {
-        todo!()
+        let mut call = FunctionCall { 
+            func_name: name, 
+            called_on: None, 
+            arguments: Vec::new()
+        };
+
+        match self.advance() {
+            Token { kind: TokenKind::ParenLeft, .. } => {
+                loop {
+                    if let Some(next_token) = self.peek(0) {
+                        match next_token.kind {
+                            TokenKind::ParenRight => {
+                                self.advance();
+                                break;
+                            }
+                            TokenKind::Comma => {
+                                self.advance();
+                            }
+                            _ => call.arguments.push(self.parse_expression()?)
+                        }
+                    }
+                }
+
+                return Ok(Expression::FunctionCall(call))
+            }
+            _ => todo!("implement no parens for single arg")
+        }
     }
 
     pub fn parse_operator(&mut self, op: BinaryOperation, lhs: Expression) -> Result<Expression, String> {
@@ -450,7 +476,6 @@ impl Parser {
         let inner_expr = self.parse_expression()?;
 
         if let Token { kind: TokenKind::ParenRight, .. } = self.advance() {
-            println!("paren end");
             return Ok(inner_expr)
         } else {
             return Err(format!("Unclosed parentheses"))
@@ -466,6 +491,7 @@ impl Parser {
                         let expr = Expression::Literal(literal);
                         match self.peek(0) {
                             Some(Token { kind: TokenKind::Newline, .. }) 
+                            | Some(Token { kind: TokenKind::Comma, .. }) 
                             | Some(Token { kind: TokenKind::ParenRight, .. }) => Ok(expr),
                             Some(Token { kind: TokenKind::Dot, .. }) => self.parse_method_call(expr),
                             Some(Token { kind: TokenKind::Plus, .. }) => self.parse_operator(BinaryOperation::Add, expr),
