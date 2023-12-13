@@ -3,6 +3,17 @@ use std::collections::HashMap;
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
 
 #[derive(Debug, Clone)]
+pub enum BinaryOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Power,
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeKind {
     Infer, 
     Void,
@@ -30,9 +41,25 @@ pub struct VariableDecl  {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionCall  {
+    pub func_name: String,
+    pub called_on: Box<Expression>,
+    pub arguments: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryOp  {
+    pub op: BinaryOperation,
+    pub lhs: Box<Expression>,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
+    BinaryOp(BinaryOp),
+    FunctionCall(FunctionCall),
     If,
 }
 
@@ -197,7 +224,6 @@ impl Parser {
         let starting_pos = self.current;
 
         for (opt, key, token_kind) in pattern {  
-            println!("{token_kind:?} -------- {:?}", self.peek(0));
             match (self.peek(0), token_kind) {
                 (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
                 (Some(Token { kind, .. }), _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
@@ -332,9 +358,8 @@ impl Parser {
     }
 
     pub fn parse_variable_decl(&mut self, module: &mut Module) -> Result<(), String> {
-        //we know the first token is a let or mut
+        //we know the first token is a let or mut so we skip the first token
         self.advance();
-
 
         if let Some(variable_decl_tokens) = self.safe_collect_pattern(
             &[
@@ -405,19 +430,79 @@ impl Parser {
         }
     }
 
+    pub fn parse_method_call(&mut self, called_on: Expression) -> Result<Expression, String> {
+        todo!()
+    }
+
+    pub fn parse_standalone_function_call(&mut self, name: String) -> Result<Expression, String> {
+        todo!()
+    }
+
+    pub fn parse_operator(&mut self, op: BinaryOperation, lhs: Expression) -> Result<Expression, String> {
+        self.advance();
+        let rhs = self.parse_expression()?;
+
+        Ok(Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) }))
+    }
+
+    pub fn parse_expr_in_parentheses(&mut self) -> Result<Expression, String> {
+
+        let inner_expr = self.parse_expression()?;
+
+        if let Token { kind: TokenKind::ParenRight, .. } = self.advance() {
+            println!("paren end");
+            return Ok(inner_expr)
+        } else {
+            return Err(format!("Unclosed parentheses"))
+        }
+    }
+
     pub fn parse_expression(&mut self) -> Result<Expression, String> {
+        println!("{:?}", self.peek(0));
         match self.advance() {
             Token { kind, .. } => {
                 match kind {
                     TokenKind::Literal(literal) => {
-                        Ok(Expression::Literal(literal))
+                        let expr = Expression::Literal(literal);
+                        match self.peek(0) {
+                            Some(Token { kind: TokenKind::Newline, .. }) 
+                            | Some(Token { kind: TokenKind::ParenRight, .. }) => Ok(expr),
+                            Some(Token { kind: TokenKind::Dot, .. }) => self.parse_method_call(expr),
+                            Some(Token { kind: TokenKind::Plus, .. }) => self.parse_operator(BinaryOperation::Add, expr),
+                            Some(Token { kind: TokenKind::Minus, .. }) => self.parse_operator(BinaryOperation::Subtract, expr),
+                            Some(Token { kind: TokenKind::Star, .. }) => self.parse_operator(BinaryOperation::Multiply, expr),
+                            Some(Token { kind: TokenKind::Slash, .. }) => self.parse_operator(BinaryOperation::Divide, expr),
+                            Some(Token { kind: TokenKind::Caret, .. }) => self.parse_operator(BinaryOperation::Power, expr),
+                            Some(Token { kind: TokenKind::Ampersand, .. }) => self.parse_operator(BinaryOperation::And, expr),
+                            Some(Token { kind: TokenKind::Pipe, .. }) => self.parse_operator(BinaryOperation::Or, expr),
+                            _ => return Err(format!("Unexpected token after literal")),
+                        }
                     }
-                    _ => todo!("This is either invalid or unimplemented")
+                    TokenKind::ParenLeft => {
+                        let expr = self.parse_expr_in_parentheses()?;
+                        match self.peek(0) {
+                            Some(Token { kind: TokenKind::Newline, .. }) 
+                            | Some(Token { kind: TokenKind::ParenRight, .. }) => Ok(expr),
+                            Some(Token { kind: TokenKind::Dot, .. }) => self.parse_method_call(expr),
+                            Some(Token { kind: TokenKind::Plus, .. }) => self.parse_operator(BinaryOperation::Add, expr),
+                            Some(Token { kind: TokenKind::Minus, .. }) => self.parse_operator(BinaryOperation::Subtract, expr),
+                            Some(Token { kind: TokenKind::Star, .. }) => self.parse_operator(BinaryOperation::Multiply, expr),
+                            Some(Token { kind: TokenKind::Slash, .. }) => self.parse_operator(BinaryOperation::Divide, expr),
+                            Some(Token { kind: TokenKind::Caret, .. }) => self.parse_operator(BinaryOperation::Power, expr),
+                            Some(Token { kind: TokenKind::Ampersand, .. }) => self.parse_operator(BinaryOperation::And, expr),
+                            Some(Token { kind: TokenKind::Pipe, .. }) => self.parse_operator(BinaryOperation::Or, expr),
+                            _ => return Err(format!("Unexpected token after paren")),
+                        }
+                    }
+                    TokenKind::Identifier(Identifier::Custom(name)) => {
+                        self.parse_standalone_function_call(name)
+                    }
+                    kind @ _ => {
+                        println!("{kind:?}");
+                        todo!("This is either invalid or unimplemented")
+                    }
                 }
             }
-            // None => {
-            //     return Err(format!("No next token, parsing expression failed"))
-            // }
         }
     }
 
