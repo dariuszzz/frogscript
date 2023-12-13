@@ -4,11 +4,28 @@ fn funcname =>
 
 :: implicit x: &float
 :: w: uint
-export fn fankszyn => 
+export fn fankszyn: int => 
 
-mut x = 0
-let s = 0
-let implicit y: string = 0
-mut implicit w: &float = 23.4
-let c: string = "siema"
-let m: uint = 23
+mut liczba = 0
+let liczba = 0
+let implicit latajaca: string = 0
+mut implicit referencja_latajaca: &float = 23.4
+let stringi: string = 102 * ("siema" - "elo") + 2
+
+/*
+let fankszyn_siema: uint = siema 2.fankszyn()
+let fankszyn-siema: uint = siema(fankszyn(2))
+let fankszyn_siema: uint = (fankszyn 2).siema()
+let fankszyn_siema: uint = fankszyn(2).siema()
+
+let siema_fankszyn: uint = fankszyn 2.siema()
+let siema_fankszyn: uint = fankszyn(2.siema())
+let siema_fankszyn: uint = (siema 2).fankszyn()
+let siema_fankszyn: uint = siema(2).fankszyn()
+
+let dwa_siema: uint = 2.siema()
+let dwa_siema: uint = siema(2)
+
+
+let list2 = list.map(_ * _)
+*/
