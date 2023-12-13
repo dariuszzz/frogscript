@@ -15,8 +15,8 @@ pub enum Identifier {
     _MatchAnyCustom,
     Custom(String),
     Let,
+    Mut,
     Final,
-    Const,
     Fn,
     Type,
     Enum,
@@ -314,7 +314,7 @@ impl Lexer {
         let keywords = HashMap::from([
             ("let", Identifier::Let),
             ("final", Identifier::Final),
-            ("const", Identifier::Const),
+            ("mut", Identifier::Mut),
             ("type", Identifier::Type),
             ("enum", Identifier::Enum),
             ("for", Identifier::For),

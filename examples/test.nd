@@ -1,8 +1,14 @@
-:: x: <int>
+:: implicit x: int
 :: y: &string
 fn funcname => 
 
-:: x: int
-// siema
+:: implicit x: &float
 :: w: uint
 export fn fankszyn => 
+
+mut x = 0
+let s = 0
+let implicit y: string = 0
+mut implicit w: &float = 23.4
+let c: string = "siema"
+let m: uint = 23
