@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
 
 #[derive(Debug, Clone)]
-pub enum Type {
+pub enum TypeKind {
     Infer, 
     Void,
     Int,
@@ -15,15 +15,31 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone)]
+pub struct Type {
+    pub type_kind: TypeKind,
+    pub is_reference: bool,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct VariableDecl  {
+    pub var_name: String,
+    pub var_type: Type,
+    pub var_value: Box<Expression>,
+    pub is_implicit: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
-
-
+    VariableDecl(VariableDecl),
+    Literal(Literal),
+    If,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CodeBlock  {
     pub indentation: usize,
-    pub statements: Vec<Expression>
+    pub expressions: Vec<Expression>
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +47,6 @@ pub struct FunctionArgument {
     pub arg_name: String,
     pub arg_type: Type,
     pub is_implicit: bool,
-    pub is_reference: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +127,7 @@ impl Parser {
     }
     
     fn is_at_end(&self) -> bool {
-        self.current >= self.tokens.len() - 1
+        self.current >= self.tokens.len()
     }
 
     // skips comments
@@ -182,6 +197,7 @@ impl Parser {
         let starting_pos = self.current;
 
         for (opt, key, token_kind) in pattern {  
+            println!("{token_kind:?} -------- {:?}", self.peek(0));
             match (self.peek(0), token_kind) {
                 (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
                 (Some(Token { kind, .. }), _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
@@ -204,7 +220,7 @@ impl Parser {
             export: false,
             func_name: String::new(),
             argument_list: args,
-            return_type: Type::Infer,
+            return_type: Type { type_kind: TypeKind::Infer, is_reference: false },
             function_body: CodeBlock::default()
         };
 
@@ -230,13 +246,13 @@ impl Parser {
                     match ret_type_token.kind {
                         TokenKind::Identifier(Identifier::Custom(type_name)) => { 
                             match type_name.as_str() {
-                                "bool" => function_def.return_type = Type::Boolean,
-                                "string" => function_def.return_type = Type::String,
-                                "float" => function_def.return_type = Type::Float,
-                                "int" => function_def.return_type = Type::Int,
-                                "uint" => function_def.return_type = Type::Uint,
-                                "void" => function_def.return_type = Type::Void,
-                                _ => function_def.return_type = Type::Custom(type_name) 
+                                "bool" => function_def.return_type.type_kind = TypeKind::Boolean,
+                                "string" => function_def.return_type.type_kind = TypeKind::String,
+                                "float" => function_def.return_type.type_kind = TypeKind::Float,
+                                "int" => function_def.return_type.type_kind = TypeKind::Int,
+                                "uint" => function_def.return_type.type_kind = TypeKind::Uint,
+                                "void" => function_def.return_type.type_kind = TypeKind::Void,
+                                _ => function_def.return_type.type_kind = TypeKind::Custom(type_name) 
                             }
                         }
                         _ => unreachable!()
@@ -265,20 +281,18 @@ impl Parser {
         while let Some(arg_tokens) = self.safe_collect_pattern(
             &[
                 (false, "double_colon",     TokenKind::DoubleColon),
+                (true, "implicit",         TokenKind::Identifier(Identifier::Implicit)),
                 (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
                 (false, "colon",            TokenKind::Colon),
-                (true,  "implicit_open",    TokenKind::AngleLeft),
                 (true,  "reference_mark",   TokenKind::Ampersand),
                 (false, "type",             TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (true,  "implicit_close",   TokenKind::AngleRight),
                 (false, "nl",               TokenKind::Newline),
             ]
         ) {
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
-                arg_type: Type::Uint,
+                arg_type: Type { type_kind: TypeKind::Uint, is_reference: false },
                 is_implicit: false,
-                is_reference: false
             };
 
             let name_token = arg_tokens.get("var_name").unwrap().clone();
@@ -291,33 +305,120 @@ impl Parser {
             match type_token.kind {
                 TokenKind::Identifier(Identifier::Custom(type_name)) => { 
                     match type_name.as_str() {
-                        "bool" => arg_def.arg_type = Type::Boolean,
-                        "string" => arg_def.arg_type = Type::String,
-                        "float" => arg_def.arg_type = Type::Float,
-                        "int" => arg_def.arg_type = Type::Int,
-                        "uint" => arg_def.arg_type = Type::Uint,
-                        "void" => arg_def.arg_type = Type::Void,
-                        _ => arg_def.arg_type = Type::Custom(type_name) 
+                        "bool" => arg_def.arg_type.type_kind = TypeKind::Boolean,
+                        "string" => arg_def.arg_type.type_kind = TypeKind::String,
+                        "float" => arg_def.arg_type.type_kind = TypeKind::Float,
+                        "int" => arg_def.arg_type.type_kind = TypeKind::Int,
+                        "uint" => arg_def.arg_type.type_kind = TypeKind::Uint,
+                        "void" => arg_def.arg_type.type_kind = TypeKind::Void,
+                        _ => arg_def.arg_type.type_kind = TypeKind::Custom(type_name) 
                     }
                 }
                 _ => unreachable!()
             };
 
-            // god save me
             if let Some(_) = arg_tokens.get("reference_mark") {
-                arg_def.is_reference = true;
+                arg_def.arg_type.is_reference = true;
             }
 
-            match (arg_tokens.get("implicit_open"), arg_tokens.get("implicit_close")) {
-                (Some(_), Some(_)) => arg_def.is_implicit = true,
-                (None, None) => {}
-                _ => return Err(format!("Unclosed implicit tag"))
+            if let Some(_) = arg_tokens.get("implicit") {
+                arg_def.is_implicit = true;
             }
 
             argument_list.push(arg_def);
         }
 
         self.parse_fn_no_args(module, argument_list)
+    }
+
+    pub fn parse_variable_decl(&mut self, module: &mut Module) -> Result<(), String> {
+        //we know the first token is a let or mut
+        self.advance();
+
+
+        if let Some(variable_decl_tokens) = self.safe_collect_pattern(
+            &[
+                (true, "implicit",  TokenKind::Identifier(Identifier::Implicit)),
+                (false, "var_name", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (true,  "colon",    TokenKind::Colon),
+                (true,  "reference",TokenKind::Ampersand),
+                (true,  "var_type", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+                (false,  "eq",      TokenKind::Equal),
+            ]
+        ) {
+            let is_implicit = variable_decl_tokens.get("implicit").is_some();
+
+            let name_token = variable_decl_tokens.get("var_name").unwrap().clone();
+            let var_name = match name_token.kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => name,
+                _ => unreachable!(),
+            };
+
+            let mut is_reference = false;
+            let mut type_kind = TypeKind::Infer;
+            match (variable_decl_tokens.get("colon"), variable_decl_tokens.get("var_type")) {
+                (Some(_), Some(type_token)) => {
+                    if let Some(_) = variable_decl_tokens.get("reference") {
+                        is_reference = true;
+                    }
+
+                    match type_token.clone().kind {
+                        TokenKind::Identifier(Identifier::Custom(type_name)) => { 
+                            match type_name.as_str() {
+                                "bool" => type_kind = TypeKind::Boolean,
+                                "string" => type_kind = TypeKind::String,
+                                "float" => type_kind = TypeKind::Float,
+                                "int" => type_kind = TypeKind::Int,
+                                "uint" => type_kind = TypeKind::Uint,
+                                "void" => type_kind = TypeKind::Void,
+                                _ => type_kind = TypeKind::Custom(type_name) 
+                            }
+                        }
+                        _ => unreachable!()
+                    };
+
+                }
+                (None, None) => {
+                    if let Some(_) = variable_decl_tokens.get("reference") {
+                        return Err(format!("Unexpected '&' in variable declaration"));
+                    }
+                }
+                _ => {
+                    return Err(format!("Invalid variable type annotation"));
+                }
+            }
+
+            let value = self.parse_expression()?;
+
+            let variable = VariableDecl {
+                var_name,
+                var_type: Type { type_kind, is_reference },
+                var_value: Box::new(value),
+                is_implicit,
+            };
+
+            module.toplevel_scope.expressions.push(Expression::VariableDecl(variable));
+
+            Ok(())
+        } else {
+            return Err(format!("Invalid variable declaration"));
+        }
+    }
+
+    pub fn parse_expression(&mut self) -> Result<Expression, String> {
+        match self.advance() {
+            Token { kind, .. } => {
+                match kind {
+                    TokenKind::Literal(literal) => {
+                        Ok(Expression::Literal(literal))
+                    }
+                    _ => todo!("This is either invalid or unimplemented")
+                }
+            }
+            // None => {
+            //     return Err(format!("No next token, parsing expression failed"))
+            // }
+        }
     }
 
     pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
@@ -381,6 +482,8 @@ impl Parser {
                     match iden {
                         Identifier::Export 
                         | Identifier::Fn => self.parse_fn_no_args(&mut module, Vec::new())?,
+                        Identifier::Let 
+                        | Identifier::Mut => self.parse_variable_decl(&mut module)?, 
                         _ => { self.advance(); }
                     }
                 }
