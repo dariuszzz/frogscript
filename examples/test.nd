@@ -15,20 +15,9 @@ let dupa = (((1 + 2) + 3) + 4) + 5
 let dupa = fankszyn(2 + 2, siema("elo"))
 let dupa = (2 + 2).fankszyn(siema("elo"))
 
-/*
-let fankszyn_siema: uint = siema 2.fankszyn()
-let fankszyn-siema: uint = siema(fankszyn(2))
-let fankszyn_siema: uint = (fankszyn 2).siema()
-let fankszyn_siema: uint = fankszyn(2).siema()
+let fankszyn_siema: uint = siema(fankszyn(2))
 
-let siema_fankszyn: uint = fankszyn 2.siema()
-let siema_fankszyn: uint = fankszyn(2.siema())
-let siema_fankszyn: uint = (siema 2).fankszyn()
-let siema_fankszyn: uint = siema(2).fankszyn()
+let siema_fankszyn: uint = siema(2).fankszyn().eloelo_320()
 
 let dwa_siema: uint = 2.siema()
 let dwa_siema: uint = siema(2)
-
-
-let list2 = list.map(_ * _)
-*/
