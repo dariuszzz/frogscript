@@ -1,3 +1,4 @@
+/*
 :: implicit x: int
 :: y: &string
 fn funcname => 
@@ -11,13 +12,19 @@ let liczba = 0
 let implicit latajaca: string = 0
 mut implicit referencja_latajaca: &float = 23.4
 let stringi: string = 102 * ("siema" - "elo") + 2
-let dupa = (((1 + 2) + 3) + 4) + 5
+//let dupa = (((1 + 2) + 3) + 4) + 5
+//let dupa = 1 * 2 + 3
+*/
+
+let dupa = 2 * 3 + sum(list) / x.parse() 
+
+/*
 let dupa = fankszyn(2 + 2, siema("elo"))
 let dupa = (2 + 2).fankszyn(siema("elo"))
-
 let fankszyn_siema: uint = siema(fankszyn(2))
 
 let siema_fankszyn: uint = siema(2).fankszyn().eloelo_320()
 
 let dwa_siema: uint = 2.siema()
 let dwa_siema: uint = siema(2)
+*/
