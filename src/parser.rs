@@ -166,20 +166,21 @@ impl Parser {
     // skips comments
     fn advance(&mut self) -> Token {
         match self.peek(0) {
-            Some(t) => {
+            t => {
                 self.current += 1;
                 t
             },
-            None => {
-                self.current += 1;
-                Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: "".to_owned() }
-            }
         }
     }
 
-    fn peek(&mut self, n: usize) -> Option<Token> {
-        if self.is_at_end() { return None }
-        return self.tokens.get(self.current + n).and_then(|t| Some(t.clone()))
+    fn peek(&mut self, n: usize) -> Token {
+        if self.is_at_end() { return Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: String::new() } }
+        return self.tokens
+            .get(self.current + n)
+            .map_or(
+                Token { kind: TokenKind::EOF, start_char: 0, start_line: 0, lexeme: String::new() },
+                |t| t.clone()
+            )
     }
 
     fn match_token(&mut self, expected: Token) -> bool {
@@ -192,21 +193,21 @@ impl Parser {
         return true
     }
 
-    fn collect_until<F>(&mut self, until: F) -> Result<Vec<Token>, String> 
-    where F: Fn(Token) -> bool 
-    {
-        let mut tokens = Vec::new();
-        while let Some(t) = self.peek(0) {
-            if until(t) { break }
-            tokens.push(self.advance());
-        }
+    // fn collect_until<F>(&mut self, until: F) -> Result<Vec<Token>, String> 
+    // where F: Fn(Token) -> bool 
+    // {
+    //     let mut tokens = Vec::new();
+    //     while let Some(t) = self.peek(0) {
+    //         if until(t) { break }
+    //         tokens.push(self.advance());
+    //     }
 
-        if self.is_at_end() {
-            return Err("Token not found".to_owned());
-        }
+    //     if self.is_at_end() {
+    //         return Err("Token not found".to_owned());
+    //     }
 
-        return Ok(tokens)
-    }
+    //     return Ok(tokens)
+    // }
     
     fn collect_pattern(&mut self, pattern: &[(TokenKind, bool)]) -> Result<Vec<Token>, String> {
 
@@ -214,8 +215,8 @@ impl Parser {
 
         for (token_kind, opt) in pattern {
             match self.peek(0) {
-                Some(Token { kind, .. }) if kind == *token_kind => tokens.push(self.advance()),
-                Some(Token { kind, .. }) if !opt => return Err(format!("Token {token_kind:?} missing, found: {kind:?}").to_owned()),
+                Token { kind, .. } if kind == *token_kind => tokens.push(self.advance()),
+                Token { kind, .. } if !opt => return Err(format!("Token {token_kind:?} missing, found: {kind:?}").to_owned()),
                 _ if !opt => return Err(format!("Token {token_kind:?} not found.").to_owned()),
                 _ => {}
             }
@@ -231,8 +232,8 @@ impl Parser {
 
         for (opt, key, token_kind) in pattern {  
             match (self.peek(0), token_kind) {
-                (Some(Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }), TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
-                (Some(Token { kind, .. }), _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
+                (Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }, TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
+                (Token { kind, .. }, _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
                 _ if !opt => {
                     // roll back
                     self.current = starting_pos;
@@ -454,8 +455,8 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                if let Some(next_token) = self.peek(0) {
-                    match next_token.kind {
+                if let Token { kind, .. }= self.peek(0) {
+                    match kind {
                         TokenKind::ParenRight => {
                             self.advance();
                             break;
@@ -475,7 +476,7 @@ impl Parser {
         let expr = Expression::FunctionCall(call);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Dot, .. }) => {
+            Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr)
             }
@@ -491,8 +492,8 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                if let Some(next_token) = self.peek(0) {
-                    match next_token.kind {
+                if let Token { kind, .. } = self.peek(0) {
+                    match kind {
                         TokenKind::ParenRight => {
                             self.advance();
                             break;
@@ -511,7 +512,7 @@ impl Parser {
         let expr = Expression::FunctionCall(call);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Dot, .. }) => {
+            Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr)
             }
@@ -531,7 +532,7 @@ impl Parser {
     pub fn parse_sum(&mut self) -> Result<Expression, String> {
         let mut lhs = self.parse_product()?;
 
-        while let Some(Token { kind, ..  }) = self.peek(0) {
+        while let Token { kind, ..  } = self.peek(0) {
             let op = match kind {
                 TokenKind::Plus => BinaryOperation::Add,
                 TokenKind::Minus => BinaryOperation::Subtract,
@@ -552,7 +553,7 @@ impl Parser {
     pub fn parse_product(&mut self) -> Result<Expression, String> {
         let mut lhs = self.parse_term()?;
 
-        while let Some(Token { kind, ..  }) = self.peek(0) {
+        while let Token { kind, ..  } = self.peek(0) {
             let op = match kind {
                 TokenKind::Star => BinaryOperation::Multiply,
                 TokenKind::Slash => BinaryOperation::Divide,
@@ -596,7 +597,7 @@ impl Parser {
         }
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Dot, .. }) => {
+            Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr)
             }
@@ -608,7 +609,7 @@ impl Parser {
         let expr = Expression::Literal(literal);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Dot, .. }) => {
+            Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr)
             }
@@ -620,7 +621,7 @@ impl Parser {
         let expr = Expression::Variable(Variable { name: var_name });
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Dot, .. }) => {
+            Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr)
             }
@@ -630,7 +631,7 @@ impl Parser {
 
     pub fn parse_custom_iden(&mut self, identifier: String) -> Result<Expression, String> {
         match self.peek(0) {
-            Some(Token { kind: TokenKind::ParenLeft, .. }) => self.parse_standalone_function_call(identifier),
+            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier),
             _ => self.parse_variable(identifier),
         }
     }
@@ -651,8 +652,6 @@ impl Parser {
         while !self.is_at_end() {
             self.expr_start = self.current;
             let t = self.peek(0);
-            if let None = t { break; }
-            let t = t.unwrap();
             match t.kind {
                 TokenKind::EOF => break,
                 TokenKind::ParenLeft => todo!(),
