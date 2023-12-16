@@ -16,7 +16,7 @@ let stringi: string = 102 * ("siema" - "elo") + 2
 //let dupa = 1 * 2 + 3
 */
 
-let dupa = 2 * 3 + sum(list) / x.parse() 
+let dupa = y + 2 * 3 + sum(list) / x.parse() 
 
 /*
 let dupa = fankszyn(2 + 2, siema("elo"))

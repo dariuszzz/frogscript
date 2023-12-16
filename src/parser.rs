@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::WaitTimeoutResult};
 
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
 
@@ -475,22 +475,11 @@ impl Parser {
         let expr = Expression::FunctionCall(call);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Newline, .. })
-            | Some(Token { kind: TokenKind::EOF, .. })
-            | Some(Token { kind: TokenKind::ParenRight, .. }) => return Ok(expr),
-            _ => {}
-        }
-
-        match self.advance() {
-            Token { kind: TokenKind::Dot, .. } => self.parse_method_call(expr),
-            Token { kind: TokenKind::Plus, .. } => self.parse_sum(BinaryOperation::Add, expr),
-            Token { kind: TokenKind::Minus, .. } => self.parse_sum(BinaryOperation::Subtract, expr),
-            Token { kind: TokenKind::Star, .. } => self.parse_product(BinaryOperation::Multiply, expr),
-            Token { kind: TokenKind::Slash, .. } => self.parse_product(BinaryOperation::Divide, expr),
-            Token { kind: TokenKind::Caret, .. } => self.parse_operator(BinaryOperation::Power, expr),
-            Token { kind: TokenKind::Ampersand, .. } => self.parse_operator(BinaryOperation::And, expr),
-            Token { kind: TokenKind::Pipe, .. } => self.parse_operator(BinaryOperation::Or, expr),
-            token @ _ => return Err(format!("Unexpected token after method call: {token:?}")),
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.advance();
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -522,22 +511,11 @@ impl Parser {
         let expr = Expression::FunctionCall(call);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Newline, .. })
-            | Some(Token { kind: TokenKind::EOF, .. })
-            | Some(Token { kind: TokenKind::ParenRight, .. }) => return Ok(expr),
-            _ => {}
-        }
-
-        match self.advance() {
-            Token { kind: TokenKind::Dot, .. } => self.parse_method_call(expr),
-            Token { kind: TokenKind::Plus, .. } => self.parse_sum(BinaryOperation::Add, expr),
-            Token { kind: TokenKind::Minus, .. } => self.parse_sum(BinaryOperation::Subtract, expr),
-            Token { kind: TokenKind::Star, .. } => self.parse_product(BinaryOperation::Multiply, expr),
-            Token { kind: TokenKind::Slash, .. } => self.parse_product(BinaryOperation::Divide, expr),
-            Token { kind: TokenKind::Caret, .. } => self.parse_operator(BinaryOperation::Power, expr),
-            Token { kind: TokenKind::Ampersand, .. } => self.parse_operator(BinaryOperation::And, expr),
-            Token { kind: TokenKind::Pipe, .. } => self.parse_operator(BinaryOperation::Or, expr),
-            token @ _ => return Err(format!("Unexpected token after function call: {token:?}")),
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.advance();
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -550,12 +528,62 @@ impl Parser {
         Ok(expr)
     }
     
-    pub fn parse_sum(&mut self, op: BinaryOperation, lhs: Expression) -> Result<Expression, String> {
-        self.parse_operator(op, lhs)
+    pub fn parse_sum(&mut self) -> Result<Expression, String> {
+        let mut lhs = self.parse_product()?;
+
+        while let Some(Token { kind, ..  }) = self.peek(0) {
+            let op = match kind {
+                TokenKind::Plus => BinaryOperation::Add,
+                TokenKind::Minus => BinaryOperation::Subtract,
+                _ => break,
+            };
+
+            // consume + or -
+            self.advance();
+            
+            let rhs = self.parse_product()?;
+            
+            lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
+        }
+
+        Ok(lhs)
     }
 
-    pub fn parse_product(&mut self, op: BinaryOperation, lhs: Expression) -> Result<Expression, String> {
-        self.parse_operator(op, lhs)
+    pub fn parse_product(&mut self) -> Result<Expression, String> {
+        let mut lhs = self.parse_term()?;
+
+        while let Some(Token { kind, ..  }) = self.peek(0) {
+            let op = match kind {
+                TokenKind::Star => BinaryOperation::Multiply,
+                TokenKind::Slash => BinaryOperation::Divide,
+                _ => break,
+            };
+
+            // consume * or / 
+            self.advance();
+            
+            let rhs = self.parse_term()?;
+            
+            lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
+        }
+
+        Ok(lhs)
+    }
+
+    pub fn parse_term(&mut self) -> Result<Expression, String> {
+        match self.advance() {
+            Token { kind, .. } => {
+                match kind {
+                    TokenKind::Literal(literal) => self.parse_num(literal),
+                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(),
+                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name),
+                    kind @ _ => {
+                        dbg!(kind);
+                        todo!("This is either invalid or unimplemented")
+                    }
+                }
+            }
+        }
     }
 
     pub fn parse_expr_in_parentheses(&mut self) -> Result<Expression, String> {
@@ -568,23 +596,11 @@ impl Parser {
         }
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Newline, .. })
-            | Some(Token { kind: TokenKind::EOF, .. })
-            | Some(Token { kind: TokenKind::Comma, .. })
-            | Some(Token { kind: TokenKind::ParenRight, .. }) => return Ok(expr),
-            _ => {}
-        }
-
-        match self.advance() {
-            Token { kind: TokenKind::Dot, .. } => self.parse_method_call(expr),
-            Token { kind: TokenKind::Plus, .. } => self.parse_sum(BinaryOperation::Add, expr),
-            Token { kind: TokenKind::Minus, .. } => self.parse_sum(BinaryOperation::Subtract, expr),
-            Token { kind: TokenKind::Star, .. } => self.parse_product(BinaryOperation::Multiply, expr),
-            Token { kind: TokenKind::Slash, .. } => self.parse_product(BinaryOperation::Divide, expr),
-            Token { kind: TokenKind::Caret, .. } => self.parse_operator(BinaryOperation::Power, expr),
-            Token { kind: TokenKind::Ampersand, .. } => self.parse_operator(BinaryOperation::And, expr),
-            Token { kind: TokenKind::Pipe, .. } => self.parse_operator(BinaryOperation::Or, expr),
-            token @ _ => return Err(format!("Unexpected token after num: {token:?}")),
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.advance();
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -592,23 +608,11 @@ impl Parser {
         let expr = Expression::Literal(literal);
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Newline, .. })
-            | Some(Token { kind: TokenKind::EOF, .. })
-            | Some(Token { kind: TokenKind::Comma, .. })
-            | Some(Token { kind: TokenKind::ParenRight, .. }) => return Ok(expr),
-            _ => {}
-        }
-
-        match self.advance() {
-            Token { kind: TokenKind::Dot, .. } => self.parse_method_call(expr),
-            Token { kind: TokenKind::Plus, .. } => self.parse_sum(BinaryOperation::Add, expr),
-            Token { kind: TokenKind::Minus, .. } => self.parse_sum(BinaryOperation::Subtract, expr),
-            Token { kind: TokenKind::Star, .. } => self.parse_product(BinaryOperation::Multiply, expr),
-            Token { kind: TokenKind::Slash, .. } => self.parse_product(BinaryOperation::Divide, expr),
-            Token { kind: TokenKind::Caret, .. } => self.parse_operator(BinaryOperation::Power, expr),
-            Token { kind: TokenKind::Ampersand, .. } => self.parse_operator(BinaryOperation::And, expr),
-            Token { kind: TokenKind::Pipe, .. } => self.parse_operator(BinaryOperation::Or, expr),
-            token @ _ => return Err(format!("Unexpected token after num: {token:?}")),
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.advance();
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -616,22 +620,11 @@ impl Parser {
         let expr = Expression::Variable(Variable { name: var_name });
 
         match self.peek(0) {
-            Some(Token { kind: TokenKind::Newline, .. })
-            | Some(Token { kind: TokenKind::EOF, .. })
-            | Some(Token { kind: TokenKind::ParenRight, .. }) => return Ok(expr),
-            _ => {}
-        }
-
-        match self.advance() {
-            Token { kind: TokenKind::Dot, .. } => self.parse_method_call(expr),
-            Token { kind: TokenKind::Plus, .. } => self.parse_sum(BinaryOperation::Add, expr),
-            Token { kind: TokenKind::Minus, .. } => self.parse_sum(BinaryOperation::Subtract, expr),
-            Token { kind: TokenKind::Star, .. } => self.parse_product(BinaryOperation::Multiply, expr),
-            Token { kind: TokenKind::Slash, .. } => self.parse_product(BinaryOperation::Divide, expr),
-            Token { kind: TokenKind::Caret, .. } => self.parse_operator(BinaryOperation::Power, expr),
-            Token { kind: TokenKind::Ampersand, .. } => self.parse_operator(BinaryOperation::And, expr),
-            Token { kind: TokenKind::Pipe, .. } => self.parse_operator(BinaryOperation::Or, expr),
-            token @ _ => return Err(format!("Unexpected token after variable: {token:?}")),
+            Some(Token { kind: TokenKind::Dot, .. }) => {
+                self.advance();
+                self.parse_method_call(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -639,27 +632,12 @@ impl Parser {
         match self.peek(0) {
             Some(Token { kind: TokenKind::ParenLeft, .. }) => self.parse_standalone_function_call(identifier),
             _ => self.parse_variable(identifier),
-            // token @ _ => return Err(format!("Invalid token after identifier: {token:?}"))
         }
     }
 
     pub fn parse_expression(&mut self) -> Result<Expression, String> {
-        dbg!(self.peek(0));
-        let expr = match self.advance() {
-            Token { kind, .. } => {
-                match kind {
-                    TokenKind::Literal(literal) => self.parse_num(literal)?,
-                    TokenKind::ParenLeft => self.parse_expr_in_parentheses()?,
-                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name)?,
-                    kind @ _ => {
-                        dbg!(kind);
-                        todo!("This is either invalid or unimplemented")
-                    }
-                }
-            }
-        };
-
-        Ok(expr)
+        // dbg!(self.peek(0));
+        self.parse_sum()
     }
 
     pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
