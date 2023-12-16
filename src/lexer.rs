@@ -79,7 +79,7 @@ pub enum TokenKind {
     TrianglePipe,
     Dollar,
     Hash,
-    Indentation(u32),
+    Indentation(usize),
     
     Literal(Literal),
     Identifier(Identifier),

@@ -66,6 +66,7 @@ pub enum Expression {
     BinaryOp(BinaryOp),
     FunctionCall(FunctionCall),
     Variable(Variable),
+    Return(Box<Expression>),
     If,
 }
 
@@ -269,6 +270,10 @@ impl Parser {
                 (false, "arrow",    TokenKind::FatArrow)
             ]
         ) {
+            if let Some(_) = fn_decl_tokens.get("export") {
+                function_def.export = true;
+            }
+
             let name_token = fn_decl_tokens.get("func_name").unwrap().clone();
             match name_token.kind {
                 TokenKind::Identifier(Identifier::Custom(name)) => function_def.func_name = name,
@@ -297,11 +302,75 @@ impl Parser {
                 _ => return Err(format!("Unfinished fn return type"))
             }
 
-            if let Some(_) = fn_decl_tokens.get("export") {
-                function_def.export = true;
-            }
         } else {
             return Err("Missing tokens in '(export) fn funcname'".to_owned())
+        }
+
+        match self.peek(0) {
+            Token { kind: TokenKind::Newline, .. } => {
+                //consume nl
+                self.advance();
+
+                let indent_level = &mut function_def.function_body.indentation;
+
+                loop {
+                    match self.peek(0) {
+                        Token { kind: TokenKind::Indentation(indent), .. } => {
+                            if *indent_level == 0 { 
+                                *indent_level = indent;
+                            }
+
+                            // Possibly buggy
+                            if indent > *indent_level { 
+                                // ugly ass line of code
+                                if let TokenKind::Newline = self.peek(1).kind {}
+                                else {
+                                    return Err(format!("Function body is not consistently indented"));
+                                }
+                            }
+                            // if a line is not indented correctly but its empty then allow it
+                            else if indent < *indent_level {
+                                // ugly ass line of code
+                                if let TokenKind::Newline = self.peek(1).kind {}
+                                else {
+                                    break;
+                                }
+                            }
+                            else if indent == 0 { return Err(format!("Function body must be indented")) }
+                            //consume this indent
+                            self.advance();
+                        }
+                        Token { kind: TokenKind::EOF, .. } => break,
+                        _ => return Err(format!("Function body missing indentation"))
+                    }
+
+                    let expr = match self.peek(0).kind {
+                        // allow empty lines
+                        TokenKind::Newline => {
+                            self.advance();
+                            continue;
+                        },
+                        TokenKind::Identifier(Identifier::Let) | TokenKind::Identifier(Identifier::Mut) => self.parse_variable_decl()?,
+                        TokenKind::Identifier(Identifier::Return) => {
+                            // consume the return keyword
+                            self.advance();
+                            let expr = self.parse_expression()?;
+                            Expression::Return(Box::new(expr))
+                        }
+                        _ => self.parse_expression()?
+                    };
+                    function_def.function_body.expressions.push(expr);
+
+                    match self.peek(0) {
+                        Token { kind: TokenKind::Newline, .. } => { self.advance(); }
+                        _ => return Err(format!("Invalid expression in function body"))
+                    }
+                }
+            },
+            _ => {
+                let expr = self.parse_expression()?;
+                function_def.function_body.expressions.push(expr);
+            }
         }
 
         module.function_defs.push(function_def);
@@ -365,7 +434,7 @@ impl Parser {
         self.parse_fn_no_args(module, argument_list)
     }
 
-    pub fn parse_variable_decl(&mut self, module: &mut Module) -> Result<(), String> {
+    pub fn parse_variable_decl(&mut self) -> Result<Expression, String> {
         let mut is_mutable = true;
         if let Token { kind: TokenKind::Identifier(Identifier::Let), .. } = self.advance() {
             is_mutable = false;
@@ -433,9 +502,7 @@ impl Parser {
                 is_implicit,
             };
 
-            module.toplevel_scope.expressions.push(Expression::VariableDecl(variable));
-
-            Ok(())
+            Ok(Expression::VariableDecl(variable))
         } else {
             return Err(format!("Invalid variable declaration"));
         }
@@ -455,17 +522,16 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                if let Token { kind, .. }= self.peek(0) {
-                    match kind {
-                        TokenKind::ParenRight => {
-                            self.advance();
-                            break;
-                        }
-                        TokenKind::Comma => {
-                            self.advance();
-                        }
-                        _ => call.arguments.push(self.parse_expression()?)
+                let Token { kind, .. } = self.peek(0);
+                match kind {
+                    TokenKind::ParenRight => {
+                        self.advance();
+                        break;
                     }
+                    TokenKind::Comma => {
+                        self.advance();
+                    }
+                    _ => call.arguments.push(self.parse_expression()?)
                 }
             }
             
@@ -492,17 +558,16 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                if let Token { kind, .. } = self.peek(0) {
-                    match kind {
-                        TokenKind::ParenRight => {
-                            self.advance();
-                            break;
-                        }
-                        TokenKind::Comma => {
-                            self.advance();
-                        }
-                        _ => call.arguments.push(self.parse_expression()?)
+                let Token { kind, .. } = self.peek(0);
+                match kind {
+                    TokenKind::ParenRight => {
+                        self.advance();
+                        break;
                     }
+                    TokenKind::Comma => {
+                        self.advance();
+                    }
+                    _ => call.arguments.push(self.parse_expression()?)
                 }
             }
         } else {
@@ -519,20 +584,12 @@ impl Parser {
             _ => Ok(expr),
         }
     }
-
-    pub fn parse_operator(&mut self, op: BinaryOperation, lhs: Expression) -> Result<Expression, String> {
-
-        let rhs = self.parse_expression()?;
-
-        let expr = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
-
-        Ok(expr)
-    }
     
     pub fn parse_sum(&mut self) -> Result<Expression, String> {
         let mut lhs = self.parse_product()?;
 
-        while let Token { kind, ..  } = self.peek(0) {
+        loop {
+            let Token { kind, ..  } = self.peek(0);
             let op = match kind {
                 TokenKind::Plus => BinaryOperation::Add,
                 TokenKind::Minus => BinaryOperation::Subtract,
@@ -553,7 +610,8 @@ impl Parser {
     pub fn parse_product(&mut self) -> Result<Expression, String> {
         let mut lhs = self.parse_term()?;
 
-        while let Token { kind, ..  } = self.peek(0) {
+        loop {
+            let Token { kind, ..  } = self.peek(0);
             let op = match kind {
                 TokenKind::Star => BinaryOperation::Multiply,
                 TokenKind::Slash => BinaryOperation::Divide,
@@ -701,11 +759,13 @@ impl Parser {
                         Identifier::Export 
                         | Identifier::Fn => {
                             // unconsume export/fn keyword
-                            self.current -= 1;
                             self.parse_fn_no_args(&mut module, Vec::new())?
                         }
                         Identifier::Let 
-                        | Identifier::Mut => self.parse_variable_decl(&mut module)?, 
+                        | Identifier::Mut => {
+                            let expr = self.parse_variable_decl()?;
+                            module.toplevel_scope.expressions.push(expr);
+                        }
                         _ => { self.advance(); }
                     }
                 }
