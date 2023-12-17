@@ -1,5 +1,5 @@
 [package]
-name = "ndscript"
+name = "frogscript"
 version = "0.1.0"
 edition = "2021"
 

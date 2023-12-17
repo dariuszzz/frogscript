@@ -60,6 +60,19 @@ pub struct Variable  {
 }
 
 #[derive(Debug, Clone)]
+pub struct Assignment  {
+    pub lhs: String,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct If  {
+    pub check: Box<Expression>,
+    pub true_branch: CodeBlock,
+    pub else_branch: Option<CodeBlock>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -67,7 +80,8 @@ pub enum Expression {
     FunctionCall(FunctionCall),
     Variable(Variable),
     Return(Box<Expression>),
-    If,
+    Assignment(Assignment),
+    If(If),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -164,7 +178,6 @@ impl Parser {
         self.current >= self.tokens.len()
     }
 
-    // skips comments
     fn advance(&mut self) -> Token {
         match self.peek(0) {
             t => {
@@ -250,7 +263,6 @@ impl Parser {
     }
 
     fn parse_fn_no_args(&mut self, module: &mut Module, args: Vec<FunctionArgument>) -> Result<(), String> {
-        // unconsume possible export keyword
 
         let mut function_def = FunctionDef {
             export: false,
@@ -311,64 +323,11 @@ impl Parser {
                 //consume nl
                 self.advance();
 
-                let indent_level = &mut function_def.function_body.indentation;
-
-                loop {
-                    match self.peek(0) {
-                        Token { kind: TokenKind::Indentation(indent), .. } => {
-                            if *indent_level == 0 { 
-                                *indent_level = indent;
-                            }
-
-                            // Possibly buggy
-                            if indent > *indent_level { 
-                                // ugly ass line of code
-                                if let TokenKind::Newline = self.peek(1).kind {}
-                                else {
-                                    return Err(format!("Function body is not consistently indented"));
-                                }
-                            }
-                            // if a line is not indented correctly but its empty then allow it
-                            else if indent < *indent_level {
-                                // ugly ass line of code
-                                if let TokenKind::Newline = self.peek(1).kind {}
-                                else {
-                                    break;
-                                }
-                            }
-                            else if indent == 0 { return Err(format!("Function body must be indented")) }
-                            //consume this indent
-                            self.advance();
-                        }
-                        Token { kind: TokenKind::EOF, .. } => break,
-                        _ => return Err(format!("Function body missing indentation"))
-                    }
-
-                    let expr = match self.peek(0).kind {
-                        // allow empty lines
-                        TokenKind::Newline => {
-                            self.advance();
-                            continue;
-                        },
-                        TokenKind::Identifier(Identifier::Let) | TokenKind::Identifier(Identifier::Mut) => self.parse_variable_decl()?,
-                        TokenKind::Identifier(Identifier::Return) => {
-                            // consume the return keyword
-                            self.advance();
-                            let expr = self.parse_expression()?;
-                            Expression::Return(Box::new(expr))
-                        }
-                        _ => self.parse_expression()?
-                    };
-                    function_def.function_body.expressions.push(expr);
-
-                    match self.peek(0) {
-                        Token { kind: TokenKind::Newline, .. } => { self.advance(); }
-                        _ => return Err(format!("Invalid expression in function body"))
-                    }
-                }
+                let block = self.parse_codeblock(0)?;
+                function_def.function_body = block;
             },
             _ => {
-                let expr = self.parse_expression()?;
+                let expr = self.parse_expression(0)?;
                 function_def.function_body.expressions.push(expr);
             }
         }
@@ -434,7 +393,7 @@ impl Parser {
         self.parse_fn_no_args(module, argument_list)
     }
 
-    pub fn parse_variable_decl(&mut self) -> Result<Expression, String> {
+    pub fn parse_variable_decl(&mut self, indent: usize) -> Result<Expression, String> {
         let mut is_mutable = true;
         if let Token { kind: TokenKind::Identifier(Identifier::Let), .. } = self.advance() {
             is_mutable = false;
@@ -492,7 +451,7 @@ impl Parser {
                 }
             }
 
-            let value = self.parse_expression()?;
+            let value = self.parse_expression(indent)?;
 
             let variable = VariableDecl {
                 var_name,
@@ -508,7 +467,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_method_call(&mut self, called_on: Expression) -> Result<Expression, String> {
+    pub fn parse_method_call(&mut self, called_on: Expression, indent: usize) -> Result<Expression, String> {
         let name = if let Token { kind: TokenKind::Identifier(Identifier::Custom(func_name)), .. } = self.advance() {
             func_name
         } else {
@@ -531,7 +490,7 @@ impl Parser {
                     TokenKind::Comma => {
                         self.advance();
                     }
-                    _ => call.arguments.push(self.parse_expression()?)
+                    _ => call.arguments.push(self.parse_expression(indent)?)
                 }
             }
             
@@ -544,13 +503,13 @@ impl Parser {
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr)
+                self.parse_method_call(expr, indent)
             }
             _ => Ok(expr),
         }
     }
 
-    pub fn parse_standalone_function_call(&mut self, name: String) -> Result<Expression, String> {
+    pub fn parse_standalone_function_call(&mut self, name: String, indent: usize) -> Result<Expression, String> {
         let mut call = FunctionCall { 
             func_name: name, 
             arguments: Vec::new()
@@ -567,7 +526,7 @@ impl Parser {
                     TokenKind::Comma => {
                         self.advance();
                     }
-                    _ => call.arguments.push(self.parse_expression()?)
+                    _ => call.arguments.push(self.parse_expression(indent)?)
                 }
             }
         } else {
@@ -579,14 +538,14 @@ impl Parser {
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr)
+                self.parse_method_call(expr, indent)
             }
             _ => Ok(expr),
         }
     }
     
-    pub fn parse_sum(&mut self) -> Result<Expression, String> {
-        let mut lhs = self.parse_product()?;
+    pub fn parse_sum(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_product(indent)?;
 
         loop {
             let Token { kind, ..  } = self.peek(0);
@@ -599,7 +558,7 @@ impl Parser {
             // consume + or -
             self.advance();
             
-            let rhs = self.parse_product()?;
+            let rhs = self.parse_product(indent)?;
             
             lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
         }
@@ -607,8 +566,8 @@ impl Parser {
         Ok(lhs)
     }
 
-    pub fn parse_product(&mut self) -> Result<Expression, String> {
-        let mut lhs = self.parse_term()?;
+    pub fn parse_product(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_term(indent)?;
 
         loop {
             let Token { kind, ..  } = self.peek(0);
@@ -621,7 +580,7 @@ impl Parser {
             // consume * or / 
             self.advance();
             
-            let rhs = self.parse_term()?;
+            let rhs = self.parse_term(indent)?;
             
             lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
         }
@@ -629,15 +588,15 @@ impl Parser {
         Ok(lhs)
     }
 
-    pub fn parse_term(&mut self) -> Result<Expression, String> {
+    pub fn parse_term(&mut self, indent: usize) -> Result<Expression, String> {
         match self.advance() {
-            Token { kind, .. } => {
+            Token { start_char, start_line, kind, .. } => {
                 match kind {
-                    TokenKind::Literal(literal) => self.parse_num(literal),
-                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(),
-                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name),
-                    kind @ _ => {
-                        dbg!(kind);
+                    TokenKind::Literal(literal) => self.parse_num(literal, indent),
+                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent),
+                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent),
+                    kind => {
+                        dbg!(format!("[{:?}:{:?}] unexpected token {:?}", start_line, start_char, kind));
                         todo!("This is either invalid or unimplemented")
                     }
                 }
@@ -645,9 +604,9 @@ impl Parser {
         }
     }
 
-    pub fn parse_expr_in_parentheses(&mut self) -> Result<Expression, String> {
+    pub fn parse_expr_in_parentheses(&mut self, indent: usize) -> Result<Expression, String> {
 
-        let expr = self.parse_expression()?;
+        let expr = self.parse_expression(indent)?;
 
         if let Token { kind: TokenKind::ParenRight, .. } = self.advance() {
         } else {
@@ -657,46 +616,197 @@ impl Parser {
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr)
+                self.parse_method_call(expr, indent)
             }
             _ => Ok(expr),
         }
     }
 
-    pub fn parse_num(&mut self, literal: Literal) -> Result<Expression, String> {
+    pub fn parse_num(&mut self, literal: Literal, indent: usize) -> Result<Expression, String> {
         let expr = Expression::Literal(literal);
 
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr)
+                self.parse_method_call(expr, indent)
             }
             _ => Ok(expr),
         }
     }
 
-    pub fn parse_variable(&mut self, var_name: String) -> Result<Expression, String> {
+    pub fn parse_variable(&mut self, var_name: String, indent: usize) -> Result<Expression, String> {
         let expr = Expression::Variable(Variable { name: var_name });
 
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr)
+                self.parse_method_call(expr, indent)
             }
             _ => Ok(expr),
         }
     }
 
-    pub fn parse_custom_iden(&mut self, identifier: String) -> Result<Expression, String> {
+    pub fn parse_custom_iden(&mut self, identifier: String, indent: usize) -> Result<Expression, String> {
         match self.peek(0) {
-            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier),
-            _ => self.parse_variable(identifier),
+            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier, indent),
+            _ => self.parse_variable(identifier, indent),
         }
     }
 
-    pub fn parse_expression(&mut self) -> Result<Expression, String> {
-        // dbg!(self.peek(0));
-        self.parse_sum()
+    pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
+        match self.peek(0).kind {
+            TokenKind::Identifier(Identifier::If) => {
+                // consume if
+                self.advance();
+
+                let check = self.parse_expression(indent)?;
+
+                match self.advance().kind {
+                    TokenKind::FatArrow => {}
+                    kind => return Err(format!("missing '=>' after if expression, found {kind:?}"))
+                }
+
+                // consume nl
+                match self.advance().kind {
+                    TokenKind::Newline => {}
+                    kind => return Err(format!("missing newline after if expression, found: {kind:?}"))
+                }
+
+                let true_branch = self.parse_codeblock(indent)?;
+
+                // else
+                // something is off here, this shouldnt have to be duplicated
+                // look also at: "CONT: weird indent issue"
+                let else_branch = match (self.peek(0).kind, self.peek(1).kind) {
+                    (TokenKind::Identifier(Identifier::Else), _) => {
+
+                        //consume else
+                        self.advance();
+
+                        match self.advance().kind {
+                            TokenKind::FatArrow => {}
+                            kind => return Err(format!("missing '=>' after else, found {kind:?}"))
+                        }
+
+                        match self.advance().kind {
+                            TokenKind::Newline => {}
+                            kind => return Err(format!("missing newline after else, found: {kind:?}"))
+                        }
+
+                        let else_branch = self.parse_codeblock(indent)?;
+
+                        Some(else_branch)
+                    }
+                    (TokenKind::Indentation(indentation), TokenKind::Identifier(Identifier::Else)) if indentation == indent => {
+
+                        //consume indent and else
+                        self.advance();
+                        self.advance();
+
+                        match self.advance().kind {
+                            TokenKind::FatArrow => {}
+                            kind => return Err(format!("missing '=>' after else, found {kind:?}"))
+                        }
+
+                        match self.advance().kind {
+                            TokenKind::Newline => {}
+                            kind => return Err(format!("missing newline after else, found: {kind:?}"))
+                        }
+
+                        let else_branch = self.parse_codeblock(indent)?;
+
+                        Some(else_branch)
+                    }
+                    _ => None
+                };
+
+                Ok(Expression::If(If {
+                    check: Box::new(check),
+                    true_branch,
+                    else_branch
+                }))
+            }
+            _ => self.parse_sum(indent)
+        }
+    }
+
+    pub fn parse_codeblock(&mut self, original_indent: usize) -> Result<CodeBlock, String> {
+        let mut block = CodeBlock {
+            indentation: original_indent,
+            expressions: Vec::new()
+        };
+
+        loop {
+            match (self.peek(0).kind, self.peek(1).kind) {
+                (TokenKind::Indentation(_), TokenKind::Newline) => {
+                    // consume indent and nl
+                    self.advance();
+                    self.advance();
+                    continue;
+                }
+                (TokenKind::Indentation(indent), _) => {
+                    if indent < block.indentation {
+                        break;
+                    }
+                    if block.indentation == original_indent {
+                        block.indentation = indent
+                    }
+                    if indent > block.indentation {
+                        return Err(format!("Code block has inconsistent indentation"))
+                    }
+                }
+                (_, _) => break
+            }
+
+            // consume indent
+            self.advance();
+
+            let expr = match self.peek(0).kind {
+                TokenKind::Identifier(Identifier::Let)
+                | TokenKind::Identifier(Identifier::Mut) => {
+                    self.parse_variable_decl(block.indentation)?
+                }
+                TokenKind::Identifier(Identifier::Return) => {
+                    // consume return
+                    self.advance();
+                    let expr = self.parse_expression(block.indentation)?;
+                    Expression::Return(Box::new(expr))
+                }
+                TokenKind::Identifier(Identifier::Custom(iden)) => {
+                    match self.peek(1).kind {
+                        TokenKind::Equal => {
+                            // consume iden and =
+                            self.advance();
+                            self.advance();
+
+                            let rhs = self.parse_expression(block.indentation)?;
+
+                            Expression::Assignment(Assignment {
+                                lhs: iden,
+                                rhs: Box::new(rhs)
+                            })
+                        }
+                        _ => {
+                            self.parse_expression(block.indentation)?
+                        }
+                    }
+                }
+                _ => self.parse_expression(block.indentation)?
+            };
+
+            block.expressions.push(expr);
+
+            match self.peek(0).kind {
+                TokenKind::Newline | TokenKind::EOF => {
+                    self.advance();
+                }
+            // CONT: weird indent issue
+                TokenKind::Indentation(indent) => {}
+                _ => return Err(format!("Invalid expression in code block"))
+            }
+        }
+
+        Ok(block)
     }
 
     pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
@@ -763,8 +873,32 @@ impl Parser {
                         }
                         Identifier::Let 
                         | Identifier::Mut => {
-                            let expr = self.parse_variable_decl()?;
+                            let expr = self.parse_variable_decl(0)?;
                             module.toplevel_scope.expressions.push(expr);
+                        }
+                        Identifier::If => {
+                            let expr = self.parse_expression(0)?;
+                            module.toplevel_scope.expressions.push(expr);
+                        }
+                        Identifier::Custom(name) => {
+                            match self.peek(1).kind {
+                                TokenKind::Equal => {
+                                    self.advance(); // consume iden
+                                    self.advance(); // consume = 
+
+                                    let rhs = self.parse_expression(0)?;
+
+                                    module.toplevel_scope.expressions.push(Expression::Assignment(Assignment {
+                                        lhs: name,
+                                        rhs: Box::new(rhs),
+                                    }));
+                                }
+                                _ => {
+                                    let expr = self.parse_expression(0)?;
+
+                                    module.toplevel_scope.expressions.push(expr);
+                                }
+                            }
                         }
                         _ => { self.advance(); }
                     }

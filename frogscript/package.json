@@ -1,0 +1,25 @@
+{
+  "name": "frogscript",
+  "displayName": "frogscript",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "frogscript",
+      "aliases": ["Frogscript", "frogscript"],
+      "extensions": [".fr"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "frogscript",
+      "scopeName": "source.frog",
+      "path": "./syntaxes/frogscript.tmLanguage.json"
+    }]
+  }
+}
