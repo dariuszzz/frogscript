@@ -26,6 +26,7 @@ pub enum Identifier {
     Continue,
     Return,
     If,
+    Else,
     Match,
     Use,
     Export,
@@ -323,6 +324,7 @@ impl Lexer {
             ("continue", Identifier::Continue),
             ("return", Identifier::Return),
             ("if", Identifier::If),
+            ("else", Identifier::Else),
             ("match", Identifier::Match),
             ("use", Identifier::Use),
             ("export", Identifier::Export),
@@ -343,8 +345,10 @@ impl Lexer {
 
         if lexeme == "true" {
             self.add_token(TokenKind::Literal(Literal::Boolean(true)));
+            return
         } else if lexeme == "false" {
             self.add_token(TokenKind::Literal(Literal::Boolean(false)));
+            return
         }
         
         if let Some(kind) = keywords.get(lexeme.as_str()) {
