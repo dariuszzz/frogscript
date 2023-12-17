@@ -69,6 +69,9 @@ pub enum TokenKind {
     NotEqual,
     NoneType,
     Dot,
+    DoubleDot,
+    DoubleDotEqual,
+    TripleDot,
     Ampersand,
     Pipe,
     Caret,
@@ -479,7 +482,21 @@ impl Lexer {
                         }
                     }
                 },
-                '.' => self.add_token(TokenKind::Dot),
+                '.' => {
+                    if self.match_char('.') {
+                        if self.match_char('.') {
+                            self.add_token(TokenKind::TripleDot);
+                        } else {
+                            if self.match_char('=') {
+                                self.add_token(TokenKind::DoubleDotEqual);
+                            } else {
+                                self.add_token(TokenKind::DoubleDot);
+                            }
+                        }
+                    } else {
+                        self.add_token(TokenKind::Dot)
+                    }
+                },
                 '&' => self.add_token(TokenKind::Ampersand),
                 '^' => self.add_token(TokenKind::Caret),
                 '~' => self.add_token(TokenKind::Tilde),
