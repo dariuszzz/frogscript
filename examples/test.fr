@@ -8,6 +8,12 @@ export fn fankszyn: int =>
 
     mut dupa = 23
 
+    if 2 => 
+        if true => 
+            eloelo.dreizweizero()
+    else =>
+        hello()
+
     return 0
 
 mut siema = 0

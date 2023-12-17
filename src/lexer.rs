@@ -471,7 +471,14 @@ impl Lexer {
                         self.add_token(TokenKind::Pipe)
                     }
                 }
-                '\n' => self.add_token(TokenKind::Newline),
+                '\n' => {
+                    self.add_token(TokenKind::Newline);
+                    if let Some(c) = self.peek() {
+                        if !c.is_ascii_whitespace() {
+                            self.add_token(TokenKind::Indentation(0));
+                        }
+                    }
+                },
                 '.' => self.add_token(TokenKind::Dot),
                 '&' => self.add_token(TokenKind::Ampersand),
                 '^' => self.add_token(TokenKind::Caret),

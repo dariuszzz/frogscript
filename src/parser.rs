@@ -245,6 +245,7 @@ impl Parser {
         let starting_pos = self.current;
 
         for (opt, key, token_kind) in pattern {  
+            dbg!(self.peek(0).kind, token_kind);
             match (self.peek(0), token_kind) {
                 (Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }, TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
                 (Token { kind, .. }, _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
@@ -274,6 +275,7 @@ impl Parser {
 
         if let Some(fn_decl_tokens) = self.safe_collect_pattern(
             &[
+                (true,  "ident_1",  TokenKind::Indentation(0)),
                 (true,  "export",   TokenKind::Identifier(Identifier::Export)),
                 (false, "fn_key",   TokenKind::Identifier(Identifier::Fn)),
                 (false, "func_name",TokenKind::Identifier(Identifier::_MatchAnyCustom)),
@@ -342,6 +344,7 @@ impl Parser {
 
         while let Some(arg_tokens) = self.safe_collect_pattern(
             &[
+                (true, "indent_1",         TokenKind::Indentation(0)),
                 (false, "double_colon",     TokenKind::DoubleColon),
                 (true,  "implicit",         TokenKind::Identifier(Identifier::Implicit)),
                 (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
@@ -395,12 +398,14 @@ impl Parser {
 
     pub fn parse_variable_decl(&mut self, indent: usize) -> Result<Expression, String> {
         let mut is_mutable = true;
+
         if let Token { kind: TokenKind::Identifier(Identifier::Let), .. } = self.advance() {
             is_mutable = false;
         }
 
         if let Some(variable_decl_tokens) = self.safe_collect_pattern(
             &[
+                (true, "indent_1",  TokenKind::Indentation(0)),
                 (true, "implicit",  TokenKind::Identifier(Identifier::Implicit)),
                 (false, "var_name", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
                 (true,  "colon",    TokenKind::Colon),
@@ -675,28 +680,7 @@ impl Parser {
                 let true_branch = self.parse_codeblock(indent)?;
 
                 // else
-                // something is off here, this shouldnt have to be duplicated
-                // look also at: "CONT: weird indent issue"
                 let else_branch = match (self.peek(0).kind, self.peek(1).kind) {
-                    (TokenKind::Identifier(Identifier::Else), _) => {
-
-                        //consume else
-                        self.advance();
-
-                        match self.advance().kind {
-                            TokenKind::FatArrow => {}
-                            kind => return Err(format!("missing '=>' after else, found {kind:?}"))
-                        }
-
-                        match self.advance().kind {
-                            TokenKind::Newline => {}
-                            kind => return Err(format!("missing newline after else, found: {kind:?}"))
-                        }
-
-                        let else_branch = self.parse_codeblock(indent)?;
-
-                        Some(else_branch)
-                    }
                     (TokenKind::Indentation(indentation), TokenKind::Identifier(Identifier::Else)) if indentation == indent => {
 
                         //consume indent and else
@@ -800,7 +784,7 @@ impl Parser {
                 TokenKind::Newline | TokenKind::EOF => {
                     self.advance();
                 }
-            // CONT: weird indent issue
+                // I dont understand why this case is needed
                 TokenKind::Indentation(indent) => {}
                 _ => return Err(format!("Invalid expression in code block"))
             }
