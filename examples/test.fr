@@ -8,18 +8,8 @@ export fn fankszyn: int =>
 
     mut dupa = 23
 
-    if 2 => 
-        if true => 
-            eloelo.dreizweizero()
-    else =>
-        hello()
+    if true => return dupa + funcname()
+    else return 0
 
-    return 0
+mut siema = fankszyn()
 
-mut siema = 0
-
-if 2 => 
-    if true => 
-        eloelo.dreizweizero()
-else =>
-    hello()

@@ -67,7 +67,7 @@ pub struct Assignment  {
 
 #[derive(Debug, Clone)]
 pub struct If  {
-    pub check: Box<Expression>,
+    pub cond: Box<Expression>,
     pub true_branch: CodeBlock,
     pub else_branch: Option<CodeBlock>,
 }
@@ -245,7 +245,6 @@ impl Parser {
         let starting_pos = self.current;
 
         for (opt, key, token_kind) in pattern {  
-            dbg!(self.peek(0).kind, token_kind);
             match (self.peek(0), token_kind) {
                 (Token { kind: TokenKind::Identifier(Identifier::Custom(_)), .. }, TokenKind::Identifier(Identifier::_MatchAnyCustom)) => { tokens.insert(key.to_string(), self.advance()); }
                 (Token { kind, .. }, _) if kind == *token_kind => { tokens.insert(key.to_string(), self.advance()); } 
@@ -672,12 +671,25 @@ impl Parser {
                 }
 
                 // consume nl
-                match self.advance().kind {
-                    TokenKind::Newline => {}
-                    kind => return Err(format!("missing newline after if expression, found: {kind:?}"))
-                }
+                let true_branch = match self.peek(0).kind {
+                    TokenKind::Newline => {
+                        self.advance();
+                        self.parse_codeblock(indent)?
+                    }
+                    TokenKind::Identifier(Identifier::If) => return Err(format!("Nested if blocks have to be on a new line and indented")),
+                    _ => {
+                        let expr = self.parse_codeblock_expression(indent)?;
 
-                let true_branch = self.parse_codeblock(indent)?;
+                        if TokenKind::Newline == self.peek(0).kind {
+                            self.advance();
+                        }
+
+                        CodeBlock {
+                            indentation: indent,
+                            expressions: vec![expr]
+                        }
+                    }
+                };
 
                 // else
                 let else_branch = match (self.peek(0).kind, self.peek(1).kind) {
@@ -687,17 +699,25 @@ impl Parser {
                         self.advance();
                         self.advance();
 
-                        match self.advance().kind {
-                            TokenKind::FatArrow => {}
-                            kind => return Err(format!("missing '=>' after else, found {kind:?}"))
-                        }
+                        // consume nl
+                        let else_branch = match self.peek(0).kind {
+                            TokenKind::Newline => {
+                                self.advance();
+                                self.parse_codeblock(indent)?
+                            },
+                            _ => {
+                                let expr = self.parse_codeblock_expression(indent)?;
 
-                        match self.advance().kind {
-                            TokenKind::Newline => {}
-                            kind => return Err(format!("missing newline after else, found: {kind:?}"))
-                        }
+                                if TokenKind::Newline == self.peek(0).kind {
+                                    self.advance();
+                                }
 
-                        let else_branch = self.parse_codeblock(indent)?;
+                                CodeBlock {
+                                    indentation: indent,
+                                    expressions: vec![expr]
+                                }
+                            }
+                        };
 
                         Some(else_branch)
                     }
@@ -705,7 +725,7 @@ impl Parser {
                 };
 
                 Ok(Expression::If(If {
-                    check: Box::new(check),
+                    cond: Box::new(check),
                     true_branch,
                     else_branch
                 }))
@@ -745,38 +765,7 @@ impl Parser {
             // consume indent
             self.advance();
 
-            let expr = match self.peek(0).kind {
-                TokenKind::Identifier(Identifier::Let)
-                | TokenKind::Identifier(Identifier::Mut) => {
-                    self.parse_variable_decl(block.indentation)?
-                }
-                TokenKind::Identifier(Identifier::Return) => {
-                    // consume return
-                    self.advance();
-                    let expr = self.parse_expression(block.indentation)?;
-                    Expression::Return(Box::new(expr))
-                }
-                TokenKind::Identifier(Identifier::Custom(iden)) => {
-                    match self.peek(1).kind {
-                        TokenKind::Equal => {
-                            // consume iden and =
-                            self.advance();
-                            self.advance();
-
-                            let rhs = self.parse_expression(block.indentation)?;
-
-                            Expression::Assignment(Assignment {
-                                lhs: iden,
-                                rhs: Box::new(rhs)
-                            })
-                        }
-                        _ => {
-                            self.parse_expression(block.indentation)?
-                        }
-                    }
-                }
-                _ => self.parse_expression(block.indentation)?
-            };
+            let expr = self.parse_codeblock_expression(block.indentation)?;
 
             block.expressions.push(expr);
 
@@ -791,6 +780,39 @@ impl Parser {
         }
 
         Ok(block)
+    }
+
+    pub fn parse_codeblock_expression(&mut self, indent: usize) -> Result<Expression, String> {
+        match self.peek(0).kind {
+            TokenKind::Identifier(Identifier::Let)
+            | TokenKind::Identifier(Identifier::Mut) => self.parse_variable_decl(indent),
+            TokenKind::Identifier(Identifier::Return) => {
+                // consume return
+                self.advance();
+                let expr = self.parse_expression(indent)?;
+                Ok(Expression::Return(Box::new(expr)))
+            }
+            TokenKind::Identifier(Identifier::Custom(iden)) => {
+                match self.peek(1).kind {
+                    TokenKind::Equal => {
+                        // consume iden and =
+                        self.advance();
+                        self.advance();
+
+                        let rhs = self.parse_expression(indent)?;
+
+                        Ok(Expression::Assignment(Assignment {
+                            lhs: iden,
+                            rhs: Box::new(rhs)
+                        }))
+                    }
+                    _ => {
+                        self.parse_expression(indent)
+                    }
+                }
+            }
+            _ => self.parse_expression(indent)
+        }
     }
 
     pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
