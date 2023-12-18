@@ -11,6 +11,12 @@ pub enum BinaryOperation {
     Power,
     And,
     Or,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Equal,
+    NotEqual,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +79,19 @@ pub struct If  {
 }
 
 #[derive(Debug, Clone)]
+pub struct For  {
+    pub binding: String,
+    pub iterator: Box<Expression>,
+    pub body: CodeBlock,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructLiteral  {
+    pub name: String,
+    pub fields: HashMap<String, Expression>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -81,7 +100,12 @@ pub enum Expression {
     Variable(Variable),
     Return(Box<Expression>),
     Assignment(Assignment),
+    StructLiteral(StructLiteral),
     If(If),
+    For(For),
+    Placeholder,
+    Break,
+    Continue
 }
 
 #[derive(Debug, Clone, Default)]
@@ -122,7 +146,8 @@ pub struct EnumDef {
 pub struct StructField {
     pub field_name: String,
     pub field_type: Type,
-    pub is_final: bool
+    pub is_final: bool,
+    pub default_value: Box<Expression>
 }
 
 #[derive(Debug, Clone)]
@@ -547,7 +572,82 @@ impl Parser {
             _ => Ok(expr),
         }
     }
-    
+
+    pub fn parse_equality(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_ord(indent)?;
+
+        loop {
+            let Token { kind, ..  } = self.peek(0);
+            let op = match kind {
+                TokenKind::NotEqual => BinaryOperation::NotEqual,
+                TokenKind::EqualEqual => BinaryOperation::Equal,
+                _ => break,
+            };
+
+            // consume != or ==
+            self.advance();
+            
+            let rhs = self.parse_ord(indent)?;
+            
+            lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
+        }
+
+        Ok(lhs)
+    }
+
+    pub fn parse_ord(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_range(indent)?;
+
+        loop {
+            let Token { kind, ..  } = self.peek(0);
+            let op = match kind {
+                TokenKind::AngleLeft => BinaryOperation::Less,
+                TokenKind::AngleRight => BinaryOperation::Greater,
+                TokenKind::LessEqual => BinaryOperation::LessEqual,
+                TokenKind::GreaterEqual => BinaryOperation::GreaterEqual,
+                _ => break,
+            };
+
+            // consume > or < or >= or <=
+            self.advance();
+            
+            let rhs = self.parse_range(indent)?;
+            
+            lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
+        }
+
+        Ok(lhs)
+    }
+
+    pub fn parse_range(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_sum(indent)?;
+
+        loop {
+            let Token { kind, ..  } = self.peek(0);
+            let inclusive = match kind {
+                TokenKind::DoubleDot => false,
+                TokenKind::DoubleDotEqual => true,
+                _ => break,
+            };
+
+            // consume .. or ..=
+            self.advance();
+            
+            let rhs = self.parse_sum(indent)?;
+            
+            lhs = Expression::StructLiteral(StructLiteral { 
+                name: "Range".to_owned(), 
+                fields: HashMap::from([
+                    ("start".to_owned(), lhs),
+                    ("end".to_owned(), rhs),
+                    ("inclusive".to_owned(), Expression::Literal(Literal::Boolean(inclusive)))
+                ]) 
+            });
+        }
+
+        Ok(lhs)
+    }
+
     pub fn parse_sum(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lhs = self.parse_product(indent)?;
 
@@ -657,26 +757,101 @@ impl Parser {
         }
     }
 
-    pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
-        match self.peek(0).kind {
-            TokenKind::Identifier(Identifier::If) => {
-                // consume if
+    pub fn parse_for(&mut self, indent: usize) -> Result<Expression, String> {
+
+        if let Some(tokens) = self.safe_collect_pattern(&[
+            (false, "for", TokenKind::Identifier(Identifier::For)),
+            (false, "binding", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
+            (false, "in", TokenKind::Identifier(Identifier::In))
+        ]) {
+            let binding = if let TokenKind::Identifier(Identifier::Custom(binding_name)) = tokens.get("binding").unwrap().clone().kind {
+                binding_name
+            } else {
+                unreachable!()
+            };
+
+            let iterator = self.parse_range(indent)?;
+
+            match self.advance().kind {
+                TokenKind::FatArrow => {}
+                kind => return Err(format!("missing '=>' after if expression, found {kind:?}"))
+            }
+
+            let body = match self.peek(0).kind {
+                TokenKind::Newline => {
+                    self.advance();
+                    self.parse_codeblock(indent)?
+                }
+                _ => {
+                    let expr = self.parse_codeblock_expression(indent)?;
+
+                    if TokenKind::Newline == self.peek(0).kind {
+                        self.advance();
+                    }
+
+                    CodeBlock {
+                        indentation: indent,
+                        expressions: vec![expr]
+                    }
+                }
+            };
+
+            Ok(Expression::For(For {
+                binding,
+                iterator: Box::new(iterator),
+                body
+            }))
+        } else {
+            return Err(format!("Invalid for loop construction"))
+        }
+    }
+
+    pub fn parse_if(&mut self, indent: usize) -> Result<Expression, String> {
+        // consume if
+        self.advance();
+
+        let check = self.parse_expression(indent)?;
+
+        match self.advance().kind {
+            TokenKind::FatArrow => {}
+            kind => return Err(format!("missing '=>' after if expression, found {kind:?}"))
+        }
+
+        // consume nl
+        let true_branch = match self.peek(0).kind {
+            TokenKind::Newline => {
                 self.advance();
+                self.parse_codeblock(indent)?
+            }
+            TokenKind::Identifier(Identifier::If) => return Err(format!("Nested if blocks have to be on a new line and indented")),
+            _ => {
+                let expr = self.parse_codeblock_expression(indent)?;
 
-                let check = self.parse_expression(indent)?;
-
-                match self.advance().kind {
-                    TokenKind::FatArrow => {}
-                    kind => return Err(format!("missing '=>' after if expression, found {kind:?}"))
+                if TokenKind::Newline == self.peek(0).kind {
+                    self.advance();
                 }
 
+                CodeBlock {
+                    indentation: indent,
+                    expressions: vec![expr]
+                }
+            }
+        };
+
+        // else
+        let else_branch = match (self.peek(0).kind, self.peek(1).kind) {
+            (TokenKind::Indentation(indentation), TokenKind::Identifier(Identifier::Else)) if indentation == indent => {
+
+                //consume indent and else
+                self.advance();
+                self.advance();
+
                 // consume nl
-                let true_branch = match self.peek(0).kind {
+                let else_branch = match self.peek(0).kind {
                     TokenKind::Newline => {
                         self.advance();
                         self.parse_codeblock(indent)?
-                    }
-                    TokenKind::Identifier(Identifier::If) => return Err(format!("Nested if blocks have to be on a new line and indented")),
+                    },
                     _ => {
                         let expr = self.parse_codeblock_expression(indent)?;
 
@@ -691,46 +866,39 @@ impl Parser {
                     }
                 };
 
-                // else
-                let else_branch = match (self.peek(0).kind, self.peek(1).kind) {
-                    (TokenKind::Indentation(indentation), TokenKind::Identifier(Identifier::Else)) if indentation == indent => {
-
-                        //consume indent and else
-                        self.advance();
-                        self.advance();
-
-                        // consume nl
-                        let else_branch = match self.peek(0).kind {
-                            TokenKind::Newline => {
-                                self.advance();
-                                self.parse_codeblock(indent)?
-                            },
-                            _ => {
-                                let expr = self.parse_codeblock_expression(indent)?;
-
-                                if TokenKind::Newline == self.peek(0).kind {
-                                    self.advance();
-                                }
-
-                                CodeBlock {
-                                    indentation: indent,
-                                    expressions: vec![expr]
-                                }
-                            }
-                        };
-
-                        Some(else_branch)
-                    }
-                    _ => None
-                };
-
-                Ok(Expression::If(If {
-                    cond: Box::new(check),
-                    true_branch,
-                    else_branch
-                }))
+                Some(else_branch)
             }
-            _ => self.parse_sum(indent)
+            _ => None
+        };
+
+        Ok(Expression::If(If {
+            cond: Box::new(check),
+            true_branch,
+            else_branch
+        }))
+    }
+
+    pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
+        match self.peek(0).kind {
+            TokenKind::Identifier(Identifier::If) => {
+                self.parse_if(indent)
+            }
+            TokenKind::Identifier(Identifier::For) => {
+                self.parse_for(indent)
+            }
+            TokenKind::TripleDot => {
+                self.advance();
+                Ok(Expression::Placeholder)
+            }
+            TokenKind::Identifier(Identifier::Break) => {
+                self.advance();
+                Ok(Expression::Break)
+            }
+            TokenKind::Identifier(Identifier::Continue) => {
+                self.advance();
+                Ok(Expression::Continue)
+            }
+            _ => self.parse_equality(indent)
         }
     }
 
@@ -775,7 +943,7 @@ impl Parser {
                 }
                 // I dont understand why this case is needed
                 TokenKind::Indentation(indent) => {}
-                _ => return Err(format!("Invalid expression in code block"))
+                kind => return Err(format!("Invalid expression in code block: {kind:?}"))
             }
         }
 
@@ -885,7 +1053,8 @@ impl Parser {
                             let expr = self.parse_variable_decl(0)?;
                             module.toplevel_scope.expressions.push(expr);
                         }
-                        Identifier::If => {
+                        Identifier::If
+                        | Identifier::For => {
                             let expr = self.parse_expression(0)?;
                             module.toplevel_scope.expressions.push(expr);
                         }
