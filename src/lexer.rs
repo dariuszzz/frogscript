@@ -462,6 +462,7 @@ impl Lexer {
                     if self.match_char('/') {
                         if self.consume_until('\n') {
                             self.add_token(TokenKind::Comment);
+                            self.add_token(TokenKind::Newline);
                         }
                     } else if self.match_char('*') {
                         self.parse_multiline_comment()?;

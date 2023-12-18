@@ -1,17 +1,17 @@
-// :: implicit x: int
-// :: y: &string
-fn funcname => 2
+:: implicit x: int
+:: y: &string
+fn funcname => return 2
 
-// :: implicit x: &float
-// :: w: uint
+:: implicit x: &float
+:: w: uint
 export fn fankszyn: int => 
 
     mut dupa = 23
 
     let siema = funcname()
 
-    if true => dupa + funcname()
-    else 0
+    // if true => dupa + funcname()
+    // else 0
        
     for x in 0..dupa => print(siema)
 

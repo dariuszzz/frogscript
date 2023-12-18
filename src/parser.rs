@@ -1,181 +1,7 @@
 use std::{collections::HashMap, sync::WaitTimeoutResult};
 
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
-
-#[derive(Debug, Clone)]
-pub enum BinaryOperation {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Power,
-    And,
-    Or,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    Equal,
-    NotEqual,
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeKind {
-    Infer, 
-    Void,
-    Int,
-    Uint,
-    Float,
-    String,
-    Boolean,
-    Custom(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct Type {
-    pub type_kind: TypeKind,
-    pub is_reference: bool,
-}
-
-
-#[derive(Debug, Clone)]
-pub struct VariableDecl  {
-    pub var_name: String,
-    pub var_type: Type,
-    pub var_value: Box<Expression>,
-    pub is_mutable: bool,
-    pub is_implicit: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionCall  {
-    pub func_name: String,
-    pub arguments: Vec<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BinaryOp  {
-    pub op: BinaryOperation,
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Variable  {
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Assignment  {
-    pub lhs: String,
-    pub rhs: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct If  {
-    pub cond: Box<Expression>,
-    pub true_branch: CodeBlock,
-    pub else_branch: Option<CodeBlock>,
-}
-
-#[derive(Debug, Clone)]
-pub struct For  {
-    pub binding: String,
-    pub iterator: Box<Expression>,
-    pub body: CodeBlock,
-}
-
-#[derive(Debug, Clone)]
-pub struct StructLiteral  {
-    pub name: String,
-    pub fields: HashMap<String, Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum Expression {
-    VariableDecl(VariableDecl),
-    Literal(Literal),
-    BinaryOp(BinaryOp),
-    FunctionCall(FunctionCall),
-    Variable(Variable),
-    Return(Box<Expression>),
-    Assignment(Assignment),
-    StructLiteral(StructLiteral),
-    If(If),
-    For(For),
-    Placeholder,
-    Break,
-    Continue
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CodeBlock  {
-    pub indentation: usize,
-    pub expressions: Vec<Expression>
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionArgument {
-    pub arg_name: String,
-    pub arg_type: Type,
-    pub is_implicit: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionDef {
-    pub export: bool,
-    pub func_name: String,
-    pub argument_list: Vec<FunctionArgument>,
-    pub return_type: Type,
-    pub function_body: CodeBlock
-}
-
-#[derive(Debug, Clone)]
-pub struct VariantDef {
-    pub variant_name: String,
-    pub fields: Vec<StructField>
-}
-
-#[derive(Debug, Clone)]
-pub struct EnumDef {
-    pub enum_name: String,
-    pub variants: Vec<VariantDef>
-}
-
-#[derive(Debug, Clone)]
-pub struct StructField {
-    pub field_name: String,
-    pub field_type: Type,
-    pub is_final: bool,
-    pub default_value: Box<Expression>
-}
-
-#[derive(Debug, Clone)]
-pub struct StructDef {
-    pub struct_name: String,
-    pub fields: Vec<StructField>,
-    pub methods: Vec<FunctionDef> 
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeDef {
-    pub export: bool,
-    pub type_kind: TypeDefKind
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeDefKind {
-    EnumDef(EnumDef),
-    StructDef(StructDef)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Module {
-    pub module_name: String,
-    pub type_defs: Vec<TypeDef>,
-    pub function_defs: Vec<FunctionDef>,
-    pub toplevel_scope: CodeBlock
-}
+use crate::ast::*;
 
 #[derive(Debug, Clone, Default)]
 pub struct Program {
@@ -353,7 +179,7 @@ impl Parser {
                 function_def.function_body = block;
             },
             _ => {
-                let expr = self.parse_expression(0)?;
+                let expr = self.parse_codeblock_expression(0)?;
                 function_def.function_body.expressions.push(expr);
             }
         }
@@ -983,7 +809,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_file(&mut self, file_name: String) -> Result<Module, String> {
+    pub fn parse_module(&mut self, file_name: String) -> Result<Module, String> {
         let mut module = Module {
             module_name: file_name,
             type_defs: Vec::new(),

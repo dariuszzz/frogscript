@@ -4,9 +4,13 @@ use gumdrop::Options;
 
 mod lexer;
 mod parser;
+mod transpiler;
+mod ast;
 
 use lexer::*;
 use parser::*;
+use transpiler::*;
+use ast::*;
 
 #[derive(Debug, Options)]
 struct MyOptions {
@@ -82,7 +86,7 @@ fn main() -> Result<(), String> {
 
             let mut parser = Parser::new(tokens);
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
-            let module = parser.parse_file(filename)?;
+            let module = parser.parse_module(filename)?;
 
             println!("{module:#?}");
         }
@@ -92,13 +96,22 @@ fn main() -> Result<(), String> {
             let mut lexer = Lexer::new(file_contents);
             let tokens = lexer.parse()?;
             
+            let tokens = tokens
+                .into_iter()
+                .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
+                .collect::<Vec<_>>();
+
             let mut parser = Parser::new(tokens);
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
-            let ast = parser.parse_file(filename)?;
+            let module = parser.parse_module(filename.clone())?;
 
-            // let mut transpiler = Transpiler::new(ast);
-            // let js_ast = transpiler.transpile()?;
-            // let js_source = js_ast.to_string();
+            let mut transpiler = Transpiler::new();
+            let path_parent = path.canonicalize().unwrap();
+            let path_parent = path_parent.parent().unwrap();
+            let out_filename = format!("{filename}_out.js");
+            let out_filename = Path::new(&out_filename);
+            let out_path = path_parent.join(&out_filename);
+            let js_ast = transpiler.transpile_module(module, &out_path)?;
         }
     }
 
