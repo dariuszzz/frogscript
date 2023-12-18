@@ -1,9 +1,12 @@
-Parser:
+
+Frogscript:
     ☐ Type parsing
     ☐ Splitting expression to multiple lines with \n
-    ☐ Indexing operator (var[index])
-    ☐ Array literals
+    ☐ Indexing operator (var[index]) @high
+    ☐ Array literals @high
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling
-
-Transpiler:
-    ☐ Transpile ranges into generator functions
+    ☐ Better error messages, show error location (line:col) 
+    ☐ Transpile ranges into generator functions @critical
+    ☐ Parse/lex negative ints and floats @critical
+    ☐ Rework chaining . and [ on most methods since they all end with the same match
+        related (i think?) cleanup match allowing for . and [ in array literal
