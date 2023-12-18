@@ -1,2 +1,9 @@
-Frogscript:
+Parser:
     ☐ Type parsing
+    ☐ Splitting expression to multiple lines with \n
+    ☐ Indexing operator (var[index])
+    ☐ Array literals
+    ☐ Associate variables/functions with ids so its possible to change their names when transpiling
+
+Transpiler:
+    ☐ Transpile ranges into generator functions
