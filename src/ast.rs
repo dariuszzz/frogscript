@@ -216,6 +216,7 @@ pub enum Expression {
     Return(Box<Expression>),
     Assignment(Assignment),
     StructLiteral(StructLiteral),
+    JS(String),
     If(If),
     For(For),
     Placeholder,
@@ -254,14 +255,16 @@ impl ToJS for Expression {
                     Literal::Int(val) => format!("{val}"),
                     Literal::Float(val) => format!("{val}"),
                     Literal::Uint(val) => format!("{val}"),
-                    Literal::String(val) => format!("{val}"),
+                    Literal::String(val) => format!("{val:?}"),
                 }
             },
-            kind => {
-                dbg!(kind);
-                unimplemented!("transpilation unimplemented")
+            Self::JS(code) => {
+                format!("{code}")
             }
-
+            // kind => {
+            //     dbg!(kind);
+            //     unimplemented!("transpilation unimplemented")
+            // }
         }
     }
 }
