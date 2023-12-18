@@ -184,6 +184,42 @@ impl ToJS for For {
 }
 
 #[derive(Debug, Clone)]
+pub struct ArrayAccess  {
+    pub expr: Box<Expression>,
+    pub index: Box<Expression>,
+}
+
+impl ToJS for ArrayAccess {
+    fn to_js(&self) -> String {
+        let ArrayAccess { expr, index } = self;
+
+        let expr = expr.to_js();
+        let index = index.to_js();
+
+        format!("{expr}[{index}]")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayLiteral  {
+    pub elements: Vec<Expression>,
+}
+
+impl ToJS for ArrayLiteral {
+    fn to_js(&self) -> String {
+        let elements = self.elements
+            .iter()
+            .map(|elem| {
+                elem.to_js()
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("[ {elements} ]")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct StructLiteral  {
     pub name: String,
     pub fields: HashMap<String, Expression>,
@@ -216,6 +252,8 @@ pub enum Expression {
     Return(Box<Expression>),
     Assignment(Assignment),
     StructLiteral(StructLiteral),
+    ArrayLiteral(ArrayLiteral),
+    ArrayAccess(ArrayAccess),
     JS(String),
     If(If),
     For(For),
@@ -234,6 +272,8 @@ impl ToJS for Expression {
             Self::Variable(var) => var.to_js(),
             Self::Assignment(assignment) => assignment.to_js(),
             Self::StructLiteral(struct_literal) => struct_literal.to_js(),
+            Self::ArrayLiteral(array_literal) => array_literal.to_js(),
+            Self::ArrayAccess(array_access) => array_access.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
             Self::Return(expr) => {
                 let expr = expr.to_js();

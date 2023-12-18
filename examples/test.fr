@@ -17,3 +17,9 @@ fn afryka =>
 
 afryka(5).print()
 afryka(10).print()
+
+let arr = [ 1, 2, 3, 4 ]
+
+arr[1].print()
+
+for x in arr => print(x)

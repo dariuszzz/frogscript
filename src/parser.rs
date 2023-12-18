@@ -360,6 +360,10 @@ impl Parser {
                 self.advance();
                 self.parse_method_call(expr, indent)
             }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
+            }
             _ => Ok(expr),
         }
     }
@@ -395,6 +399,10 @@ impl Parser {
                 self.advance();
                 self.parse_method_call(expr, indent)
             }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
+            }
             _ => Ok(expr),
         }
     }
@@ -424,23 +432,21 @@ impl Parser {
     pub fn parse_ord(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lhs = self.parse_range(indent)?;
 
-        loop {
-            let Token { kind, ..  } = self.peek(0);
-            let op = match kind {
-                TokenKind::AngleLeft => BinaryOperation::Less,
-                TokenKind::AngleRight => BinaryOperation::Greater,
-                TokenKind::LessEqual => BinaryOperation::LessEqual,
-                TokenKind::GreaterEqual => BinaryOperation::GreaterEqual,
-                _ => break,
-            };
+        let Token { kind, ..  } = self.peek(0);
+        let op = match kind {
+            TokenKind::AngleLeft => BinaryOperation::Less,
+            TokenKind::AngleRight => BinaryOperation::Greater,
+            TokenKind::LessEqual => BinaryOperation::LessEqual,
+            TokenKind::GreaterEqual => BinaryOperation::GreaterEqual,
+            _ => return Ok(lhs),
+        };
 
-            // consume > or < or >= or <=
-            self.advance();
-            
-            let rhs = self.parse_range(indent)?;
-            
-            lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
-        }
+        // consume > or < or >= or <=
+        self.advance();
+        
+        let rhs = self.parse_range(indent)?;
+        
+        lhs = Expression::BinaryOp(BinaryOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) });
 
         Ok(lhs)
     }
@@ -466,6 +472,7 @@ impl Parser {
                 fields: HashMap::from([
                     ("start".to_owned(), lhs),
                     ("end".to_owned(), rhs),
+                    ("step".to_owned(), Expression::Literal(Literal::Int(1))),
                     ("inclusive".to_owned(), Expression::Literal(Literal::Boolean(inclusive)))
                 ]) 
             });
@@ -525,6 +532,7 @@ impl Parser {
                     TokenKind::Literal(literal) => self.parse_num(literal, indent),
                     TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent),
                     TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent),
+                    TokenKind::SquareLeft => self.parse_array_literal(indent),
                     kind => {
                         dbg!(format!("[{:?}:{:?}] unexpected token {:?}", start_line, start_char, kind));
                         todo!("This is either invalid or unimplemented")
@@ -532,6 +540,41 @@ impl Parser {
                 }
             }
         }
+    }
+
+    pub fn parse_array_literal(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut array = ArrayLiteral {
+            elements: Vec::new()
+        };
+
+        loop {
+            let elem = self.parse_expression(indent)?;
+            
+            let elem = match self.peek(0) {
+                Token { kind: TokenKind::Dot, .. } => {
+                    self.advance();
+                    self.parse_method_call(elem, indent)?
+                }
+                Token { kind: TokenKind::SquareLeft, .. } => {
+                    self.advance();
+                    self.parse_array_access(elem, indent)?
+                }
+                _ => elem,
+            };
+            
+            array.elements.push(elem);
+
+            match self.peek(0).kind {
+                TokenKind::Comma => self.advance(),
+                TokenKind::SquareRight => {
+                    self.advance();
+                    break
+                },
+                _ => return Err(format!("Unexpected token in array literal instead of ','")),
+            };
+        }
+
+        Ok(Expression::ArrayLiteral(array))
     }
 
     pub fn parse_expr_in_parentheses(&mut self, indent: usize) -> Result<Expression, String> {
@@ -548,6 +591,10 @@ impl Parser {
                 self.advance();
                 self.parse_method_call(expr, indent)
             }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
+            }
             _ => Ok(expr),
         }
     }
@@ -560,6 +607,35 @@ impl Parser {
                 self.advance();
                 self.parse_method_call(expr, indent)
             }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
+            }
+            _ => Ok(expr),
+        }
+    }
+
+    pub fn parse_array_access(&mut self, lhs: Expression, indent: usize) -> Result<Expression, String> {
+        let index = self.parse_expression(indent)?;
+
+        let expr = if let TokenKind::SquareRight = self.advance().kind {
+            Expression::ArrayAccess(ArrayAccess { 
+                expr: Box::new(lhs),
+                index: Box::new(index)
+            })
+        } else {
+            return Err(format!("Array access operator not closed"))
+        };
+
+        match self.peek(0) {
+            Token { kind: TokenKind::Dot, .. } => {
+                self.advance();
+                self.parse_method_call(expr, indent)
+            }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
+            }
             _ => Ok(expr),
         }
     }
@@ -571,6 +647,10 @@ impl Parser {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
                 self.parse_method_call(expr, indent)
+            }
+            Token { kind: TokenKind::SquareLeft, .. } => {
+                self.advance();
+                self.parse_array_access(expr, indent)
             }
             _ => Ok(expr),
         }
@@ -600,7 +680,7 @@ impl Parser {
 
             match self.advance().kind {
                 TokenKind::FatArrow => {}
-                kind => return Err(format!("missing '=>' after if expression, found {kind:?}"))
+                kind => return Err(format!("missing '=>' after for expression, found {kind:?}"))
             }
 
             let body = match self.peek(0).kind {
@@ -836,7 +916,10 @@ impl Parser {
             let t = self.peek(0);
             match t.kind {
                 TokenKind::EOF => break,
-                TokenKind::ParenLeft => todo!(),
+                TokenKind::ParenLeft => {
+                    let expr = self.parse_expression(0)?;
+                    module.toplevel_scope.expressions.push(expr);
+                },
                 TokenKind::ParenRight => todo!(),
                 TokenKind::CurlyLeft => todo!(),
                 TokenKind::CurlyRight => todo!(),
@@ -880,7 +963,10 @@ impl Parser {
                 TokenKind::TrianglePipe => todo!(),
                 TokenKind::Dollar => todo!(),
                 TokenKind::Indentation(_) => { self.advance(); },
-                TokenKind::Literal(_) => todo!(),
+                TokenKind::Literal(_) => {
+                    let expr = self.parse_expression(0)?;
+                    module.toplevel_scope.expressions.push(expr);
+                },
                 TokenKind::JS => {
                     let expr = self.parse_js()?;
                     module.toplevel_scope.expressions.push(expr);
