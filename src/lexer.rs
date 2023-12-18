@@ -33,6 +33,7 @@ pub enum Identifier {
     From,
     Implicit,
     As,
+    In,
 }
 
 
@@ -335,6 +336,7 @@ impl Lexer {
             ("implicit", Identifier::Implicit),
             ("as", Identifier::As),
             ("fn", Identifier::Fn),
+            ("in", Identifier::In),
         ]);
 
         while let Some(c) = self.peek() {

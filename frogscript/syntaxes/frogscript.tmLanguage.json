@@ -19,7 +19,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.frogscript",
-				"match": "\\b(implicit|export|fn|mut|let|if|else|match|while|for|return)\\b"
+				"match": "\\b(implicit|export|fn|mut|let|if|else|match|while|for|return|break|continue|in)\\b"
 			}]
 		},
 		"strings": {
