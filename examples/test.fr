@@ -1,24 +1,19 @@
-:: implicit x: int
-:: y: &string
-fn funcname => return 2
+:: str: string
+:: n: int
+fn repeat => @js"return str.repeat(n);"
 
-:: implicit x: &float
-:: w: uint
-export fn fankszyn: int => 
+:: x: string
+fn print => @js"console.log(x)"
 
-    mut dupa = 23
+fn mozambik => return "mozambik"
 
-    let siema = funcname()
+:: x: int
+fn afryka => 
+    if x > 5 =>
+        return "za duzo mozambikuw"
+    else 
+        let mozambik2 = mozambik().repeat(x)
+        return "siemaelo320 -- " + mozambik2
 
-    // if true => dupa + funcname()
-    // else 0
-       
-    for x in 0..dupa => print(siema)
-
-    for x in 0..=139 => 
-        print("elo")
-        if x <= 23 => break
-
-    return 0
-
-mut siema = fankszyn()
+afryka(5).print()
+afryka(10).print()

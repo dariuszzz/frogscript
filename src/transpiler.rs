@@ -18,8 +18,6 @@ impl Transpiler {
     }
 
     pub fn transpile_module(&mut self, module: Module, path: &std::path::Path) -> Result<(), String> {
-
-        dbg!(path);
         let mut outfile = std::fs::File::create(path)
             .map_err(|_| format!("Cannot open out file"))?;
 

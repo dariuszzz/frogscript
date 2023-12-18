@@ -84,6 +84,7 @@ pub enum TokenKind {
     TrianglePipe,
     Dollar,
     Hash,
+    JS,
     Indentation(usize),
     
     Literal(Literal),
@@ -505,6 +506,13 @@ impl Lexer {
                 '~' => self.add_token(TokenKind::Tilde),
                 '$' => self.add_token(TokenKind::Dollar),
                 '#' => self.add_token(TokenKind::Hash),
+                '@' => {
+                    if self.match_char('j') {
+                        if self.match_char('s') {
+                            self.add_token(TokenKind::JS)
+                        }
+                    }
+                },
                 '"' => self.parse_string()?,
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),

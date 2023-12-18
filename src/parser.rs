@@ -720,6 +720,9 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Break)
             }
+            TokenKind::JS => {
+                self.parse_js()
+            }
             TokenKind::Identifier(Identifier::Continue) => {
                 self.advance();
                 Ok(Expression::Continue)
@@ -809,6 +812,17 @@ impl Parser {
         }
     }
 
+    pub fn parse_js(&mut self) -> Result<Expression, String> {
+        // consume JS token
+        self.advance();
+
+        if let TokenKind::Literal(Literal::String(code)) = self.advance().kind {
+            Ok(Expression::JS(code))
+        } else {
+            Err(format!("Couldnt find js source code after @JS"))
+        }
+    }
+
     pub fn parse_module(&mut self, file_name: String) -> Result<Module, String> {
         let mut module = Module {
             module_name: file_name,
@@ -867,6 +881,10 @@ impl Parser {
                 TokenKind::Dollar => todo!(),
                 TokenKind::Indentation(_) => { self.advance(); },
                 TokenKind::Literal(_) => todo!(),
+                TokenKind::JS => {
+                    let expr = self.parse_js()?;
+                    module.toplevel_scope.expressions.push(expr);
+                },
                 TokenKind::Identifier(iden) => { 
                     match iden {
                         Identifier::Export 
