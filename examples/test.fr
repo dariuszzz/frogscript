@@ -1,27 +1,26 @@
-:: str: string
-:: n: int
-fn repeat => @js"return str.repeat(n);"
-
 :: x: string
-fn print => @js"console.log(x)"
-
-fn mozambik => return "mozambik"
-
-:: x: int
-fn afryka => 
-    if x > 5 =>
-        return "za duzo mozambikuw"
+fn print => 
+    if x == 1 => 
+        @js"console.log(x)"
     else 
-        let mozambik2 = mozambik().repeat(x)
-        return "siemaelo320 -- " + mozambik2
+        @js"console.log('siema ' + x)"
 
-:: str: string
+:: x: [int]
+:: f: (int -> int)
+fn map: [int] => @js"return x.map(f);"
+
+:: arr: [any]
 :: n: int
-fn print_n_chars =>
+fn print_n_elements =>
     mut i = 0
-    for char in str =>
+    for elem in arr =>
         if i >= n => break
         i = i + 1
-        print(char)
+        print(elem)
 
-"siemaelo320".print_n_chars(2)
+:: x: int
+fn square => return x * x
+
+let arr: [int] = [1, 2, 3, 4, 5]
+
+arr.map(square).print_n_elements(3)

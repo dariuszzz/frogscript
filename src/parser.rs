@@ -129,9 +129,6 @@ impl Parser {
                 (true,  "export",   TokenKind::Identifier(Identifier::Export)),
                 (false, "fn_key",   TokenKind::Identifier(Identifier::Fn)),
                 (false, "func_name",TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (true,  "colon",    TokenKind::Colon),
-                (true,  "ret_type", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (false, "arrow",    TokenKind::FatArrow)
             ]
         ) {
             if let Some(_) = fn_decl_tokens.get("export") {
@@ -144,28 +141,19 @@ impl Parser {
                 _ => unreachable!()
             };
 
-            match (fn_decl_tokens.get("colon"), fn_decl_tokens.get("ret_type")) {
-                (Some(_), Some(ret_type_token)) => {
-                    let ret_type_token = ret_type_token.clone();
-                    match ret_type_token.kind {
-                        TokenKind::Identifier(Identifier::Custom(type_name)) => { 
-                            match type_name.as_str() {
-                                "bool" => function_def.return_type.type_kind = TypeKind::Boolean,
-                                "string" => function_def.return_type.type_kind = TypeKind::String,
-                                "float" => function_def.return_type.type_kind = TypeKind::Float,
-                                "int" => function_def.return_type.type_kind = TypeKind::Int,
-                                "uint" => function_def.return_type.type_kind = TypeKind::Uint,
-                                "void" => function_def.return_type.type_kind = TypeKind::Void,
-                                _ => function_def.return_type.type_kind = TypeKind::Custom(type_name) 
-                            }
-                        }
-                        _ => unreachable!()
-                    }
-                }
-                (None, None) => {}
-                _ => return Err(format!("Unfinished fn return type"))
-            }
+            match self.peek(0).kind {
+                TokenKind::Colon => {
+                    self.advance();
 
+                    function_def.return_type = self.parse_type()?;
+                }
+                _ => {}
+            };
+
+            if let TokenKind::FatArrow = self.advance().kind {}
+            else {
+                return Err(format!("'=>' missing in func definition"))
+            }
         } else {
             return Err("Missing tokens in '(export) fn funcname'".to_owned())
         }
@@ -213,13 +201,13 @@ impl Parser {
                 _ => unreachable!(),
             };
 
-            if let Some(_) = arg_tokens.get("implicit") {
-                arg_def.is_implicit = true;
-            }
-
             arg_def.arg_type = self.parse_type()?;
 
             self.advance();
+
+            if let Some(_) = arg_tokens.get("implicit") {
+                arg_def.is_implicit = true;
+            }
 
             argument_list.push(arg_def);
         }
@@ -247,14 +235,110 @@ impl Parser {
                     "float" => TypeKind::Float,
                     "int" => TypeKind::Int,
                     "uint" => TypeKind::Uint,
-                    "void" => TypeKind::Void,
                     _ => TypeKind::Custom(type_name) 
                 }
             }
-            _ => return Err(format!("Invalid type"))
+            TokenKind::SquareLeft => {
+                self.advance();
+                let inner_type = self.parse_type()?;
+
+                if let TokenKind::SquareRight = self.advance().kind {}
+                else {
+                    return Err(format!("Unclosed array type"));
+                }
+                
+                TypeKind::Array(Box::new(inner_type))
+            },
+            TokenKind::ParenLeft => {
+                self.advance();
+
+                // yuck
+                if let TokenKind::ParenRight = self.peek(0).kind {
+                    // handle () type
+                    self.advance();
+                    TypeKind::Void
+                } else {
+                    let mut args1 = self.parse_func_type_args()?;
+                    let mut args2 = Vec::new();
+                    let mut were_there_2_arg_lists = false;
+    
+                    match self.advance().kind {
+                        TokenKind::ThinArrow => {}
+                        TokenKind::ParenRight => {
+                            were_there_2_arg_lists = true;
+    
+                            if let TokenKind::ParenLeft = self.advance().kind {}
+                            else {
+                                return Err(format!("Expected another arg list"))
+                            }
+    
+                            args2.append(&mut self.parse_func_type_args()?);
+    
+                            match self.advance().kind {
+                                TokenKind::ThinArrow => {}
+                                _ => return Err(format!("'->' token missing in function type"))
+                            }
+                        }
+                        _ => return Err(format!("'->' or ')' token missing in function type"))
+                    }
+    
+                    let return_type = self.parse_type()?;
+    
+                    if let TokenKind::ParenRight = self.advance().kind {}
+                    else {
+                        return Err(format!("Unclosed function type"));
+                    }
+
+                    if args1.len() == 1 {
+                        if let TypeKind::Void = args1[0].type_kind {
+                            args1 = Vec::new();
+                        }
+                    }
+
+                    if args2.len() == 1 {
+                        if let TypeKind::Void = args2[0].type_kind {
+                            args2 = Vec::new();
+                        }
+                    }
+                    
+                    if were_there_2_arg_lists {
+                        TypeKind::Function(FunctionType {
+                            implicit_args: args1,
+                            args: args2,
+                            ret: Box::new(return_type)
+                        })
+                    } else {
+                        TypeKind::Function(FunctionType {
+                            implicit_args: Vec::new(),
+                            args: args1,
+                            ret: Box::new(return_type)
+                        })
+                    }
+                }
+            },
+            token => return Err(format!("Invalid token in type: {token:?}"))
         };
 
         Ok(type_)
+    }
+    
+    pub fn parse_func_type_args(&mut self) -> Result<Vec<Type>, String> {
+        let mut args = Vec::new();
+        
+        loop {
+            let arg_type = self.parse_type()?;
+
+            args.push(arg_type);
+
+            match self.peek(0).kind {
+                TokenKind::Comma => self.advance(),
+                TokenKind::ParenRight
+                | TokenKind::ThinArrow => break,
+                _ => return Err(format!("Invalid function argument separator in type"))
+            };
+        }
+
+        Ok(args)
     }
 
     pub fn parse_variable_decl(&mut self, indent: usize) -> Result<Expression, String> {
@@ -269,10 +353,6 @@ impl Parser {
                 (true, "indent_1",  TokenKind::Indentation(0)),
                 (true, "implicit",  TokenKind::Identifier(Identifier::Implicit)),
                 (false, "var_name", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (true,  "colon",    TokenKind::Colon),
-                (true,  "reference",TokenKind::Ampersand),
-                (true,  "var_type", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
-                (false,  "eq",      TokenKind::Equal),
             ]
         ) {
             let is_implicit = variable_decl_tokens.get("implicit").is_some();
@@ -283,45 +363,26 @@ impl Parser {
                 _ => unreachable!(),
             };
 
-            let mut is_reference = false;
-            let mut type_kind = TypeKind::Infer;
-            match (variable_decl_tokens.get("colon"), variable_decl_tokens.get("var_type")) {
-                (Some(_), Some(type_token)) => {
-                    if let Some(_) = variable_decl_tokens.get("reference") {
-                        is_reference = true;
-                    }
+            let var_type = if let TokenKind::Colon = self.peek(0).kind {
+                self.advance();
+                self.parse_type()?
+            } else {
+                Type {
+                    type_kind: TypeKind::Infer,
+                    is_reference: false
+                }
+            };
 
-                    match type_token.clone().kind {
-                        TokenKind::Identifier(Identifier::Custom(type_name)) => { 
-                            match type_name.as_str() {
-                                "bool" => type_kind = TypeKind::Boolean,
-                                "string" => type_kind = TypeKind::String,
-                                "float" => type_kind = TypeKind::Float,
-                                "int" => type_kind = TypeKind::Int,
-                                "uint" => type_kind = TypeKind::Uint,
-                                "void" => type_kind = TypeKind::Void,
-                                _ => type_kind = TypeKind::Custom(type_name) 
-                            }
-                        }
-                        _ => unreachable!()
-                    };
-
-                }
-                (None, None) => {
-                    if let Some(_) = variable_decl_tokens.get("reference") {
-                        return Err(format!("Unexpected '&' in variable declaration"));
-                    }
-                }
-                _ => {
-                    return Err(format!("Invalid variable type annotation"));
-                }
+            match self.advance().kind {
+                TokenKind::Equal => {}
+                token => return Err(format!("'=' missing in var decl: {token:?}"))
             }
 
             let value = self.parse_expression(indent)?;
 
             let variable = VariableDecl {
                 var_name,
-                var_type: Type { type_kind, is_reference },
+                var_type,
                 var_value: Box::new(value),
                 is_mutable,
                 is_implicit,
@@ -941,7 +1002,6 @@ impl Parser {
                 TokenKind::MultilineComment => todo!(),
                 TokenKind::Power => todo!(),
                 TokenKind::NotEqual => todo!(),
-                TokenKind::NoneType => todo!(),
                 TokenKind::Dot => todo!(),
                 TokenKind::Ampersand => todo!(),
                 TokenKind::Pipe => todo!(),
@@ -952,7 +1012,6 @@ impl Parser {
                 TokenKind::DoubleDot => todo!(),
                 TokenKind::DoubleDotEqual => todo!(),
                 TokenKind::TripleDot => todo!(),
-                TokenKind::Tab => todo!(),
                 TokenKind::Newline => { self.advance(); },
                 TokenKind::TrianglePipe => todo!(),
                 TokenKind::Dollar => todo!(),

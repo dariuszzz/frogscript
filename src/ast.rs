@@ -25,6 +25,13 @@ pub enum BinaryOperation {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionType {
+    pub implicit_args: Vec<Type>,
+    pub args: Vec<Type>,
+    pub ret: Box<Type>
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeKind {
     Infer, 
     Void,
@@ -34,6 +41,8 @@ pub enum TypeKind {
     String,
     Boolean,
     Custom(String),
+    Array(Box<Type>),
+    Function(FunctionType),
 }
 
 #[derive(Debug, Clone)]
