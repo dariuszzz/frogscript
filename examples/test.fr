@@ -15,11 +15,13 @@ fn afryka =>
         let mozambik2 = mozambik().repeat(x)
         return "siemaelo320 -- " + mozambik2
 
-afryka(5).print()
-afryka(10).print()
+:: str: string
+:: n: int
+fn print_n_chars =>
+    mut i = 0
+    for char in str =>
+        if i >= n => break
+        i = i + 1
+        print(char)
 
-let arr = [ 1, 2, 3, 4 ]
-
-arr[1].print()
-
-for x in arr => print(x)
+"siemaelo320".print_n_chars(2)
