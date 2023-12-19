@@ -52,7 +52,10 @@ struct TranspileOpts {
     free: Vec<String>,
 
     #[options(help = "file to transpile")]
-    file: String
+    file: String,
+
+    #[options(help = "file to transpile")]
+    output: Option<String>
 }
 
 fn main() -> Result<(), String> {
@@ -108,9 +111,12 @@ fn main() -> Result<(), String> {
             let mut transpiler = Transpiler::new();
             let path_parent = path.canonicalize().unwrap();
             let path_parent = path_parent.parent().unwrap();
-            let out_filename = format!("{filename}_out.js");
-            let out_filename = Path::new(&out_filename);
+            let out_filename = opts.output.unwrap_or_else(|| {
+                format!("{filename}_out.js")
+            });
+
             let out_path = path_parent.join(&out_filename);
+        
             let js_ast = transpiler.transpile_module(module, &out_path)?;
         }
     }
