@@ -2,6 +2,10 @@ use std::{collections::HashMap, fmt::Binary};
 
 use crate::{lexer::Literal, transpiler::ToJS};
 
+#[derive(Debug, Clone)]
+pub enum UnaryOperation {
+    Negative,
+}
 
 #[derive(Debug, Clone)]
 pub enum BinaryOperation {
@@ -77,6 +81,26 @@ impl ToJS for FunctionCall {
             .join(", ");
 
         format!("{func_name}({args})")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryOp  {
+    pub op: UnaryOperation,
+    pub operand: Box<Expression>,
+}
+
+impl ToJS for UnaryOp {
+    fn to_js(&self) -> String {
+        let UnaryOp { op, operand } = self;
+
+        let op = match op {
+            UnaryOperation::Negative => "-".to_owned()
+        };
+
+        let expr = operand.to_js();
+        
+        format!("({op}{expr})")
     }
 }
 
@@ -247,6 +271,7 @@ pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
     BinaryOp(BinaryOp),
+    UnaryOp(UnaryOp),
     FunctionCall(FunctionCall),
     Variable(Variable),
     Return(Box<Expression>),
@@ -268,6 +293,7 @@ impl ToJS for Expression {
             Self::VariableDecl(var_decl) => var_decl.to_js(),
             Self::If(if_expr) => if_expr.to_js(),
             Self::BinaryOp(bin_op) => bin_op.to_js(),
+            Self::UnaryOp(unary_op) => unary_op.to_js(),
             Self::FunctionCall(func_call) => func_call.to_js(),
             Self::Variable(var) => var.to_js(),
             Self::Assignment(assignment) => assignment.to_js(),

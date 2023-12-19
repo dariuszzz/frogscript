@@ -392,19 +392,7 @@ impl Parser {
             unreachable!()
         }
 
-        let expr = Expression::FunctionCall(call);
-
-        match self.peek(0) {
-            Token { kind: TokenKind::Dot, .. } => {
-                self.advance();
-                self.parse_method_call(expr, indent)
-            }
-            Token { kind: TokenKind::SquareLeft, .. } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        Ok(Expression::FunctionCall(call))
     }
 
     pub fn parse_equality(&mut self, indent: usize) -> Result<Expression, String> {
@@ -526,20 +514,58 @@ impl Parser {
     }
 
     pub fn parse_term(&mut self, indent: usize) -> Result<Expression, String> {
-        match self.advance() {
+        let mut term = match self.advance() {
             Token { start_char, start_line, kind, .. } => {
                 match kind {
-                    TokenKind::Literal(literal) => self.parse_num(literal, indent),
-                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent),
-                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent),
-                    TokenKind::SquareLeft => self.parse_array_literal(indent),
+                    TokenKind::Minus => {
+
+                        let term = match self.advance() {
+                            Token { start_char, start_line, kind, .. } => {
+                                match kind {
+                                    TokenKind::Literal(literal) => self.parse_num(literal, indent)?,
+                                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent)?,
+                                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent)?,
+                                    TokenKind::SquareLeft => self.parse_array_literal(indent)?,
+                                    kind => {
+                                        dbg!(format!("[{:?}:{:?}] unexpected token {:?}", start_line, start_char, kind));
+                                        todo!("This is either invalid or unimplemented")
+                                    }
+                                }
+                            }
+                        };
+
+                        Expression::UnaryOp(UnaryOp { 
+                            op: UnaryOperation::Negative, 
+                            operand: Box::new(term),
+                        })
+                    },
+                    TokenKind::Literal(literal) => self.parse_num(literal, indent)?,
+                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent)?,
+                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent)?,
+                    TokenKind::SquareLeft => self.parse_array_literal(indent)?,
                     kind => {
                         dbg!(format!("[{:?}:{:?}] unexpected token {:?}", start_line, start_char, kind));
                         todo!("This is either invalid or unimplemented")
                     }
                 }
             }
+        };
+        
+        loop {
+            term = match self.peek(0) {
+                Token { kind: TokenKind::Dot, .. } => {
+                    self.advance();
+                    self.parse_method_call(term, indent)?
+                }
+                Token { kind: TokenKind::SquareLeft, .. } => {
+                    self.advance();
+                    self.parse_array_access(term, indent)?
+                }
+                _ => break,
+            };
         }
+
+        Ok(term)
     }
 
     pub fn parse_array_literal(&mut self, indent: usize) -> Result<Expression, String> {
@@ -549,18 +575,6 @@ impl Parser {
 
         loop {
             let elem = self.parse_expression(indent)?;
-            
-            let elem = match self.peek(0) {
-                Token { kind: TokenKind::Dot, .. } => {
-                    self.advance();
-                    self.parse_method_call(elem, indent)?
-                }
-                Token { kind: TokenKind::SquareLeft, .. } => {
-                    self.advance();
-                    self.parse_array_access(elem, indent)?
-                }
-                _ => elem,
-            };
             
             array.elements.push(elem);
 
@@ -586,33 +600,11 @@ impl Parser {
             return Err(format!("Unclosed parentheses"))
         }
 
-        match self.peek(0) {
-            Token { kind: TokenKind::Dot, .. } => {
-                self.advance();
-                self.parse_method_call(expr, indent)
-            }
-            Token { kind: TokenKind::SquareLeft, .. } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        Ok(expr)
     }
 
     pub fn parse_num(&mut self, literal: Literal, indent: usize) -> Result<Expression, String> {
-        let expr = Expression::Literal(literal);
-
-        match self.peek(0) {
-            Token { kind: TokenKind::Dot, .. } => {
-                self.advance();
-                self.parse_method_call(expr, indent)
-            }
-            Token { kind: TokenKind::SquareLeft, .. } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        Ok(Expression::Literal(literal))
     }
 
     pub fn parse_array_access(&mut self, lhs: Expression, indent: usize) -> Result<Expression, String> {
@@ -641,26 +633,17 @@ impl Parser {
     }
 
     pub fn parse_variable(&mut self, var_name: String, indent: usize) -> Result<Expression, String> {
-        let expr = Expression::Variable(Variable { name: var_name });
-
-        match self.peek(0) {
-            Token { kind: TokenKind::Dot, .. } => {
-                self.advance();
-                self.parse_method_call(expr, indent)
-            }
-            Token { kind: TokenKind::SquareLeft, .. } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        Ok(Expression::Variable(Variable { name: var_name }))
     }
 
     pub fn parse_custom_iden(&mut self, identifier: String, indent: usize) -> Result<Expression, String> {
-        match self.peek(0) {
-            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier, indent),
-            _ => self.parse_variable(identifier, indent),
-        }
+        let expr = match self.peek(0) {
+            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier, indent)?,
+            _ => self.parse_variable(identifier, indent)?,
+        };
+
+        
+        Ok(expr)
     }
 
     pub fn parse_for(&mut self, indent: usize) -> Result<Expression, String> {
