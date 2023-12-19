@@ -1,6 +1,6 @@
 
 Frogscript:
-    ☐ Type parsing
+    ✔ Type parsing @done(23-12-19 20:57)
     ☐ Splitting expression to multiple lines with \n
     ✔ Indexing operator (var[index]) @high @done(23-12-19 11:04)
     ✔ Array literals @high @done(23-12-19 11:04)
@@ -8,8 +8,19 @@ Frogscript:
     ☐ Better error messages, show error location (line:col) 
     ☐ Transpile ranges into generator functions @critical
     ✔ Parse/lex negative ints and floats @critical @done(23-12-19 11:38)
-
-    // maybe could be refactored more
     ✔ Rework chaining . and [ on most methods since they all end with the same match @done(23-12-19 11:04)
-
         related (i think?) cleanup match allowing for . and [ in array literal
+
+    ☐ Fix `()(type -> ret)` err msg because its unclear rn 
+            ^ (correct syntax is `(())(type -> ret)` or `(type -> ret)`)
+
+    ☐ String templates ("var: ${var}")
+    ☐ Escape sequences in strings ("\"siema\"")
+
+    ✘ Some kind of an `any` type for js interop @cancelled(23-12-19 21:19)
+        hopefully something that cant be abused to avoid the type system
+        (23-12-19 21:18) maybe generics are the solution
+
+    ☐ Parsing anon structs
+    ☐ Parsing custom types
+    ☐ Parsing enums

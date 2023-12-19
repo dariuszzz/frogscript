@@ -68,7 +68,6 @@ pub enum TokenKind {
     MultilineComment,
     Power,
     NotEqual,
-    NoneType,
     Dot,
     DoubleDot,
     DoubleDotEqual,
@@ -79,7 +78,6 @@ pub enum TokenKind {
     Tilde,
     RShift,
     LShift,
-    Tab,
     Newline,
     TrianglePipe,
     Dollar,
@@ -455,9 +453,7 @@ impl Lexer {
                 '!' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::NotEqual);
-                    } else {
-                        self.add_token(TokenKind::NoneType);
-                    }
+                    } 
                 }
                 '/' => {
                     if self.match_char('/') {
