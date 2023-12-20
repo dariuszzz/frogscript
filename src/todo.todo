@@ -24,6 +24,7 @@ Frogscript:
     ☐ Parsing custom types
     ☐ Parsing enums
     ☐ Parse imports
+    ☐ Parse += and -=
     ☐ Come up with a syntax for lambdas and parse it
     
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling
