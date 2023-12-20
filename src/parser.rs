@@ -119,7 +119,11 @@ impl Parser {
             export: false,
             func_name: String::new(),
             argument_list: args,
-            return_type: Type { type_kind: TypeKind::Infer, is_reference: false },
+            return_type: Type { 
+                type_kind: TypeKind::Infer, 
+                is_reference: false,
+                is_structural: false 
+            },
             function_body: CodeBlock::default()
         };
 
@@ -191,7 +195,11 @@ impl Parser {
         ) {
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
-                arg_type: Type { type_kind: TypeKind::Uint, is_reference: false },
+                arg_type: Type { 
+                    type_kind: TypeKind::Uint, 
+                    is_reference: false,
+                    is_structural: false 
+                },
                 is_implicit: false,
             };
 
@@ -218,13 +226,19 @@ impl Parser {
     pub fn parse_type(&mut self) -> Result<Type, String> {
         let mut type_ = Type {
             type_kind: TypeKind::Infer,
-            is_reference: false
+            is_reference: false,
+            is_structural: false
         };
 
         type_.type_kind = match self.peek(0).kind {
             TokenKind::Ampersand => { 
                 self.advance();
                 type_.is_reference = true;
+                self.parse_type()?.type_kind
+            }
+            TokenKind::Tilde => { 
+                self.advance();
+                type_.is_structural = true;
                 self.parse_type()?.type_kind
             }
             TokenKind::Identifier(Identifier::Custom(type_name)) => { 
@@ -369,7 +383,8 @@ impl Parser {
             } else {
                 Type {
                     type_kind: TypeKind::Infer,
-                    is_reference: false
+                    is_reference: false,
+                    is_structural: false,
                 }
             };
 
@@ -527,14 +542,11 @@ impl Parser {
             
             let rhs = self.parse_sum(indent)?;
             
-            lhs = Expression::StructLiteral(StructLiteral { 
-                name: "Range".to_owned(), 
-                fields: HashMap::from([
-                    ("start".to_owned(), lhs),
-                    ("end".to_owned(), rhs),
-                    ("step".to_owned(), Expression::Literal(Literal::Int(1))),
-                    ("inclusive".to_owned(), Expression::Literal(Literal::Boolean(inclusive)))
-                ]) 
+            lhs = Expression::Range(Range { 
+                start: Box::new(lhs),
+                end: Box::new(rhs),
+                step: Box::new(Expression::Literal(Literal::Int(1))),
+                inclusive
             });
         }
 
