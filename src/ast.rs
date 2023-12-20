@@ -49,6 +49,7 @@ pub enum TypeKind {
 pub struct Type {
     pub type_kind: TypeKind,
     pub is_reference: bool,
+    pub is_structural: bool,
 }
 
 
@@ -276,6 +277,26 @@ impl ToJS for StructLiteral {
 }
 
 #[derive(Debug, Clone)]
+pub struct Range  {
+    pub start: Box<Expression>,
+    pub end: Box<Expression>,
+    pub step: Box<Expression>,
+    pub inclusive: bool,
+}
+
+impl ToJS for Range {
+    fn to_js(&self) -> String {
+        let Range { start, end, inclusive, step } = self;
+
+        unimplemented!("ranges arent directly transpilable");
+
+        // format!("{{ {fields} }}")
+    }
+}
+
+
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -288,6 +309,7 @@ pub enum Expression {
     StructLiteral(StructLiteral),
     ArrayLiteral(ArrayLiteral),
     ArrayAccess(ArrayAccess),
+    Range(Range),
     JS(String),
     If(If),
     For(For),
@@ -309,6 +331,7 @@ impl ToJS for Expression {
             Self::StructLiteral(struct_literal) => struct_literal.to_js(),
             Self::ArrayLiteral(array_literal) => array_literal.to_js(),
             Self::ArrayAccess(array_access) => array_access.to_js(),
+            Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
             Self::Return(expr) => {
                 let expr = expr.to_js();

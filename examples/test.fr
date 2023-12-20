@@ -5,7 +5,7 @@ fn print => @js"console.log(x)"
 :: f: (int -> int)
 fn map: [int] => @js"return x.map(f);"
 
-:: arr: [_]
+:: arr: [~Printable]
 :: n: int
 fn print_n_elements =>
     mut i = 0
