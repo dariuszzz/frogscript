@@ -1,0 +1,32 @@
+let arr = [ 
+    2, 
+    3, 
+    4 
+]
+
+arr.map()
+
+arr
+    .map()
+
+let x = arr
+.map()
+
+let expr = 2
+    + 
+    3.parse()
+    - 23
+
+fn siema =>
+    if dupa * 
+2 
++ 23 =>
+        print(x)
+        if siema
+.parse()
+                .elo() => 
+            x
+            return 6 + 2
+
+    return 2
+        + 3
