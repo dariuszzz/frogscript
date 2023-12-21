@@ -690,7 +690,14 @@ impl Parser {
 
             let token = self.peek_token_no_ws_with_indent(indent)?;
             match token.kind {
-                TokenKind::Comma => self.advance_skip_ws(),
+                TokenKind::Comma => {
+                    self.advance_skip_ws();
+                    // allow for trailing , 
+                    if let TokenKind::SquareRight = self.peek_token_no_ws_with_indent(indent)?.kind {
+                        self.advance_skip_ws();
+                        break;
+                    }
+                },
                 TokenKind::SquareRight => {
                     self.advance_skip_ws();
                     break
@@ -878,8 +885,46 @@ impl Parser {
         }))
     }
 
+    pub fn parse_struct(&mut self, indent: usize) -> Result<Expression, String> {
+        self.advance_skip_ws();
+
+        let mut struct_literal = StructLiteral {
+            fields: HashMap::new()
+        };
+
+        loop {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            match token.kind {
+                TokenKind::CurlyRight => {
+                    self.advance_skip_ws();
+                    break;
+                }
+                TokenKind::Comma => {
+                    self.advance_skip_ws();
+                }
+                _ => {
+                    let field_name = match self.advance_skip_ws().kind {
+                        TokenKind::Identifier(Identifier::Custom(field_name)) => field_name,
+                        _ => return Err(format!("Unexpected token, expected struct field name"))
+                    };
+
+                    match self.advance_skip_ws().kind {
+                        TokenKind::Colon => {},
+                        _ => return Err(format!("Unexpected token, expected struct field name"))
+                    };
+
+                    let field_type = self.parse_expression(indent)?;
+
+                    struct_literal.fields.insert(field_name, field_type);
+                }
+            }
+        }
+
+        Ok(Expression::StructLiteral(struct_literal))
+    }
+
     pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
-        match self.peek(0).kind {
+        match self.peek_token_no_ws_with_indent(indent)?.kind {
             TokenKind::Identifier(Identifier::If) => {
                 self.parse_if(indent)
             }
@@ -896,6 +941,9 @@ impl Parser {
             }
             TokenKind::JS => {
                 self.parse_js()
+            }
+            TokenKind::CurlyLeft => {
+                self.parse_struct(indent)
             }
             TokenKind::Identifier(Identifier::Continue) => {
                 self.advance();
@@ -981,6 +1029,70 @@ impl Parser {
                             rhs: Box::new(rhs)
                         }))
                     }
+                    TokenKind::PlusEqual => {
+                        // consume iden and +=
+                        self.advance();
+                        self.advance();
+
+                        let rhs = self.parse_expression(indent)?;
+
+                        Ok(Expression::Assignment(Assignment {
+                            lhs: iden.clone(),
+                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                                op: BinaryOperation::Add,
+                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
+                                rhs: Box::new(rhs)
+                            }))
+                        }))
+                    }
+                    TokenKind::MinusEqual => {
+                        // consume iden and -=
+                        self.advance();
+                        self.advance();
+
+                        let rhs = self.parse_expression(indent)?;
+
+                        Ok(Expression::Assignment(Assignment {
+                            lhs: iden.clone(),
+                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                                op: BinaryOperation::Subtract,
+                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
+                                rhs: Box::new(rhs)
+                            }))
+                        }))
+                    }
+                    TokenKind::MultEqual => {
+                        // consume iden and *=
+                        self.advance();
+                        self.advance();
+
+                        let rhs = self.parse_expression(indent)?;
+
+                        Ok(Expression::Assignment(Assignment {
+                            lhs: iden.clone(),
+                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                                op: BinaryOperation::Multiply,
+                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
+                                rhs: Box::new(rhs)
+                            }))
+                        }))
+                    }
+                    TokenKind::DivEqual => {
+                        // consume iden and /=
+                        self.advance();
+                        self.advance();
+
+                        let rhs = self.parse_expression(indent)?;
+
+                        Ok(Expression::Assignment(Assignment {
+                            lhs: iden.clone(),
+                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                                op: BinaryOperation::Divide,
+                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
+                                rhs: Box::new(rhs)
+                            }))
+                        }))
+                    }
                     _ => {
                         self.parse_expression(indent)
                     }
@@ -1021,6 +1133,8 @@ impl Parser {
                 TokenKind::ParenRight => todo!(),
                 TokenKind::CurlyLeft => todo!(),
                 TokenKind::CurlyRight => todo!(),
+                TokenKind::MultEqual => todo!(),
+                TokenKind::DivEqual => todo!(),
                 TokenKind::SquareLeft => todo!(),
                 TokenKind::SquareRight => todo!(),
                 TokenKind::AngleLeft => todo!(),
