@@ -2,7 +2,7 @@
 fn print => @js"console.log(x)"
 
 :: x: [int]
-:: f: (int -> int)
+:: f: fn(int -> int)
 fn map: [int] => @js"return x.map(f);"
 
 :: arr: [~Printable]
