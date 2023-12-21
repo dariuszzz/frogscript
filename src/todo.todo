@@ -22,11 +22,11 @@ Frogscript:
     ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
     ✔ Parsing anon structs @done(23-12-21 21:29)
     ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
+    ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
     ☐ Parsing custom types
     ☐ Parsing enums
     ☐ Parse imports
     ☐ Come up with a syntax for lambdas and parse it
-    ☐ Parse field accessing (foo.field)
     ☐ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person)
     
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling

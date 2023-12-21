@@ -30,5 +30,7 @@ arr.map(square).print_n_elements(3)
 let struct = 
 {
     siema: "siema",
-    tester: 5,
+    tester: arr
+    .
+    eluwina,
 }

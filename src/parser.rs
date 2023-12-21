@@ -446,18 +446,19 @@ impl Parser {
         }
     }
 
-    pub fn parse_method_call(&mut self, called_on: Expression, indent: usize) -> Result<Expression, String> {
+    pub fn parse_method_call_or_field_access(&mut self, called_on: Expression, indent: usize) -> Result<Expression, String> {
         let name = match self.advance() {
             Token { kind: TokenKind::Identifier(Identifier::Custom(func_name)), .. } => func_name,
             token => return Err(format!("{:?}:{:?}: No func name found, got {:?} instead", token.start_line, token.start_char, token.kind))
         } ;
 
-        let mut call = FunctionCall { 
-            func_name: name, 
-            arguments: vec![called_on]
-        };
-
+        
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
+            let mut call = FunctionCall { 
+                func_name: name, 
+                arguments: vec![called_on]
+            };
+
             loop {
                 let token = self.peek_token_no_ws_with_indent(indent)?;
                 match token.kind {
@@ -472,11 +473,14 @@ impl Parser {
                 }
             }
             
+            Ok(Expression::FunctionCall(call))
         } else {
-            unreachable!()
+            Ok(Expression::FieldAccess(FieldAccess { 
+                expr: Box::new(called_on),
+                field: name 
+            }))
         }
         
-        Ok(Expression::FunctionCall(call))
     }
 
     pub fn parse_standalone_function_call(&mut self, name: String, indent: usize) -> Result<Expression, String> {
@@ -665,7 +669,7 @@ impl Parser {
             term = match token {
                 Token { kind: TokenKind::Dot, .. } => {
                     self.advance_skip_ws();
-                    self.parse_method_call(term, indent)?
+                    self.parse_method_call_or_field_access(term, indent)?
                 }
                 Token { kind: TokenKind::SquareLeft, .. } => {
                     self.advance_skip_ws();
@@ -740,7 +744,7 @@ impl Parser {
         match self.peek(0) {
             Token { kind: TokenKind::Dot, .. } => {
                 self.advance();
-                self.parse_method_call(expr, indent)
+                self.parse_method_call_or_field_access(expr, indent)
             }
             Token { kind: TokenKind::SquareLeft, .. } => {
                 self.advance();
