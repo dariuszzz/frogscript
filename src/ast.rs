@@ -293,7 +293,21 @@ impl ToJS for Range {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FieldAccess  {
+    pub expr: Box<Expression>,
+    pub field: String,
+}
 
+impl ToJS for FieldAccess {
+    fn to_js(&self) -> String {
+        let FieldAccess { expr, field } = self;
+        
+        let expr = expr.to_js();
+
+        format!("{expr}.{field}")
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -308,6 +322,7 @@ pub enum Expression {
     StructLiteral(StructLiteral),
     ArrayLiteral(ArrayLiteral),
     ArrayAccess(ArrayAccess),
+    FieldAccess(FieldAccess),
     Range(Range),
     JS(String),
     If(If),
@@ -330,6 +345,7 @@ impl ToJS for Expression {
             Self::StructLiteral(struct_literal) => struct_literal.to_js(),
             Self::ArrayLiteral(array_literal) => array_literal.to_js(),
             Self::ArrayAccess(array_access) => array_access.to_js(),
+            Self::FieldAccess(field_access) => field_access.to_js(),
             Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
             Self::Return(expr) => {
