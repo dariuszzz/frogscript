@@ -25,6 +25,7 @@ let arr: [int] = [
 ]
 
 arr
-    .map(square)
-            x
+    .map(
+        square
+    )
     .print_n_elements(3)

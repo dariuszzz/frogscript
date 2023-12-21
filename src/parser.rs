@@ -449,14 +449,14 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                let Token { kind, .. } = self.peek(0);
-                match kind {
+                let token = self.peek_token_no_ws_with_indent(indent)?;
+                match token.kind {
                     TokenKind::ParenRight => {
-                        self.advance();
+                        self.advance_skip_ws();
                         break;
                     }
                     TokenKind::Comma => {
-                        self.advance();
+                        self.advance_skip_ws();
                     }
                     _ => call.arguments.push(self.parse_expression(indent)?)
                 }
@@ -466,19 +466,7 @@ impl Parser {
             unreachable!()
         }
         
-        let expr = Expression::FunctionCall(call);
-
-        match self.peek(0) {
-            Token { kind: TokenKind::Dot, .. } => {
-                self.advance();
-                self.parse_method_call(expr, indent)
-            }
-            Token { kind: TokenKind::SquareLeft, .. } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        Ok(Expression::FunctionCall(call))
     }
 
     pub fn parse_standalone_function_call(&mut self, name: String, indent: usize) -> Result<Expression, String> {
@@ -489,14 +477,14 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                let Token { kind, .. } = self.peek(0);
-                match kind {
+                let token = self.peek_token_no_ws_with_indent(indent)?;
+                match token.kind {
                     TokenKind::ParenRight => {
-                        self.advance();
+                        self.advance_skip_ws();
                         break;
                     }
                     TokenKind::Comma => {
-                        self.advance();
+                        self.advance_skip_ws();
                     }
                     _ => call.arguments.push(self.parse_expression(indent)?)
                 }
