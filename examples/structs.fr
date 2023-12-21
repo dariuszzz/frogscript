@@ -1,0 +1,13 @@
+:: x: ~Printable
+fn print => @js"console.log(x);"
+
+mut struct = {
+    foo: "siema",
+    bar: "elo",
+    witam: 23
+}
+
+let a = { val: { inner: 2 } }
+a.val.inner = struct.witam
+
+print(a)
