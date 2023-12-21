@@ -17,6 +17,14 @@ fn print_n_elements =>
 :: x: int
 fn square => return x * x
 
-let arr: [int] = [1, 2, square(3), 4, 5]
+let arr: [int] = [
+    1, 
+    2, 
+    square(3), 
+    4, 5
+]
 
-arr.map(square).print_n_elements(3)
+arr
+    .map(square)
+            x
+    .print_n_elements(3)
