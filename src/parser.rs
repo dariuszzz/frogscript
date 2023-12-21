@@ -48,6 +48,33 @@ impl Parser {
             )
     }
 
+    fn peek_token_no_ws_with_indent(&mut self, min_indent: usize) -> Result<Token, String> {
+        let mut i = 0;
+        loop {
+            let token = self.peek(i);
+            match token.kind {
+                TokenKind::Newline => { i += 1; },
+                TokenKind::Indentation(indent) => { i += 1; },
+                // TokenKind::Indentation(indent) if indent >= min_indent => { i += 1; },
+                // TokenKind::Indentation(indent) if indent < min_indent => return Err(format!("Invalid indent: {:?}:{:?}", token.start_line, token.start_char)),
+                _ => return Ok(token),
+            }
+
+        }
+    }
+
+    fn advance_skip_ws(&mut self) -> Token {
+        loop {
+            let token = self.peek(0);
+            match token.kind {
+                TokenKind::Newline => { self.advance(); },
+                TokenKind::Indentation(_) => { self.advance(); },
+                _ => return self.advance()
+            }
+
+        }
+    }
+
     fn match_token(&mut self, expected: Token) -> bool {
         if self.is_at_end() { return false }
         if self.tokens.get(self.current + 1).unwrap().clone() != expected {
@@ -410,11 +437,10 @@ impl Parser {
     }
 
     pub fn parse_method_call(&mut self, called_on: Expression, indent: usize) -> Result<Expression, String> {
-        let name = if let Token { kind: TokenKind::Identifier(Identifier::Custom(func_name)), .. } = self.advance() {
-            func_name
-        } else {
-            return Err(format!("no func name found"));
-        };
+        let name = match self.advance() {
+            Token { kind: TokenKind::Identifier(Identifier::Custom(func_name)), .. } => func_name,
+            token => return Err(format!("{:?}:{:?}: No func name found, got {:?} instead", token.start_line, token.start_char, token.kind))
+        } ;
 
         let mut call = FunctionCall { 
             func_name: name, 
@@ -486,15 +512,15 @@ impl Parser {
         let mut lhs = self.parse_ord(indent)?;
 
         loop {
-            let Token { kind, ..  } = self.peek(0);
-            let op = match kind {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let op = match token.kind {
                 TokenKind::NotEqual => BinaryOperation::NotEqual,
                 TokenKind::EqualEqual => BinaryOperation::Equal,
                 _ => break,
             };
 
             // consume != or ==
-            self.advance();
+            self.advance_skip_ws();
             
             let rhs = self.parse_ord(indent)?;
             
@@ -507,8 +533,8 @@ impl Parser {
     pub fn parse_ord(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lhs = self.parse_range(indent)?;
 
-        let Token { kind, ..  } = self.peek(0);
-        let op = match kind {
+        let token = self.peek_token_no_ws_with_indent(indent)?;
+        let op = match token.kind {
             TokenKind::AngleLeft => BinaryOperation::Less,
             TokenKind::AngleRight => BinaryOperation::Greater,
             TokenKind::LessEqual => BinaryOperation::LessEqual,
@@ -517,7 +543,7 @@ impl Parser {
         };
 
         // consume > or < or >= or <=
-        self.advance();
+        self.advance_skip_ws();
         
         let rhs = self.parse_range(indent)?;
         
@@ -530,15 +556,15 @@ impl Parser {
         let mut lhs = self.parse_sum(indent)?;
 
         loop {
-            let Token { kind, ..  } = self.peek(0);
-            let inclusive = match kind {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let inclusive = match token.kind {
                 TokenKind::DoubleDot => false,
                 TokenKind::DoubleDotEqual => true,
                 _ => break,
             };
 
             // consume .. or ..=
-            self.advance();
+            self.advance_skip_ws();
             
             let rhs = self.parse_sum(indent)?;
             
@@ -557,15 +583,15 @@ impl Parser {
         let mut lhs = self.parse_product(indent)?;
 
         loop {
-            let Token { kind, ..  } = self.peek(0);
-            let op = match kind {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let op = match token.kind {
                 TokenKind::Plus => BinaryOperation::Add,
                 TokenKind::Minus => BinaryOperation::Subtract,
                 _ => break,
             };
 
             // consume + or -
-            self.advance();
+            self.advance_skip_ws();
             
             let rhs = self.parse_product(indent)?;
             
@@ -579,15 +605,15 @@ impl Parser {
         let mut lhs = self.parse_term(indent)?;
 
         loop {
-            let Token { kind, ..  } = self.peek(0);
-            let op = match kind {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let op = match token.kind {
                 TokenKind::Star => BinaryOperation::Multiply,
                 TokenKind::Slash => BinaryOperation::Divide,
                 _ => break,
             };
 
             // consume * or / 
-            self.advance();
+            self.advance_skip_ws();
             
             let rhs = self.parse_term(indent)?;
             
@@ -598,7 +624,7 @@ impl Parser {
     }
 
     pub fn parse_term(&mut self, indent: usize) -> Result<Expression, String> {
-        let mut term = match self.advance() {
+        let mut term = match self.advance_skip_ws() {
             Token { start_char, start_line, kind, .. } => {
                 match kind {
                     TokenKind::Minus => {
@@ -634,15 +660,17 @@ impl Parser {
                 }
             }
         };
+
         
         loop {
-            term = match self.peek(0) {
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            term = match token {
                 Token { kind: TokenKind::Dot, .. } => {
-                    self.advance();
+                    self.advance_skip_ws();
                     self.parse_method_call(term, indent)?
                 }
                 Token { kind: TokenKind::SquareLeft, .. } => {
-                    self.advance();
+                    self.advance_skip_ws();
                     self.parse_array_access(term, indent)?
                 }
                 _ => break,
@@ -662,10 +690,11 @@ impl Parser {
             
             array.elements.push(elem);
 
-            match self.peek(0).kind {
-                TokenKind::Comma => self.advance(),
+            let token = self.peek_token_no_ws_with_indent(indent)?;
+            match token.kind {
+                TokenKind::Comma => self.advance_skip_ws(),
                 TokenKind::SquareRight => {
-                    self.advance();
+                    self.advance_skip_ws();
                     break
                 },
                 _ => return Err(format!("Unexpected token in array literal instead of ','")),
@@ -897,7 +926,11 @@ impl Parser {
                         break;
                     }
                     if block.indentation == original_indent {
-                        block.indentation = indent
+                        if indent > original_indent {
+                            block.indentation = indent
+                        } else {
+                            return Err(format!("If body must be indented"))
+                        }
                     }
                     if indent > block.indentation {
                         return Err(format!("Code block has inconsistent indentation"))
@@ -919,7 +952,7 @@ impl Parser {
                 }
                 // I dont understand why this case is needed
                 TokenKind::Indentation(indent) => {}
-                kind => return Err(format!("Invalid expression in code block: {kind:?}"))
+                kind => {} 
             }
         }
 
