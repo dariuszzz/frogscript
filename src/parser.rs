@@ -290,15 +290,11 @@ impl Parser {
                 
                 TypeKind::Array(Box::new(inner_type))
             },
-            TokenKind::ParenLeft => {
+            TokenKind::Identifier(Identifier::Fn) => {
                 self.advance();
 
-                // yuck
-                if let TokenKind::ParenRight = self.peek(0).kind {
-                    // handle () type
+                if let TokenKind::ParenLeft = self.peek(0).kind {
                     self.advance();
-                    TypeKind::Void
-                } else {
                     let mut args1 = self.parse_func_type_args()?;
                     let mut args2 = Vec::new();
                     let mut were_there_2_arg_lists = false;
@@ -355,6 +351,20 @@ impl Parser {
                             ret: Box::new(return_type)
                         })
                     }
+                } else {
+                    return Err(format!("Expected '(' after Fn in type"))
+                }
+            }
+            TokenKind::ParenLeft => {
+                self.advance();
+
+                // yuck
+                if let TokenKind::ParenRight = self.peek(0).kind {
+                    // handle () type
+                    self.advance();
+                    TypeKind::Void
+                } else { 
+                    return Err(format!("Unexpected token after '(' in type"))
                 }
             },
             token => return Err(format!("Invalid token in type: {token:?}"))

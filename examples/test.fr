@@ -2,7 +2,7 @@
 fn print => @js"console.log(x)"
 
 :: x: [int]
-:: f: (int -> int)
+:: f: fn(int -> int)
 fn map: [int] => @js"return x.map(f);"
 
 :: arr: [~Printable]
@@ -24,8 +24,4 @@ let arr: [int] = [
     4, 5
 ]
 
-arr
-    .map(
-        square
-    )
-    .print_n_elements(3)
+arr.map(square).print_n_elements(3)
