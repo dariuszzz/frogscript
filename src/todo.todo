@@ -12,14 +12,14 @@ Frogscript:
     (23-12-19 21:18) maybe generics are the solution
 
     ☐ Better error messages, show error location (line:col) 
-    ☐ Fix `()(type -> ret)` err msg because its unclear rn 
+    ✔ Fix `()(type -> ret)` err msg because its unclear rn @done(23-12-21 21:11)
     ^ (correct syntax is `(())(type -> ret)` or `(type -> ret)`)
     
     ☐ String templates ("var: ${var}") @high
     ☐ Escape sequences in strings ("\"siema\"") @high
     
     
-    ☐ Splitting expression to multiple lines with \n @critical
+    ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
     ☐ Parsing anon structs
     ☐ Parsing custom types
     ☐ Parsing enums
