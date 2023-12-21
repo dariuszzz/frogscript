@@ -161,7 +161,7 @@ impl ToJS for Variable {
 
 #[derive(Debug, Clone)]
 pub struct Assignment  {
-    pub lhs: String,
+    pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
 }
 
@@ -169,6 +169,7 @@ impl ToJS for Assignment {
     fn to_js(&self) -> String {
         let Assignment { lhs, rhs } = self;
         
+        let lhs = lhs.to_js();
         let rhs = rhs.to_js();
 
         format!("{lhs} = {rhs}")

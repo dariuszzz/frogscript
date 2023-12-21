@@ -453,7 +453,8 @@ impl Parser {
         } ;
 
         
-        if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
+        if let Token { kind: TokenKind::ParenLeft, .. } = self.peek(0) {
+            self.advance();
             let mut call = FunctionCall { 
                 func_name: name, 
                 arguments: vec![called_on]
@@ -626,7 +627,8 @@ impl Parser {
     }
 
     pub fn parse_term(&mut self, indent: usize) -> Result<Expression, String> {
-        let mut term = match self.advance_skip_ws() {
+        let token = self.advance_skip_ws();
+        let mut term = match token {
             Token { start_char, start_line, kind, .. } => {
                 match kind {
                     TokenKind::Minus => {
@@ -1009,6 +1011,71 @@ impl Parser {
         Ok(block)
     }
 
+    pub fn parse_assignment_or_call(&mut self, indent: usize) -> Result<Expression, String> {
+        let start_curr = self.current;
+
+        let term = self.parse_assignment(indent);
+
+        match term {
+            Ok(_) => {
+                return term
+            },
+            Err(_) => {}
+        };
+
+        // roll back
+        self.current = start_curr;
+
+        self.parse_expression(indent)
+    }
+
+    pub fn parse_assignment(&mut self, indent: usize) -> Result<Expression, String> {
+        let lhs = self.parse_term(indent)?;
+        match self.peek(0).kind {
+            TokenKind::Equal => {
+
+                if let TokenKind::Equal = self.advance().kind {}
+                else {
+                    return Err(format!("missing = in assignment expr"))
+                }
+
+                let rhs = self.parse_expression(indent)?;
+
+                Ok(Expression::Assignment(Assignment {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs)
+                }))
+            }
+            TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::MultEqual
+            | TokenKind::DivEqual => {
+
+                let op = match self.advance().kind {
+                    TokenKind::PlusEqual => BinaryOperation::Add,
+                    TokenKind::MinusEqual => BinaryOperation::Subtract,
+                    TokenKind::MultEqual => BinaryOperation::Multiply,
+                    TokenKind::DivEqual => BinaryOperation::Divide,
+                     _ => return Err(format!("Invalid assignment operator"))
+                };
+
+                let rhs = self.parse_expression(indent)?;
+
+                Ok(Expression::Assignment(Assignment {
+                    lhs: Box::new(lhs.clone()),
+                    rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                        op,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs)
+                    }))
+                }))
+            }
+            _ => {
+                return Err(format!("Invalid assignment operator"))
+            }
+        }
+    }
+
     pub fn parse_codeblock_expression(&mut self, indent: usize) -> Result<Expression, String> {
         match self.peek(0).kind {
             TokenKind::Identifier(Identifier::Let)
@@ -1019,88 +1086,8 @@ impl Parser {
                 let expr = self.parse_expression(indent)?;
                 Ok(Expression::Return(Box::new(expr)))
             }
-            TokenKind::Identifier(Identifier::Custom(iden)) => {
-                match self.peek(1).kind {
-                    TokenKind::Equal => {
-                        // consume iden and =
-                        self.advance();
-                        self.advance();
-
-                        let rhs = self.parse_expression(indent)?;
-
-                        Ok(Expression::Assignment(Assignment {
-                            lhs: iden,
-                            rhs: Box::new(rhs)
-                        }))
-                    }
-                    TokenKind::PlusEqual => {
-                        // consume iden and +=
-                        self.advance();
-                        self.advance();
-
-                        let rhs = self.parse_expression(indent)?;
-
-                        Ok(Expression::Assignment(Assignment {
-                            lhs: iden.clone(),
-                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
-                                op: BinaryOperation::Add,
-                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
-                                rhs: Box::new(rhs)
-                            }))
-                        }))
-                    }
-                    TokenKind::MinusEqual => {
-                        // consume iden and -=
-                        self.advance();
-                        self.advance();
-
-                        let rhs = self.parse_expression(indent)?;
-
-                        Ok(Expression::Assignment(Assignment {
-                            lhs: iden.clone(),
-                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
-                                op: BinaryOperation::Subtract,
-                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
-                                rhs: Box::new(rhs)
-                            }))
-                        }))
-                    }
-                    TokenKind::MultEqual => {
-                        // consume iden and *=
-                        self.advance();
-                        self.advance();
-
-                        let rhs = self.parse_expression(indent)?;
-
-                        Ok(Expression::Assignment(Assignment {
-                            lhs: iden.clone(),
-                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
-                                op: BinaryOperation::Multiply,
-                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
-                                rhs: Box::new(rhs)
-                            }))
-                        }))
-                    }
-                    TokenKind::DivEqual => {
-                        // consume iden and /=
-                        self.advance();
-                        self.advance();
-
-                        let rhs = self.parse_expression(indent)?;
-
-                        Ok(Expression::Assignment(Assignment {
-                            lhs: iden.clone(),
-                            rhs: Box::new(Expression::BinaryOp(BinaryOp {
-                                op: BinaryOperation::Divide,
-                                lhs: Box::new(Expression::Variable(Variable { name: iden })),
-                                rhs: Box::new(rhs)
-                            }))
-                        }))
-                    }
-                    _ => {
-                        self.parse_expression(indent)
-                    }
-                }
+            TokenKind::Identifier(Identifier::Custom(_)) => {
+                self.parse_assignment_or_call(indent)
             }
             _ => self.parse_expression(indent)
         }
@@ -1134,47 +1121,8 @@ impl Parser {
                     let expr = self.parse_expression(0)?;
                     module.toplevel_scope.expressions.push(expr);
                 },
-                TokenKind::ParenRight => todo!(),
-                TokenKind::CurlyLeft => todo!(),
-                TokenKind::CurlyRight => todo!(),
-                TokenKind::MultEqual => todo!(),
-                TokenKind::DivEqual => todo!(),
-                TokenKind::SquareLeft => todo!(),
-                TokenKind::SquareRight => todo!(),
-                TokenKind::AngleLeft => todo!(),
-                TokenKind::AngleRight => todo!(),
-                TokenKind::Comma => todo!(),
-                TokenKind::Colon => todo!(),
                 TokenKind::DoubleColon => self.parse_fn_with_args(&mut module)?,
-                TokenKind::Plus => todo!(),
-                TokenKind::PlusEqual => todo!(),
-                TokenKind::Mod => todo!(),
-                TokenKind::Star => todo!(),
-                TokenKind::LessEqual => todo!(),
-                TokenKind::GreaterEqual => todo!(),
-                TokenKind::EqualEqual => todo!(),
-                TokenKind::Equal => todo!(),
-                TokenKind::ThinArrow => todo!(),
-                TokenKind::FatArrow => todo!(),
-                TokenKind::Minus => todo!(),
-                TokenKind::MinusEqual => todo!(),
-                TokenKind::Slash => todo!(),
-                TokenKind::Comment => todo!(),
-                TokenKind::MultilineComment => todo!(),
-                TokenKind::Power => todo!(),
-                TokenKind::NotEqual => todo!(),
-                TokenKind::Dot => todo!(),
-                TokenKind::Ampersand => todo!(),
-                TokenKind::Pipe => todo!(),
-                TokenKind::Caret => todo!(),
-                TokenKind::Tilde => todo!(),
-                TokenKind::RShift => todo!(),
-                TokenKind::LShift => todo!(),
-                TokenKind::DoubleDot => todo!(),
-                TokenKind::DoubleDotEqual => todo!(),
-                TokenKind::TripleDot => todo!(),
                 TokenKind::Newline => { self.advance(); },
-                TokenKind::TrianglePipe => todo!(),
                 TokenKind::Dollar => todo!(),
                 TokenKind::Indentation(_) => { self.advance(); },
                 TokenKind::Literal(_) => {
@@ -1202,30 +1150,18 @@ impl Parser {
                             let expr = self.parse_expression(0)?;
                             module.toplevel_scope.expressions.push(expr);
                         }
-                        Identifier::Custom(name) => {
-                            match self.peek(1).kind {
-                                TokenKind::Equal => {
-                                    self.advance(); // consume iden
-                                    self.advance(); // consume = 
+                        Identifier::Custom(iden) => {
+                            let expr = self.parse_assignment_or_call(0)?;
 
-                                    let rhs = self.parse_expression(0)?;
-
-                                    module.toplevel_scope.expressions.push(Expression::Assignment(Assignment {
-                                        lhs: name,
-                                        rhs: Box::new(rhs),
-                                    }));
-                                }
-                                _ => {
-                                    let expr = self.parse_expression(0)?;
-
-                                    module.toplevel_scope.expressions.push(expr);
-                                }
-                            }
+                            module.toplevel_scope.expressions.push(expr);
                         }
                         _ => { self.advance(); }
                     }
                 }
-                TokenKind::Hash => todo!(),
+                token => {
+                    eprintln!("{:?}:{:?} - Unexpected {token:?}", t.start_line, t.start_char);
+                    todo!();
+                }
             };
 
         }
