@@ -255,13 +255,12 @@ impl ToJS for ArrayLiteral {
 
 #[derive(Debug, Clone)]
 pub struct StructLiteral  {
-    pub name: String,
     pub fields: HashMap<String, Expression>,
 }
 
 impl ToJS for StructLiteral {
     fn to_js(&self) -> String {
-        let StructLiteral { name, fields } = self;
+        let StructLiteral { fields } = self;
 
         let fields = fields
             .into_iter()

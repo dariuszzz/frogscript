@@ -82,6 +82,8 @@ pub enum TokenKind {
     TrianglePipe,
     Dollar,
     Hash,
+    MultEqual,
+    DivEqual,
     JS,
     Indentation(usize),
     
@@ -446,6 +448,8 @@ impl Lexer {
                 '*' => {
                     if self.match_char('*') {
                         self.add_token(TokenKind::Power);
+                    } if self.match_char('=') {
+                        self.add_token(TokenKind::MultEqual);
                     } else {
                         self.add_token(TokenKind::Star);
                     }
@@ -463,6 +467,8 @@ impl Lexer {
                         }
                     } else if self.match_char('*') {
                         self.parse_multiline_comment()?;
+                    } else if self.match_char('=') {
+                        self.add_token(TokenKind::DivEqual);
                     } else {
                         self.add_token(TokenKind::Slash);
                     }
