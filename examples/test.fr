@@ -24,8 +24,4 @@ let arr: [int] = [
     4, 5
 ]
 
-arr
-    .map(
-        square
-    )
-    .print_n_elements(3)
+arr.map(square).print_n_elements(3)
