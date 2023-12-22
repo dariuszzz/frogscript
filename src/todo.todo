@@ -24,9 +24,9 @@ Frogscript:
     ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
     ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
     ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
+    ✔ Parse imports @done(23-12-22 15:02)
     ☐ Parsing custom types
     ☐ Parsing enums
-    ☐ Parse imports
     ☐ Come up with a syntax for lambdas and parse it
     ☐ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person)
     

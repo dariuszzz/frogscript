@@ -1,4 +1,3 @@
-:: x: string
 fn print => @js"console.log(x)"
 
 :: x: [int]
