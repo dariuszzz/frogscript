@@ -124,7 +124,7 @@ impl Parser {
         Some(tokens)
     }
 
-    fn parse_fn_no_args(&mut self, module: &mut Module, args: Vec<FunctionArgument>) -> Result<FunctionDef, String> {
+    fn parse_fn_no_args(&mut self, args: Vec<FunctionArgument>) -> Result<FunctionDef, String> {
 
         let mut function_def = FunctionDef {
             export: false,
@@ -229,7 +229,7 @@ impl Parser {
             argument_list.push(arg_def);
         }
 
-        self.parse_fn_no_args(module, argument_list)
+        self.parse_fn_no_args(argument_list)
     }
 
     pub fn parse_type(&mut self) -> Result<Type, String> {
@@ -1092,7 +1092,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_import(&mut self, module: &mut Module) -> Result<ImportStmt, String> {
+    pub fn parse_import(&mut self) -> Result<ImportStmt, String> {
         // consume `use`
         self.advance();
 
@@ -1138,6 +1138,42 @@ impl Parser {
             imports: imported
         })
     }
+    
+    pub fn parse_type_def(&mut self) -> Result<TypeDef, String> {
+        let export = match self.peek(0).kind {
+            TokenKind::Identifier(Identifier::Export) => {
+                self.advance();
+                true
+            },
+            _ => false
+        };
+
+        match self.advance().kind {
+            TokenKind::Identifier(Identifier::Type) => {},
+            token => return Err(format!("No 'type' in type decl, found {token:?} instead"))
+        };
+
+        let type_name = match self.advance().kind {
+            TokenKind::Identifier(Identifier::Custom(type_name)) => type_name,
+            _ => return Err(format!("No type name provided in type decl"))
+        };
+
+        match self.advance().kind {
+            TokenKind::Equal => {},
+            _ => return Err(format!("Missing '=' in type decl"))
+        }
+
+        let value = match self.peek(0).kind {
+            TokenKind::Newline => unimplemented!("multiline types not implemented"),
+            _ => self.parse_type()?
+        };
+
+        Ok(TypeDef {
+            name: type_name,
+            export,
+            value
+        })
+    }
 
     pub fn parse_module(&mut self, file_name: String) -> Result<Module, String> {
         let mut module = Module {
@@ -1174,15 +1210,29 @@ impl Parser {
                 },
                 TokenKind::Identifier(iden) => { 
                     match iden {
+                        Identifier::Type => {
+                            let type_def = self.parse_type_def()?;
+                            module.type_defs.push(type_def);
+                        }
+                        Identifier::Export => {
+                            match self.peek(1).kind {
+                                TokenKind::Identifier(Identifier::Type) => {
+                                    let type_def = self.parse_type_def()?;
+                                    module.type_defs.push(type_def);
+                                }
+                                TokenKind::Identifier(Identifier::Fn) => {
+                                    let func_def = self.parse_fn_no_args(Vec::new())?;
+                                    module.function_defs.push(func_def);
+                                }
+                                _ => return Err(format!("Invalid token after export"))
+                            }
+                        }
                         Identifier::Use => {
-                            // unconsume export/fn keyword
-                            let import = self.parse_import(&mut module)?;
+                            let import = self.parse_import()?;
                             module.imports.push(import);
                         }
-                        Identifier::Export 
-                        | Identifier::Fn => {
-                            // unconsume export/fn keyword
-                            let func_def = self.parse_fn_no_args(&mut module, Vec::new())?;
+                        Identifier::Fn => {
+                            let func_def = self.parse_fn_no_args(Vec::new())?;
                             module.function_defs.push(func_def);
                         }
                         Identifier::Let 
