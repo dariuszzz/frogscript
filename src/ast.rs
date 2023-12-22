@@ -414,6 +414,12 @@ pub struct FunctionArgument {
 }
 
 #[derive(Debug, Clone)]
+pub struct ImportStmt {
+    pub filename: String,
+    pub imports: Vec<String>
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub export: bool,
     pub func_name: String,
@@ -484,6 +490,7 @@ pub enum TypeDefKind {
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub module_name: String,
+    pub imports: Vec<ImportStmt>,
     pub type_defs: Vec<TypeDef>,
     pub function_defs: Vec<FunctionDef>,
     pub toplevel_scope: CodeBlock

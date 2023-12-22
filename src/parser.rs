@@ -48,7 +48,7 @@ impl Parser {
             )
     }
 
-    fn peek_token_no_ws_with_indent(&mut self, min_indent: usize) -> Result<Token, String> {
+    fn peek_skip_ws(&mut self, min_indent: usize) -> Result<Token, String> {
         let mut i = 0;
         loop {
             let token = self.peek(i);
@@ -84,22 +84,6 @@ impl Parser {
         self.current += 1;
         return true
     }
-
-    // fn collect_until<F>(&mut self, until: F) -> Result<Vec<Token>, String> 
-    // where F: Fn(Token) -> bool 
-    // {
-    //     let mut tokens = Vec::new();
-    //     while let Some(t) = self.peek(0) {
-    //         if until(t) { break }
-    //         tokens.push(self.advance());
-    //     }
-
-    //     if self.is_at_end() {
-    //         return Err("Token not found".to_owned());
-    //     }
-
-    //     return Ok(tokens)
-    // }
     
     fn collect_pattern(&mut self, pattern: &[(TokenKind, bool)]) -> Result<Vec<Token>, String> {
 
@@ -140,7 +124,7 @@ impl Parser {
         Some(tokens)
     }
 
-    fn parse_fn_no_args(&mut self, module: &mut Module, args: Vec<FunctionArgument>) -> Result<(), String> {
+    fn parse_fn_no_args(&mut self, module: &mut Module, args: Vec<FunctionArgument>) -> Result<FunctionDef, String> {
 
         let mut function_def = FunctionDef {
             export: false,
@@ -203,12 +187,10 @@ impl Parser {
             }
         }
 
-        module.function_defs.push(function_def);
-
-        Ok(())
+        Ok(function_def)
     }
 
-    fn parse_fn_with_args(&mut self, module: &mut Module) -> Result<(), String> {
+    fn parse_fn_with_args(&mut self, module: &mut Module) -> Result<FunctionDef, String> {
         let mut argument_list = Vec::new();
 
         while let Some(arg_tokens) = self.safe_collect_pattern(
@@ -461,7 +443,7 @@ impl Parser {
             };
 
             loop {
-                let token = self.peek_token_no_ws_with_indent(indent)?;
+                let token = self.peek_skip_ws(indent)?;
                 match token.kind {
                     TokenKind::ParenRight => {
                         self.advance_skip_ws();
@@ -492,7 +474,7 @@ impl Parser {
 
         if let Token { kind: TokenKind::ParenLeft, .. } = self.advance() {
             loop {
-                let token = self.peek_token_no_ws_with_indent(indent)?;
+                let token = self.peek_skip_ws(indent)?;
                 match token.kind {
                     TokenKind::ParenRight => {
                         self.advance_skip_ws();
@@ -515,7 +497,7 @@ impl Parser {
         let mut lhs = self.parse_ord(indent)?;
 
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             let op = match token.kind {
                 TokenKind::NotEqual => BinaryOperation::NotEqual,
                 TokenKind::EqualEqual => BinaryOperation::Equal,
@@ -536,7 +518,7 @@ impl Parser {
     pub fn parse_ord(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lhs = self.parse_range(indent)?;
 
-        let token = self.peek_token_no_ws_with_indent(indent)?;
+        let token = self.peek_skip_ws(indent)?;
         let op = match token.kind {
             TokenKind::AngleLeft => BinaryOperation::Less,
             TokenKind::AngleRight => BinaryOperation::Greater,
@@ -559,7 +541,7 @@ impl Parser {
         let mut lhs = self.parse_sum(indent)?;
 
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             let inclusive = match token.kind {
                 TokenKind::DoubleDot => false,
                 TokenKind::DoubleDotEqual => true,
@@ -586,7 +568,7 @@ impl Parser {
         let mut lhs = self.parse_product(indent)?;
 
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             let op = match token.kind {
                 TokenKind::Plus => BinaryOperation::Add,
                 TokenKind::Minus => BinaryOperation::Subtract,
@@ -608,7 +590,7 @@ impl Parser {
         let mut lhs = self.parse_term(indent)?;
 
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             let op = match token.kind {
                 TokenKind::Star => BinaryOperation::Multiply,
                 TokenKind::Slash => BinaryOperation::Divide,
@@ -667,7 +649,7 @@ impl Parser {
 
         
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             term = match token {
                 Token { kind: TokenKind::Dot, .. } => {
                     self.advance_skip_ws();
@@ -694,12 +676,12 @@ impl Parser {
             
             array.elements.push(elem);
 
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+            let token = self.peek_skip_ws(indent)?;
             match token.kind {
                 TokenKind::Comma => {
                     self.advance_skip_ws();
                     // allow for trailing , 
-                    if let TokenKind::SquareRight = self.peek_token_no_ws_with_indent(indent)?.kind {
+                    if let TokenKind::SquareRight = self.peek_skip_ws(indent)?.kind {
                         self.advance_skip_ws();
                         break;
                     }
@@ -891,7 +873,7 @@ impl Parser {
         }))
     }
 
-    pub fn parse_struct(&mut self, indent: usize) -> Result<Expression, String> {
+    pub fn parse_struct_literal(&mut self, indent: usize) -> Result<Expression, String> {
         self.advance_skip_ws();
 
         let mut struct_literal = StructLiteral {
@@ -899,7 +881,22 @@ impl Parser {
         };
 
         loop {
-            let token = self.peek_token_no_ws_with_indent(indent)?;
+
+            let field_name = match self.advance_skip_ws().kind {
+                TokenKind::Identifier(Identifier::Custom(field_name)) => field_name,
+                _ => return Err(format!("Unexpected token, expected struct field name"))
+            };
+
+            match self.advance_skip_ws().kind {
+                TokenKind::Colon => {},
+                _ => return Err(format!("Unexpected token, expected struct field name"))
+            };
+
+            let field_type = self.parse_expression(indent)?;
+
+            struct_literal.fields.insert(field_name, field_type);
+
+            let token = self.peek_skip_ws(indent)?;
             match token.kind {
                 TokenKind::CurlyRight => {
                     self.advance_skip_ws();
@@ -907,22 +904,13 @@ impl Parser {
                 }
                 TokenKind::Comma => {
                     self.advance_skip_ws();
+                    // allow for trailing comma
+                    if let TokenKind::CurlyRight = self.peek_skip_ws(indent)?.kind {
+                        self.advance_skip_ws();
+                        break;
+                    }
                 }
-                _ => {
-                    let field_name = match self.advance_skip_ws().kind {
-                        TokenKind::Identifier(Identifier::Custom(field_name)) => field_name,
-                        _ => return Err(format!("Unexpected token, expected struct field name"))
-                    };
-
-                    match self.advance_skip_ws().kind {
-                        TokenKind::Colon => {},
-                        _ => return Err(format!("Unexpected token, expected struct field name"))
-                    };
-
-                    let field_type = self.parse_expression(indent)?;
-
-                    struct_literal.fields.insert(field_name, field_type);
-                }
+                _ => return Err(format!("Invalid token in struct literal body"))
             }
         }
 
@@ -930,7 +918,7 @@ impl Parser {
     }
 
     pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
-        match self.peek_token_no_ws_with_indent(indent)?.kind {
+        match self.peek_skip_ws(indent)?.kind {
             TokenKind::Identifier(Identifier::If) => {
                 self.parse_if(indent)
             }
@@ -949,7 +937,7 @@ impl Parser {
                 self.parse_js()
             }
             TokenKind::CurlyLeft => {
-                self.parse_struct(indent)
+                self.parse_struct_literal(indent)
             }
             TokenKind::Identifier(Identifier::Continue) => {
                 self.advance();
@@ -1104,9 +1092,57 @@ impl Parser {
         }
     }
 
+    pub fn parse_import(&mut self, module: &mut Module) -> Result<ImportStmt, String> {
+        // consume `use`
+        self.advance();
+
+        match self.advance().kind {
+            TokenKind::CurlyLeft => {}
+            _ => return Err(format!("Missing '{{' in use statement"))
+        }
+
+        let mut imported = Vec::new();
+
+        loop {
+            match self.advance_skip_ws().kind {
+                TokenKind::Identifier(Identifier::Custom(iden)) => {
+                    imported.push(iden)
+                }
+                _ => return Err(format!("Invalid token in use statement body"))
+            }
+            let token = self.peek_skip_ws(0)?;
+            match token.kind {
+                TokenKind::CurlyRight => {
+                    self.advance_skip_ws();
+                    break;
+                }
+                TokenKind::Comma => {
+                    self.advance_skip_ws();
+                }
+                _ => return Err(format!("Invalid token in use statement body"))
+            }
+        }
+
+        match self.advance().kind {
+            TokenKind::Identifier(Identifier::From) => {}
+            _ => return Err(format!("Missing 'from' in use statement"))
+        }
+
+        let file = match self.advance().kind {
+            TokenKind::Literal(Literal::String(file)) => file,
+            _ => return Err(format!("Missing file in use statement"))
+        };
+
+        Ok(ImportStmt {
+            filename: file,
+            imports: imported
+        })
+    }
+
     pub fn parse_module(&mut self, file_name: String) -> Result<Module, String> {
         let mut module = Module {
             module_name: file_name,
+            imports: Vec::new(),
             type_defs: Vec::new(),
             function_defs: Vec::new(),
             toplevel_scope: CodeBlock::default()
@@ -1121,7 +1157,10 @@ impl Parser {
                     let expr = self.parse_expression(0)?;
                     module.toplevel_scope.expressions.push(expr);
                 },
-                TokenKind::DoubleColon => self.parse_fn_with_args(&mut module)?,
+                TokenKind::DoubleColon => {
+                    let func_def = self.parse_fn_with_args(&mut module)?;
+                    module.function_defs.push(func_def);
+                },
                 TokenKind::Newline => { self.advance(); },
                 TokenKind::Dollar => todo!(),
                 TokenKind::Indentation(_) => { self.advance(); },
@@ -1135,10 +1174,16 @@ impl Parser {
                 },
                 TokenKind::Identifier(iden) => { 
                     match iden {
+                        Identifier::Use => {
+                            // unconsume export/fn keyword
+                            let import = self.parse_import(&mut module)?;
+                            module.imports.push(import);
+                        }
                         Identifier::Export 
                         | Identifier::Fn => {
                             // unconsume export/fn keyword
-                            self.parse_fn_no_args(&mut module, Vec::new())?
+                            let func_def = self.parse_fn_no_args(&mut module, Vec::new())?;
+                            module.function_defs.push(func_def);
                         }
                         Identifier::Let 
                         | Identifier::Mut => {
