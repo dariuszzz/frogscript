@@ -477,14 +477,10 @@ pub struct StructDef {
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
+    pub name: String,
     pub export: bool,
-    pub type_kind: TypeDefKind
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeDefKind {
-    EnumDef(EnumDef),
-    StructDef(StructDef)
+    // TODO: come up with a better name
+    pub value: Type
 }
 
 #[derive(Debug, Clone, Default)]

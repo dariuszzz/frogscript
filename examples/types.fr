@@ -1,0 +1,7 @@
+use { print } from "./test.fr"
+
+type Siema = int
+export type Siema = int
+
+export fn siema => print("elo")
+fn siema => print("elo")
