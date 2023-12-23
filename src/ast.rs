@@ -26,7 +26,7 @@ pub enum BinaryOperation {
 
 #[derive(Debug, Clone)]
 pub struct FunctionType {
-    pub implicit_args: Vec<Type>,
+    pub env_args: Vec<Type>,
     pub args: Vec<Type>,
     pub ret: Box<Type>
 }
@@ -60,12 +60,12 @@ pub struct VariableDecl  {
     pub var_type: Type,
     pub var_value: Box<Expression>,
     pub is_mutable: bool,
-    pub is_implicit: bool,
+    pub is_env: bool,
 }
 
 impl ToJS for VariableDecl {
     fn to_js(&self) -> String {
-        let VariableDecl { var_name, var_type, var_value, is_mutable, is_implicit } = self;
+        let VariableDecl { var_name, var_type, var_value, is_mutable, is_env } = self;
         let keyword = if *is_mutable { "let" } else { "const" };
         let value = var_value.to_js();
 
@@ -428,7 +428,7 @@ impl ToJS for CodeBlock {
 pub struct FunctionArgument {
     pub arg_name: String,
     pub arg_type: Type,
-    pub is_implicit: bool,
+    pub is_env: bool,
 }
 
 #[derive(Debug, Clone)]

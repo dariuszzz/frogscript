@@ -197,7 +197,7 @@ impl Parser {
             &[
                 (true, "indent_1",         TokenKind::Indentation(0)),
                 (false, "double_colon",     TokenKind::DoubleColon),
-                (true,  "implicit",         TokenKind::Identifier(Identifier::Implicit)),
+                (true,  "env",         TokenKind::Identifier(Identifier::Env)),
                 (false, "var_name",         TokenKind::Identifier(Identifier::_MatchAnyCustom)),
                 (false, "colon",            TokenKind::Colon),
             ]
@@ -209,7 +209,7 @@ impl Parser {
                     is_reference: false,
                     is_structural: false 
                 },
-                is_implicit: false,
+                is_env: false,
             };
 
             let name_token = arg_tokens.get("var_name").unwrap().clone();
@@ -222,8 +222,8 @@ impl Parser {
 
             self.advance();
 
-            if let Some(_) = arg_tokens.get("implicit") {
-                arg_def.is_implicit = true;
+            if let Some(_) = arg_tokens.get("env") {
+                arg_def.is_env = true;
             }
 
             argument_list.push(arg_def);
@@ -322,13 +322,13 @@ impl Parser {
                     
                     if were_there_2_arg_lists {
                         TypeKind::Function(FunctionType {
-                            implicit_args: args1,
+                            env_args: args1,
                             args: args2,
                             ret: Box::new(return_type)
                         })
                     } else {
                         TypeKind::Function(FunctionType {
-                            implicit_args: Vec::new(),
+                            env_args: Vec::new(),
                             args: args1,
                             ret: Box::new(return_type)
                         })
@@ -384,11 +384,11 @@ impl Parser {
         if let Some(variable_decl_tokens) = self.safe_collect_pattern(
             &[
                 (true, "indent_1",  TokenKind::Indentation(0)),
-                (true, "implicit",  TokenKind::Identifier(Identifier::Implicit)),
+                (true, "env",  TokenKind::Identifier(Identifier::Env)),
                 (false, "var_name", TokenKind::Identifier(Identifier::_MatchAnyCustom)),
             ]
         ) {
-            let is_implicit = variable_decl_tokens.get("implicit").is_some();
+            let is_env = variable_decl_tokens.get("env").is_some();
 
             let name_token = variable_decl_tokens.get("var_name").unwrap().clone();
             let var_name = match name_token.kind {
@@ -419,7 +419,7 @@ impl Parser {
                 var_type,
                 var_value: Box::new(value),
                 is_mutable,
-                is_implicit,
+                is_env,
             };
 
             Ok(Expression::VariableDecl(variable))

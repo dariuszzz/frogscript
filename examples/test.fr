@@ -31,3 +31,9 @@ let arr: [int] = [
 let _ = arr
     .map(square)
     .print_n_elements(3)
+
+:: env x: string
+fn func => print(x)
+
+let env txt = "siema"
+let _1 = func(txt)

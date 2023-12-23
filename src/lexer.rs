@@ -31,7 +31,7 @@ pub enum Identifier {
     Use,
     Export,
     From,
-    Implicit,
+    Env,
     As,
     In,
 }
@@ -334,7 +334,7 @@ impl Lexer {
             ("use", Identifier::Use),
             ("export", Identifier::Export),
             ("from", Identifier::From),
-            ("implicit", Identifier::Implicit),
+            ("env", Identifier::Env),
             ("as", Identifier::As),
             ("fn", Identifier::Fn),
             ("in", Identifier::In),
