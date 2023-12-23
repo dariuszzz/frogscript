@@ -625,21 +625,7 @@ impl Parser {
             Token { start_char, start_line, kind, .. } => {
                 match kind {
                     TokenKind::Minus => {
-
-                        let term = match self.advance() {
-                            Token { start_char, start_line, kind, .. } => {
-                                match kind {
-                                    TokenKind::Literal(literal) => self.parse_num(literal, indent)?,
-                                    TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent)?,
-                                    TokenKind::Identifier(Identifier::Custom(name)) => self.parse_custom_iden(name, indent)?,
-                                    TokenKind::SquareLeft => self.parse_array_literal(indent)?,
-                                    kind => {
-                                        dbg!(format!("[{:?}:{:?}] unexpected token {:?}", start_line, start_char, kind));
-                                        todo!("This is either invalid or unimplemented")
-                                    }
-                                }
-                            }
-                        };
+                        let term = self.parse_term(indent)?;
 
                         Expression::UnaryOp(UnaryOp { 
                             op: UnaryOperation::Negative, 
@@ -753,10 +739,11 @@ impl Parser {
         Ok(Expression::Variable(Variable { name: var_name }))
     }
 
+
     pub fn parse_custom_iden(&mut self, identifier: String, indent: usize) -> Result<Expression, String> {
-        let expr = match self.peek(0) {
-            Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier, indent)?,
-            Token { kind: TokenKind::CurlyLeft, .. } => {
+        let expr = match self.peek(0).kind {
+            TokenKind::ParenLeft => self.parse_standalone_function_call(identifier, indent)?,
+            TokenKind::CurlyLeft => {
 
                 let struct_literal = if let Expression::AnonStruct(lit) = self.parse_struct_literal(indent)? {
                     lit
@@ -770,7 +757,6 @@ impl Parser {
             _ => self.parse_variable(identifier, indent)?,
         };
 
-        
         Ok(expr)
     }
 
@@ -1354,16 +1340,20 @@ impl Parser {
                             let expr = self.parse_variable_decl(0)?;
                             module.toplevel_scope.expressions.push(expr);
                         }
-                        Identifier::If
-                        | Identifier::For => {
-                            let expr = self.parse_expression(0)?;
-                            module.toplevel_scope.expressions.push(expr);
-                        }
-                        Identifier::Custom(iden) => {
-                            let expr = self.parse_assignment_or_call(0)?;
 
-                            module.toplevel_scope.expressions.push(expr);
-                        }
+                        Identifier::If
+                        | Identifier::For
+                        | Identifier::Custom(_) => unimplemented!("Im not certain about having top level statements"),
+                        // Identifier::If
+                        // | Identifier::For => {
+                        //     let expr = self.parse_expression(0)?;
+                        //     module.toplevel_scope.expressions.push(expr);
+                        // }
+                        // Identifier::Custom(iden) => {
+                        //     let expr = self.parse_assignment_or_call(0)?;
+
+                        //     module.toplevel_scope.expressions.push(expr);
+                        // }
                         _ => { self.advance(); }
                     }
                 }

@@ -1,4 +1,4 @@
-:: x: string
+:: x: ~Printable
 fn print => @js"console.log(x)"
 
 :: x: [int]
@@ -16,6 +16,9 @@ fn print_n_elements =>
         print(elem)
 
 :: x: int
+fn add1 => return x + 1
+
+:: x: int
 fn square => return x * x
 
 let arr: [int] = [
@@ -23,6 +26,8 @@ let arr: [int] = [
     2, 
     square(3), 
     4, 5,
-]
+].map(add1)
 
-arr.map(square).print_n_elements(3)
+let _ = arr
+    .map(square)
+    .print_n_elements(3)
