@@ -1,5 +1,8 @@
-use { print as log } from "./test.fr"
-use "./types.fr"
+use test { 
+    print as log, elo,
+    siema,
+} 
+use types
 
 type Siema = int
 
@@ -9,5 +12,11 @@ type Clean =
     name: string
     age: uint
 
-export fn elo => print("elo")
-fn siema => print("siema")
+export fn elo => return Clean {
+    elo: 32,
+    field: "elo",
+    name: "witam",
+    age: 23
+}
+
+fn siema => print(elo())

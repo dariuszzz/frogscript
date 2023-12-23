@@ -451,6 +451,12 @@ impl Parser {
                     }
                     TokenKind::Comma => {
                         self.advance_skip_ws();
+
+                        // allow for trailing , 
+                        if let TokenKind::ParenRight = self.peek_skip_ws(0)?.kind {
+                            self.advance_skip_ws();
+                            break;
+                        }
                     }
                     _ => call.arguments.push(self.parse_expression(indent)?)
                 }
@@ -482,6 +488,11 @@ impl Parser {
                     }
                     TokenKind::Comma => {
                         self.advance_skip_ws();
+                        // allow for trailing , 
+                        if let TokenKind::ParenRight = self.peek_skip_ws(0)?.kind {
+                            self.advance_skip_ws();
+                            break;
+                        }
                     }
                     _ => call.arguments.push(self.parse_expression(indent)?)
                 }
@@ -745,6 +756,17 @@ impl Parser {
     pub fn parse_custom_iden(&mut self, identifier: String, indent: usize) -> Result<Expression, String> {
         let expr = match self.peek(0) {
             Token { kind: TokenKind::ParenLeft, .. } => self.parse_standalone_function_call(identifier, indent)?,
+            Token { kind: TokenKind::CurlyLeft, .. } => {
+
+                let struct_literal = if let Expression::AnonStruct(lit) = self.parse_struct_literal(indent)? {
+                    lit
+                } else { unreachable!() };
+
+                Expression::NamedStruct(NamedStruct { 
+                    casted_to: identifier, 
+                    struct_literal
+                })
+            },
             _ => self.parse_variable(identifier, indent)?,
         };
 
@@ -876,7 +898,7 @@ impl Parser {
     pub fn parse_struct_literal(&mut self, indent: usize) -> Result<Expression, String> {
         self.advance_skip_ws();
 
-        let mut struct_literal = StructLiteral {
+        let mut struct_literal = AnonStruct {
             fields: HashMap::new()
         };
 
@@ -914,7 +936,7 @@ impl Parser {
             }
         }
 
-        Ok(Expression::StructLiteral(struct_literal))
+        Ok(Expression::AnonStruct(struct_literal))
     }
 
     pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1096,13 +1118,17 @@ impl Parser {
 
         let mut imports = Vec::new();
 
-        match (self.peek(0).kind, self.peek(1).kind) {
-            (TokenKind::Literal(Literal::String(filename)), TokenKind::Newline) => { 
-                self.advance(); 
+        let module_name = match self.advance().kind {
+            TokenKind::Identifier(Identifier::Custom(file)) => file,
+            _ => return Err(format!("Missing file in use statement"))
+        };
+
+        match self.peek(0).kind {
+            TokenKind::Newline => { 
                 self.advance(); 
 
                 return Ok(ImportStmt {
-                    filename,
+                    module_name,
                     imports,
                     everything: true,
                 })
@@ -1118,7 +1144,7 @@ impl Parser {
         loop {
             let name = match self.advance_skip_ws().kind {
                 TokenKind::Identifier(Identifier::Custom(iden)) => iden,
-                _ => return Err(format!("Invalid token in use statement body"))
+                token => return Err(format!("Invalid token in use statement body {token:?}"))
             };
 
             let alias = match self.peek(0).kind {
@@ -1145,23 +1171,18 @@ impl Parser {
                 }
                 TokenKind::Comma => {
                     self.advance_skip_ws();
+                    // allow for trailing , 
+                    if let TokenKind::CurlyRight = self.peek_skip_ws(0)?.kind {
+                        self.advance_skip_ws();
+                        break;
+                    }
                 }
                 _ => return Err(format!("Invalid token in use statement body"))
             }
         }
 
-        match self.advance().kind {
-            TokenKind::Identifier(Identifier::From) => {}
-            _ => return Err(format!("Missing 'from' in use statement"))
-        }
-
-        let filename = match self.advance().kind {
-            TokenKind::Literal(Literal::String(file)) => file,
-            _ => return Err(format!("Missing file in use statement"))
-        };
-
         Ok(ImportStmt {
-            filename,
+            module_name,
             imports,
             everything: false,
         })
