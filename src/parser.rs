@@ -128,6 +128,7 @@ impl Parser {
 
         let mut function_def = FunctionDef {
             export: false,
+            inline: false,
             func_name: String::new(),
             argument_list: args,
             return_type: Type { 
@@ -142,12 +143,17 @@ impl Parser {
             &[
                 (true,  "ident_1",  TokenKind::Indentation(0)),
                 (true,  "export",   TokenKind::Identifier(Identifier::Export)),
+                (true,  "inline",   TokenKind::Identifier(Identifier::Inline)),
                 (false, "fn_key",   TokenKind::Identifier(Identifier::Fn)),
                 (false, "func_name",TokenKind::Identifier(Identifier::_MatchAnyCustom)),
             ]
         ) {
             if let Some(_) = fn_decl_tokens.get("export") {
                 function_def.export = true;
+            }
+
+            if let Some(_) = fn_decl_tokens.get("inline") {
+                function_def.inline = true;
             }
 
             let name_token = fn_decl_tokens.get("func_name").unwrap().clone();
@@ -1331,7 +1337,8 @@ impl Parser {
                             let import = self.parse_import()?;
                             module.imports.push(import);
                         }
-                        Identifier::Fn => {
+                        Identifier::Inline
+                        | Identifier::Fn => {
                             let func_def = self.parse_fn_no_args(Vec::new())?;
                             module.function_defs.push(func_def);
                         }

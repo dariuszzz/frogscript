@@ -1,9 +1,9 @@
 :: x: ~Printable
-fn print => @js"console.log(x)"
+inline fn print => @js"console.log(x)"
 
 :: x: [int]
 :: f: fn(int -> int)
-fn map: [int] => @js"return x.map(f);"
+inline fn map: [int] => @js"return x.map(f);"
 
 :: arr: [~Printable]
 :: n: int

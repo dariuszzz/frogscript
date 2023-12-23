@@ -447,6 +447,7 @@ pub struct ImportStmt {
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub export: bool,
+    pub inline: bool,
     pub func_name: String,
     pub argument_list: Vec<FunctionArgument>,
     pub return_type: Type,
@@ -455,7 +456,7 @@ pub struct FunctionDef {
 
 impl ToJS for FunctionDef {
     fn to_js(&self) -> String {
-        let FunctionDef { export, func_name, argument_list, return_type, function_body } = self;
+        let FunctionDef { inline, export, func_name, argument_list, return_type, function_body } = self;
 
         // let export = if *export { "export " } else { "" };
 

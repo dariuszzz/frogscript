@@ -34,6 +34,7 @@ pub enum Identifier {
     Env,
     As,
     In,
+    Inline,
 }
 
 
@@ -338,6 +339,7 @@ impl Lexer {
             ("as", Identifier::As),
             ("fn", Identifier::Fn),
             ("in", Identifier::In),
+            ("inline", Identifier::Inline),
         ]);
 
         while let Some(c) = self.peek() {
