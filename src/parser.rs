@@ -892,9 +892,9 @@ impl Parser {
                 _ => return Err(format!("Unexpected token, expected struct field name"))
             };
 
-            let field_type = self.parse_expression(indent)?;
+            let field_val = self.parse_expression(indent)?;
 
-            struct_literal.fields.insert(field_name, field_type);
+            struct_literal.fields.insert(field_name, field_val);
 
             let token = self.peek_skip_ws(indent)?;
             match token.kind {
@@ -953,6 +953,11 @@ impl Parser {
             expressions: Vec::new()
         };
 
+        block.indentation = match self.peek(0).kind {
+            TokenKind::Indentation(indent) if indent > original_indent => indent,
+            _ => return Err(format!("Codeblock body must be indented"))
+        };
+
         loop {
             match (self.peek(0).kind, self.peek(1).kind) {
                 (TokenKind::Indentation(_), TokenKind::Newline) => {
@@ -964,13 +969,6 @@ impl Parser {
                 (TokenKind::Indentation(indent), _) => {
                     if indent < block.indentation {
                         break;
-                    }
-                    if block.indentation == original_indent {
-                        if indent > original_indent {
-                            block.indentation = indent
-                        } else {
-                            return Err(format!("If body must be indented"))
-                        }
                     }
                     if indent > block.indentation {
                         return Err(format!("Code block has inconsistent indentation"))
@@ -1096,20 +1094,49 @@ impl Parser {
         // consume `use`
         self.advance();
 
+        let mut imports = Vec::new();
+
+        match (self.peek(0).kind, self.peek(1).kind) {
+            (TokenKind::Literal(Literal::String(filename)), TokenKind::Newline) => { 
+                self.advance(); 
+                self.advance(); 
+
+                return Ok(ImportStmt {
+                    filename,
+                    imports,
+                    everything: true,
+                })
+            },
+            _ => {}
+        };
+
         match self.advance().kind {
             TokenKind::CurlyLeft => {}
             _ => return Err(format!("Missing '{{' in use statement"))
         }
 
-        let mut imported = Vec::new();
-
         loop {
-            match self.advance_skip_ws().kind {
-                TokenKind::Identifier(Identifier::Custom(iden)) => {
-                    imported.push(iden)
-                }
+            let name = match self.advance_skip_ws().kind {
+                TokenKind::Identifier(Identifier::Custom(iden)) => iden,
                 _ => return Err(format!("Invalid token in use statement body"))
-            }
+            };
+
+            let alias = match self.peek(0).kind {
+                TokenKind::Identifier(Identifier::As) => { 
+                    self.advance(); 
+                    match self.advance().kind {
+                        TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
+                        _ => return Err(format!("Invalid token used for import alias"))
+                    }
+                },
+                _ => None
+            };
+
+            imports.push(Imported { 
+                name, 
+                alias 
+            });
+
             let token = self.peek_skip_ws(0)?;
             match token.kind {
                 TokenKind::CurlyRight => {
@@ -1128,14 +1155,15 @@ impl Parser {
             _ => return Err(format!("Missing 'from' in use statement"))
         }
 
-        let file = match self.advance().kind {
+        let filename = match self.advance().kind {
             TokenKind::Literal(Literal::String(file)) => file,
             _ => return Err(format!("Missing file in use statement"))
         };
 
         Ok(ImportStmt {
-            filename: file,
-            imports: imported
+            filename,
+            imports,
+            everything: false,
         })
     }
     
@@ -1164,7 +1192,72 @@ impl Parser {
         }
 
         let value = match self.peek(0).kind {
-            TokenKind::Newline => unimplemented!("multiline types not implemented"),
+            TokenKind::Newline => {
+                self.advance(); 
+
+                let block_indent = match self.peek(0).kind {
+                    TokenKind::Indentation(indent) => indent,
+                    _ => return Err(format!("type decl body must be indented"))
+                };
+
+                let mut struct_def = StructDef {
+                    fields: Vec::new(),
+                    methods: Vec::new()
+                };
+
+                loop {
+                    match (self.peek(0).kind, self.peek(1).kind) {
+                        (TokenKind::Indentation(_), TokenKind::Newline) => {
+                            // consume indent and nl
+                            self.advance();
+                            self.advance();
+                            continue;
+                        }
+                        (TokenKind::Indentation(indent), _) => {
+                            if indent < block_indent {
+                                break;
+                            }
+                            if indent > block_indent {
+                                return Err(format!("type decl has inconsistent indentation"))
+                            }
+                        }
+                        (_, _) => break
+                    }
+
+                    // consume indent
+                    self.advance();
+
+                    let field_name = match self.advance_skip_ws().kind {
+                        TokenKind::Identifier(Identifier::Custom(field_name)) => field_name,
+                        _ => return Err(format!("field name missing in function decl"))
+                    };
+
+                    match self.advance().kind {
+                        TokenKind::Colon => {},
+                        _ => return Err(format!("colon missing in function field decl"))
+                    };
+
+                    let field_type = self.parse_type()?;
+
+                    match self.peek(0).kind {
+                        TokenKind::Newline => { self.advance(); },
+                        _ => {}
+                    };
+
+                    struct_def.fields.push(StructField { 
+                        field_name, 
+                        field_type, 
+                        is_final: false, 
+                        default_value: None
+                    });
+                }
+
+                Type {
+                    type_kind: TypeKind::Struct(struct_def),
+                    is_reference: false,
+                    is_structural: false
+                }
+            },
             _ => self.parse_type()?
         };
 

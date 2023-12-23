@@ -3,14 +3,14 @@ use { print } from "./test.fr"
 :: x: zzz
 fn print => @js"console.log(x);"
 
-mut struct = {
+let struct = {
     foo: "siema",
     bar: "elo",
     witam: 23,
 }
 
 fn main => 
-    let a = { val: { inner: 2 } }
+    mut a = { val: { inner: 2 } }
     a.val.inner = struct.witam
 
     print(a)

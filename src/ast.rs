@@ -43,6 +43,7 @@ pub enum TypeKind {
     Custom(String),
     Array(Box<Type>),
     Function(FunctionType),
+    Struct(StructDef),
 }
 
 #[derive(Debug, Clone)]
@@ -414,9 +415,16 @@ pub struct FunctionArgument {
 }
 
 #[derive(Debug, Clone)]
+pub struct Imported {
+    pub name: String,
+    pub alias: Option<String>
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportStmt {
     pub filename: String,
-    pub imports: Vec<String>
+    pub imports: Vec<Imported>,
+    pub everything: bool
 }
 
 #[derive(Debug, Clone)]
@@ -432,7 +440,7 @@ impl ToJS for FunctionDef {
     fn to_js(&self) -> String {
         let FunctionDef { export, func_name, argument_list, return_type, function_body } = self;
 
-        let export = if *export { "export " } else { "" };
+        // let export = if *export { "export " } else { "" };
 
         let args = argument_list
             .into_iter()
@@ -444,7 +452,7 @@ impl ToJS for FunctionDef {
 
         let body = function_body.to_js();
         
-        format!("{export}function {func_name}({args}) {{ {body} }};\n")
+        format!("function {func_name}({args}) {{ {body} }}\n")
     }
 }
 
@@ -465,12 +473,11 @@ pub struct StructField {
     pub field_name: String,
     pub field_type: Type,
     pub is_final: bool,
-    pub default_value: Box<Expression>
+    pub default_value: Option<Expression>
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDef {
-    pub struct_name: String,
     pub fields: Vec<StructField>,
     pub methods: Vec<FunctionDef> 
 }
