@@ -256,13 +256,28 @@ impl ToJS for ArrayLiteral {
 }
 
 #[derive(Debug, Clone)]
-pub struct StructLiteral  {
+pub struct NamedStruct  {
+    pub casted_to: String,
+    pub struct_literal: AnonStruct,
+}
+
+impl ToJS for NamedStruct {
+    fn to_js(&self) -> String {
+        let NamedStruct { casted_to, struct_literal } = self;
+        let struct_expr = struct_literal.to_js();
+
+        format!("{struct_expr}")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AnonStruct  {
     pub fields: HashMap<String, Expression>,
 }
 
-impl ToJS for StructLiteral {
+impl ToJS for AnonStruct {
     fn to_js(&self) -> String {
-        let StructLiteral { fields } = self;
+        let AnonStruct { fields } = self;
 
         let fields = fields
             .into_iter()
@@ -321,10 +336,11 @@ pub enum Expression {
     Variable(Variable),
     Return(Box<Expression>),
     Assignment(Assignment),
-    StructLiteral(StructLiteral),
+    AnonStruct(AnonStruct),
     ArrayLiteral(ArrayLiteral),
     ArrayAccess(ArrayAccess),
     FieldAccess(FieldAccess),
+    NamedStruct(NamedStruct),
     Range(Range),
     JS(String),
     If(If),
@@ -344,10 +360,11 @@ impl ToJS for Expression {
             Self::FunctionCall(func_call) => func_call.to_js(),
             Self::Variable(var) => var.to_js(),
             Self::Assignment(assignment) => assignment.to_js(),
-            Self::StructLiteral(struct_literal) => struct_literal.to_js(),
+            Self::AnonStruct(struct_literal) => struct_literal.to_js(),
             Self::ArrayLiteral(array_literal) => array_literal.to_js(),
             Self::ArrayAccess(array_access) => array_access.to_js(),
             Self::FieldAccess(field_access) => field_access.to_js(),
+            Self::NamedStruct(cast_literal) => cast_literal.to_js(),
             Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
             Self::Return(expr) => {
@@ -422,7 +439,7 @@ pub struct Imported {
 
 #[derive(Debug, Clone)]
 pub struct ImportStmt {
-    pub filename: String,
+    pub module_name: String,
     pub imports: Vec<Imported>,
     pub everything: bool
 }

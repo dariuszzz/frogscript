@@ -28,7 +28,7 @@ Frogscript:
 
     Modules:
         ✘ Parse imports @cancelled(23-12-23 01:31)
-        ☐ Reimplement import parsing cuz of new syntax @today
+        ✔ Reimplement import parsing cuz of new syntax @done(23-12-23 18:59)
         ☐ Allow for some kind of nested modules or namespaces
 
     Parsing custom types:
@@ -36,7 +36,7 @@ Frogscript:
         ☐ Methods
         ☐ Some kind of traits?
         ☐ Parsing enums
-        ☐ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person)
+        ✔ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person) @done(23-12-23 19:10)
 
     ☐ Come up with a syntax for lambdas and parse it
     
