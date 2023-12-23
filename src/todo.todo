@@ -30,6 +30,9 @@ Frogscript:
         ✘ Parse imports @cancelled(23-12-23 01:31)
         ✔ Reimplement import parsing cuz of new syntax @done(23-12-23 18:59)
         ☐ Allow for some kind of nested modules or namespaces
+        ☐ Come up with syntax for calling functions by their fully qualified name
+            Basically something like mod::func(foo), also how would that look with ufcs?
+            foo.mod::func()?
 
     Parsing custom types:
         ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
@@ -38,9 +41,21 @@ Frogscript:
         ☐ Parsing enums
         ✔ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person) @done(23-12-23 19:10)
 
-    ☐ Come up with a syntax for lambdas and parse it
+    ☐ Revamp if parsing to allow for one liners
+
+    Lambdas:
+        ☐ Come up with a syntax for lambdas and parse it
+            el => el
+            el =>
+                let foo = el
+                return foo
+            () => 13
+            
+        ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
     
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling
 
     ☐ Transpile implicit returns
     ☐ Transpile ranges into generator functions @critical
+
+    ☐ Figure out whether the language should allow for top level expressions like if/for etc

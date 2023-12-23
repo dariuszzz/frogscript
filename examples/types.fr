@@ -2,6 +2,7 @@ use test {
     print as log, elo,
     siema,
 } 
+
 use types
 
 type Siema = int
@@ -20,3 +21,6 @@ export fn elo => return Clean {
 }
 
 fn siema => print(elo())
+
+:: { field }: Clean
+fn elo => print(field)
