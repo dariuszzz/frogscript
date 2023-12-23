@@ -55,6 +55,7 @@ Frogscript:
     
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling
 
+    ☐ Transpile inline functions correctly
     ☐ Transpile implicit returns
     ☐ Transpile ranges into generator functions @critical
 
