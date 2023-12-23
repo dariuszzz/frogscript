@@ -15,20 +15,30 @@ Frogscript:
     ✔ Fix `()(type -> ret)` err msg because its unclear rn @done(23-12-21 21:11)
     ^ (correct syntax is `(())(type -> ret)` or `(type -> ret)`)
     
-    ☐ String templates ("var: ${var}") @high
-    ☐ Escape sequences in strings ("\"siema\"") @high
-    
+    Strings: 
+        ☐ String templates ("var: ${var}") @high
+        ☐ Escape sequences in strings ("\"siema\"") @high
+        ☐ Allow for single quoted strings and multiline strings and maybe raw string literals
     
     ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
     ✔ Parsing anon structs @done(23-12-21 21:29)
     ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
     ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
     ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
-    ✔ Parse imports @done(23-12-22 15:02)
-    ☐ Parsing custom types
-    ☐ Parsing enums
+
+    Modules:
+        ✘ Parse imports @cancelled(23-12-23 01:31)
+        ☐ Reimplement import parsing cuz of new syntax @today
+        ☐ Allow for some kind of nested modules or namespaces
+
+    Parsing custom types:
+        ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
+        ☐ Methods
+        ☐ Some kind of traits?
+        ☐ Parsing enums
+        ☐ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person)
+
     ☐ Come up with a syntax for lambdas and parse it
-    ☐ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person)
     
     ☐ Associate variables/functions with ids so its possible to change their names when transpiling
 

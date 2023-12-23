@@ -1,7 +1,13 @@
-use { print } from "./test.fr"
+use { print as log } from "./test.fr"
+use "./types.fr"
 
 type Siema = int
-export type Siema = int
 
-export fn siema => print("elo")
-fn siema => print("elo")
+type Clean = 
+    elo: Siema
+    field: string
+    name: string
+    age: uint
+
+export fn elo => print("elo")
+fn siema => print("siema")
