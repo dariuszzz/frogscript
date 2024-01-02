@@ -1,0 +1,25 @@
+:: x: ananas
+inline fn print => @js"console.log(x);"
+
+let val = 0
+
+fn siema => 
+    print(val)
+
+    let val = 12
+    print(val)
+
+    for i in [1, 2, 3] =>
+        let val = i
+
+        print(val)
+
+    print(val) 
+
+    let val = "siema"
+
+    print(val)
+
+let _ = siema()
+let _ = print("siema elo")
+let _ = print(_)

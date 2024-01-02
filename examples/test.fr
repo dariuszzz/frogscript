@@ -9,7 +9,6 @@ inline fn map: [int] => @js"return x.map(f);"
 :: n: int
 fn print_n_elements =>
     mut i: int = 0
-    mut i: string  = "string"
 
     for elem in arr =>
         if i >= n => break
@@ -37,4 +36,4 @@ let _ = arr
 fn func => print(x)
 
 let env txt = "siema"
-let _1 = func(txt)
+let _ = func(txt)
