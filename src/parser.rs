@@ -1342,25 +1342,28 @@ impl Parser {
                             let func_def = self.parse_fn_no_args(Vec::new())?;
                             module.function_defs.push(func_def);
                         }
-                        Identifier::Let 
-                        | Identifier::Mut => {
+                        Identifier::Let => {
+                            let expr = self.parse_variable_decl(0)?;
+                            module.toplevel_scope.expressions.push(expr);
+                        }
+                        Identifier::Mut => {
+                            panic!("Mutable global variables are yuck i think");
                             let expr = self.parse_variable_decl(0)?;
                             module.toplevel_scope.expressions.push(expr);
                         }
 
                         Identifier::If
-                        | Identifier::For
-                        | Identifier::Custom(_) => unimplemented!("Im not certain about having top level statements"),
-                        // Identifier::If
-                        // | Identifier::For => {
-                        //     let expr = self.parse_expression(0)?;
-                        //     module.toplevel_scope.expressions.push(expr);
-                        // }
-                        // Identifier::Custom(iden) => {
-                        //     let expr = self.parse_assignment_or_call(0)?;
+                        | Identifier::For => {
+                            panic!("Top level statements are yuck");
+                            let expr = self.parse_expression(0)?;
+                            module.toplevel_scope.expressions.push(expr);
+                        }
+                        Identifier::Custom(iden) => {
+                            panic!("Top level expressions are yuck");
+                            let expr = self.parse_assignment_or_call(0)?;
 
-                        //     module.toplevel_scope.expressions.push(expr);
-                        // }
+                            module.toplevel_scope.expressions.push(expr);
+                        }
                         _ => { self.advance(); }
                     }
                 }
