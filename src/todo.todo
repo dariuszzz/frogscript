@@ -53,7 +53,12 @@ Frogscript:
             
         ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
     
-    ☐ Associate variables/functions with ids so its possible to change their names when transpiling
+    ✔ Associate variables/functions with ids so its possible to change their names when transpiling @done(24-01-02 20:14)
+    ✔ Redeclaration support @done(24-01-02 20:15)
+    ✔ Shadowing @done(24-01-02 20:15)
+    ☐ Generate truly unique names for shadowed variables @critical
+
+    ☐ Stop grouping function at the top of the file and toplevel statements at the bottom
 
     ☐ Transpile inline functions correctly
     ☐ Transpile implicit returns
