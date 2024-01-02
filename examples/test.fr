@@ -8,7 +8,8 @@ inline fn map: [int] => @js"return x.map(f);"
 :: arr: [~Printable]
 :: n: int
 fn print_n_elements =>
-    mut i = 0
+    mut i: int = 0
+    mut i: string  = "string"
 
     for elem in arr =>
         if i >= n => break

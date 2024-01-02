@@ -108,7 +108,11 @@ fn main() -> Result<(), String> {
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
             let module = parser.parse_module(filename.clone())?;
 
-            let mut transpiler = Transpiler::new();
+            let program = Program {
+                modules: vec![module]
+            };
+
+            let mut transpiler = Transpiler::new(program);
             let path_parent = path.canonicalize().unwrap();
             let path_parent = path_parent.parent().unwrap();
             let out_filename = opts.output.unwrap_or_else(|| {
@@ -117,7 +121,7 @@ fn main() -> Result<(), String> {
 
             let out_path = path_parent.join(&out_filename);
         
-            let js_ast = transpiler.transpile_module(module, &out_path)?;
+            let js_ast = transpiler.transpile(&out_path)?;
         }
     }
 
