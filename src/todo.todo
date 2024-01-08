@@ -1,31 +1,14 @@
 
 Frogscript:
-    ✔ Type parsing @done(23-12-19 20:57)
-    ✔ Indexing operator (var[index]) @high @done(23-12-19 11:04)
-    ✔ Array literals @high @done(23-12-19 11:04)
-    ✔ Parse/lex negative ints and floats @critical @done(23-12-19 11:38)
-    ✔ Rework chaining . and [ on most methods since they all end with the same match @done(23-12-19 11:04)
-    related (i think?) cleanup match allowing for . and [ in array literal
-    
     ✘ Some kind of an `any` type for js interop @cancelled(23-12-19 21:19)
     hopefully something that cant be abused to avoid the type system
     (23-12-19 21:18) maybe generics are the solution
 
-    ☐ Better error messages, show error location (line:col) 
-    ✔ Fix `()(type -> ret)` err msg because its unclear rn @done(23-12-21 21:11)
-    ^ (correct syntax is `(())(type -> ret)` or `(type -> ret)`)
+    Error messages:
+        ☐ Better error messages, show error location (line:col) 
+        ✔ Fix `()(type -> ret)` err msg because its unclear rn @done(23-12-21 21:11)
+        ^ (correct syntax is `(())(type -> ret)` or `(type -> ret)`)
     
-    Strings: 
-        ☐ String templates ("var: ${var}") @high
-        ☐ Escape sequences in strings ("\"siema\"") @high
-        ☐ Allow for single quoted strings and multiline strings and maybe raw string literals
-    
-    ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
-    ✔ Parsing anon structs @done(23-12-21 21:29)
-    ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
-    ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
-    ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
-
     Modules:
         ✘ Parse imports @cancelled(23-12-23 01:31)
         ✔ Reimplement import parsing cuz of new syntax @done(23-12-23 18:59)
@@ -33,35 +16,65 @@ Frogscript:
         ☐ Come up with syntax for calling functions by their fully qualified name
             Basically something like mod::func(foo), also how would that look with ufcs?
             foo.mod::func()?
-
-    Parsing custom types:
-        ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
-        ☐ Methods
-        ☐ Some kind of traits?
-        ☐ Parsing enums
-        ✔ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person) @done(23-12-23 19:10)
-
-    ☐ Revamp if parsing to allow for one liners
-
-    Lambdas:
-        ☐ Come up with a syntax for lambdas and parse it
-            el => el
-            el =>
-                let foo = el
-                return foo
-            () => 13
-            
-        ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
     
-    ✔ Associate variables/functions with ids so its possible to change their names when transpiling @done(24-01-02 20:14)
-    ✔ Redeclaration support @done(24-01-02 20:15)
-    ✔ Shadowing @done(24-01-02 20:15)
-    ☐ Generate truly unique names for shadowed variables @critical
+    Parsing:
+        ✔ Type parsing @done(23-12-19 20:57)
+        ✔ Indexing operator (var[index]) @high @done(23-12-19 11:04)
+        ✔ Array literals @high @done(23-12-19 11:04)
+        ✔ Parse/lex negative ints and floats @critical @done(23-12-19 11:38)
+        ✔ Rework chaining . and [ on most methods since they all end with the same match @done(23-12-19 11:04)
+        related (i think?) cleanup match allowing for . and [ in array literal
+        ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
+        ✔ Parsing anon structs @done(23-12-21 21:29)
+        ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
+        ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
+        ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
+        ☐ Revamp if parsing to allow for one liners
+        ☐ Fix codeblock/function (idk) parsing bug if the first line of a block is empty @critical
+        ☐ Parse codeblocks as expressions, basically allow for nested codeblocks
+            let foo = 
+                let a = 2
+                a += 2
+                a
 
-    ☐ Stop grouping function at the top of the file and toplevel statements at the bottom
+            print(foo) // prints "4"
 
-    ☐ Transpile inline functions correctly
-    ☐ Transpile implicit returns
-    ☐ Transpile ranges into generator functions @critical
+        Strings: 
+            ☐ String templates ("var: ${var}") @high
+            ☐ Escape sequences in strings ("\"siema\"") @high
+            ☐ Allow for single quoted strings and multiline strings and maybe raw string literals
+    
 
-    ☐ Figure out whether the language should allow for top level expressions like if/for etc
+        Lambdas:
+            ☐ Come up with a syntax for lambdas and parse it
+                el => el
+                el =>
+                    let foo = el
+                    return foo
+                () => 13
+                
+            ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
+        
+        Parsing custom types:
+            ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
+            ✘ Methods @cancelled(24-01-08 22:47)
+            ☐ Some kind of traits?
+            ☐ Parsing enums
+            ✔ Parse casts on anon structs (aka `Person { name: "John" }` is a cast from anon struct to Person) @done(23-12-23 19:10)
+
+    Transpilation:
+        ✔ Associate variables/functions with ids so its possible to change their names when transpiling @done(24-01-02 20:14)
+        ✔ Redeclaration support @done(24-01-02 20:15)
+        ✔ Shadowing @done(24-01-02 20:15)
+        ☐ Generate truly unique names for shadowed variables @critical
+        ☐ Stop grouping function at the top of the file and toplevel statements at the bottom
+        ☐ Transpile inline functions correctly
+        ☐ Transpile implicit returns
+        ☐ Transpile ranges into generator functions @critical
+
+    Validation:
+        ☐ Figure out whether the language should allow for top level expressions like if/for etc
+        ☐ Make _ a special write-only identifier
+
+    Testing: 
+        ☐ Maybe make some test cases
