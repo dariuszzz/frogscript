@@ -1,5 +1,5 @@
 :: x: ~Printable
-inline fn print => @js"console.log(x)"
+export fn print => @js"console.log(x)"
 
 :: x: [int]
 :: f: fn(int -> int)
@@ -11,6 +11,7 @@ fn print_n_elements =>
     mut i: int = 0
 
     for elem in arr =>
+
         if i >= n => break
         i += 1
         print(elem)

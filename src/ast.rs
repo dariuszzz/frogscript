@@ -327,6 +327,22 @@ impl ToJS for FieldAccess {
 }
 
 #[derive(Debug, Clone)]
+pub struct QualifiedIden {
+    pub path: Vec<String>,
+    pub iden: Box<Expression>
+}
+
+impl ToJS for QualifiedIden {
+    fn to_js(&self) -> String {
+        let QualifiedIden { path, iden } = self;
+        
+        let expr = iden.to_js();
+
+        format!("{expr}")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -341,6 +357,7 @@ pub enum Expression {
     ArrayAccess(ArrayAccess),
     FieldAccess(FieldAccess),
     NamedStruct(NamedStruct),
+    QualifiedIden(QualifiedIden),
     Range(Range),
     JS(String),
     If(If),
@@ -367,6 +384,7 @@ impl ToJS for Expression {
             Self::NamedStruct(cast_literal) => cast_literal.to_js(),
             Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
+            Self::QualifiedIden(qiden) => qiden.to_js(),
             Self::Return(expr) => {
                 let expr = expr.to_js();
                 format!("return ({expr});")
@@ -447,7 +465,6 @@ pub struct ImportStmt {
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub export: bool,
-    pub inline: bool,
     pub func_name: String,
     pub argument_list: Vec<FunctionArgument>,
     pub return_type: Type,
@@ -456,7 +473,7 @@ pub struct FunctionDef {
 
 impl ToJS for FunctionDef {
     fn to_js(&self) -> String {
-        let FunctionDef { inline, export, func_name, argument_list, return_type, function_body } = self;
+        let FunctionDef { export, func_name, argument_list, return_type, function_body } = self;
 
         // let export = if *export { "export " } else { "" };
 
@@ -514,6 +531,5 @@ pub struct Module {
     pub imports: Vec<ImportStmt>,
     pub type_defs: Vec<TypeDef>,
     pub function_defs: Vec<FunctionDef>,
-    pub toplevel_scope: CodeBlock
+    pub toplevel_scope: CodeBlock,
 }
-

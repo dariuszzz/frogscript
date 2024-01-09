@@ -1,9 +1,8 @@
 use std::{
     collections::{
-        hash_map::{Entry, OccupiedEntry},
+        hash_map::Entry,
         HashMap,
     },
-    fmt::Binary,
     io::Write,
 };
 
@@ -24,8 +23,11 @@ impl Transpiler {
 
     pub fn replace_names_in_expr(mapped_names: &HashMap<String, String>, expr: &mut Expression) {
         match expr {
+            Expression::QualifiedIden(qiden) => {
+                unreachable!("no qualified identifiers")
+            }
             Expression::VariableDecl(_) => {
-                unreachable!("no nested blocks as of now so this just panics")
+                unreachable!("no nested blocks as of now")
             }
             Expression::Literal(_) => { /* whatever */ }
             Expression::BinaryOp(op) => {
@@ -160,7 +162,7 @@ impl Transpiler {
     }
 
     pub fn fix_scopes(&mut self) -> Result<(), String> {
-        for module in &mut self.ast.modules {
+        for module in &mut self.ast.imported_modules {
             let mut mapped_var_names = HashMap::<String, String>::new();
             Transpiler::fix_scopes_codeblock(&mut module.toplevel_scope, &mut mapped_var_names);
 
@@ -175,14 +177,20 @@ impl Transpiler {
         Ok(())
     }
 
+    pub fn bring_in_imports(&mut self) -> Result<(), String> {
+
+        Ok(())
+    }
+
     pub fn transpile(&mut self, path: &std::path::Path) -> Result<(), String> {
         self.fix_scopes()?;
+        self.bring_in_imports()?;
 
         let mut outfile =
             std::fs::File::create(path).map_err(|_| format!("Cannot open out file"))?;
 
         // todo dupa
-        for module in &self.ast.modules {
+        for module in &self.ast.imported_modules {
             for funcdef in &module.function_defs {
                 _ = outfile.write(funcdef.to_js().as_bytes());
             }

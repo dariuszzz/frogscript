@@ -1,7 +1,4 @@
-use { print } from "./test.fr"
-
-:: x: zzz
-fn print => @js"console.log(x);"
+use test { print } 
 
 let struct = {
     foo: "siema",
@@ -15,4 +12,4 @@ fn main =>
 
     print(a)
 
-main()
+let _ = main()

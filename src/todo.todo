@@ -30,7 +30,7 @@ Frogscript:
         ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
         ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
         ☐ Revamp if parsing to allow for one liners
-        ☐ Fix codeblock/function (idk) parsing bug if the first line of a block is empty @critical
+        ✔ Fix codeblock/function (idk) parsing bug if the first line of a block is empty @critical @done(24-01-09 11:18)
         ☐ Parse codeblocks as expressions, basically allow for nested codeblocks
             let foo = 
                 let a = 2
