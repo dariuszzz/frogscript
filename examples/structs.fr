@@ -1,4 +1,6 @@
 use test { print } 
+:: x: zzz
+fn print => @js"console.log(x);"
 
 let struct = {
     foo: "siema",

@@ -3,7 +3,7 @@ export fn print => @js"console.log(x)"
 
 :: x: [int]
 :: f: fn(int -> int)
-inline fn map: [int] => @js"return x.map(f);"
+fn map: [int] => @js"return x.map(f);"
 
 :: arr: [~Printable]
 :: n: int
@@ -38,3 +38,5 @@ fn func => print(x)
 
 let env txt = "siema"
 let _ = func(txt)
+
+let _ = console.log("elo")
