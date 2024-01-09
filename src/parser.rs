@@ -1,11 +1,12 @@
-use std::{collections::HashMap, sync::WaitTimeoutResult};
+use std::collections::HashMap;
 
 use crate::lexer::{Token, TokenKind, Literal, Identifier};
 use crate::ast::*;
 
 #[derive(Debug, Clone, Default)]
 pub struct Program {
-    pub modules: Vec<Module>
+    pub main_module: Module,
+    pub imported_modules: Vec<Module>
 }
 
 pub struct Parser {
@@ -128,7 +129,6 @@ impl Parser {
 
         let mut function_def = FunctionDef {
             export: false,
-            inline: false,
             func_name: String::new(),
             argument_list: args,
             return_type: Type { 
@@ -143,17 +143,12 @@ impl Parser {
             &[
                 (true,  "ident_1",  TokenKind::Indentation(0)),
                 (true,  "export",   TokenKind::Identifier(Identifier::Export)),
-                (true,  "inline",   TokenKind::Identifier(Identifier::Inline)),
                 (false, "fn_key",   TokenKind::Identifier(Identifier::Fn)),
                 (false, "func_name",TokenKind::Identifier(Identifier::_MatchAnyCustom)),
             ]
         ) {
             if let Some(_) = fn_decl_tokens.get("export") {
                 function_def.export = true;
-            }
-
-            if let Some(_) = fn_decl_tokens.get("inline") {
-                function_def.inline = true;
             }
 
             let name_token = fn_decl_tokens.get("func_name").unwrap().clone();
@@ -748,6 +743,9 @@ impl Parser {
 
     pub fn parse_custom_iden(&mut self, identifier: String, indent: usize) -> Result<Expression, String> {
         let expr = match self.peek(0).kind {
+            TokenKind::DoubleColon => {
+                unimplemented!("qualified names not implemented yet")
+            },
             TokenKind::ParenLeft => self.parse_standalone_function_call(identifier, indent)?,
             TokenKind::CurlyLeft => {
 
@@ -966,6 +964,9 @@ impl Parser {
             indentation: original_indent,
             expressions: Vec::new()
         };
+
+        self.advance_skip_ws();
+        self.current -= 2;
 
         block.indentation = match self.peek(0).kind {
             TokenKind::Indentation(indent) if indent > original_indent => indent,
@@ -1330,6 +1331,10 @@ impl Parser {
                                     let func_def = self.parse_fn_no_args(Vec::new())?;
                                     module.function_defs.push(func_def);
                                 }
+                                TokenKind::Identifier(Identifier::Let) => {
+                                    let var_decl = self.parse_variable_decl(0)?;
+                                    module.toplevel_scope.expressions.push(var_decl);
+                                }
                                 _ => return Err(format!("Invalid token after export"))
                             }
                         }
@@ -1337,7 +1342,6 @@ impl Parser {
                             let import = self.parse_import()?;
                             module.imports.push(import);
                         }
-                        Identifier::Inline
                         | Identifier::Fn => {
                             let func_def = self.parse_fn_no_args(Vec::new())?;
                             module.function_defs.push(func_def);

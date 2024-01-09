@@ -108,8 +108,32 @@ fn main() -> Result<(), String> {
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
             let module = parser.parse_module(filename.clone())?;
 
+            let mut modules = Vec::<Module>::new();
+
+            for import in &module.imports {
+                if modules.iter().any(|m| m.module_name == import.module_name) {
+                    continue;
+                }
+
+                let path = path.parent().unwrap().join(format!("{}.fr", import.module_name));
+                let file_contents = fs::read_to_string(path).expect("Failed to read file");
+                let mut lexer = Lexer::new(file_contents);
+                let tokens = lexer.parse()?;
+                
+                let tokens = tokens
+                    .into_iter()
+                    .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
+                    .collect::<Vec<_>>();
+
+                let mut parser = Parser::new(tokens);
+                let imported_module = parser.parse_module(import.module_name.clone())?;
+
+                modules.push(imported_module);
+            }
+
             let program = Program {
-                modules: vec![module]
+                main_module: module,
+                imported_modules: modules
             };
 
             let mut transpiler = Transpiler::new(program);
@@ -120,6 +144,7 @@ fn main() -> Result<(), String> {
             });
 
             let out_path = path_parent.join(&out_filename);
+
         
             let js_ast = transpiler.transpile(&out_path)?;
         }
