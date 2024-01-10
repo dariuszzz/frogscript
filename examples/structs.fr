@@ -1,4 +1,3 @@
-use test { print } 
 :: x: zzz
 fn print => @js"console.log(x);"
 
@@ -8,10 +7,23 @@ let struct = {
     witam: 23,
 }
 
-fn main => 
-    mut a = { val: { inner: 2 } }
+:: x : int
+fn func => 
+    mut a = { 
+        val: { 
+            inner: x
+        } 
+    }
+
     a.val.inner = struct.witam
 
     print(a)
 
-let _ = main()
+let _ = func(6)
+
+:: arr: [int]
+fn f => 
+    for i in arr =>
+        nieistniejaca_funkcja(i)
+
+let _ = f(5)
