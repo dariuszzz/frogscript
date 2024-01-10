@@ -17,10 +17,10 @@ fn print_n_elements =>
         print(elem)
 
 :: x: int
-fn add1 => return x + 1
+fn add1: int => return x + 1
 
 :: x: int
-fn square => return x * x
+fn square: int => return x * x
 
 let arr: [int] = [
     1, 
@@ -32,11 +32,3 @@ let arr: [int] = [
 let _ = arr
     .map(square)
     .print_n_elements(3)
-
-:: env x: string
-fn func => print(x)
-
-let env txt = "siema"
-let _ = func(txt)
-
-let _ = console.log("elo")

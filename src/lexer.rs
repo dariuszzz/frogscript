@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use std::{collections::HashMap, fs, path::Path};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
@@ -36,7 +35,6 @@ pub enum Identifier {
     In,
     Inline,
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
@@ -87,7 +85,7 @@ pub enum TokenKind {
     DivEqual,
     JS,
     Indentation(usize),
-    
+
     Literal(Literal),
     Identifier(Identifier),
 }
@@ -103,25 +101,24 @@ pub struct Token {
 #[derive(Debug)]
 pub enum NestedParsingCount {
     None,
-    Count(i32)
+    Count(i32),
 }
 
 impl NestedParsingCount {
     pub fn increment(&mut self) {
         match self {
-            Self::None => {},
-            Self::Count(c) => *c = *c + 1
+            Self::None => {}
+            Self::Count(c) => *c = *c + 1,
         }
     }
 
     pub fn decrement(&mut self) {
         match self {
-            Self::None => {},
-            Self::Count(c) => *c = *c - 1
+            Self::None => {}
+            Self::Count(c) => *c = *c - 1,
         }
     }
 }
-
 
 pub struct Lexer {
     pub source_file: String,
@@ -136,8 +133,10 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(source_file: String) -> Self {
-        Self { 
+    pub fn new(path: &Path) -> Self {
+        let source_file = fs::read_to_string(path).expect("Failed to read file");
+
+        Self {
             source_file,
             tokens: Vec::new(),
             current: 0,
@@ -157,35 +156,52 @@ impl Lexer {
     fn advance(&mut self) -> char {
         self.current += 1;
         self.line_char += 1;
-        let current_char = self.source_file.chars().skip(self.current - 1).next().unwrap();
+        let current_char = self
+            .source_file
+            .chars()
+            .skip(self.current - 1)
+            .next()
+            .unwrap();
 
-        if current_char == '\n' { self.line += 1; self.line_char = 0 }
+        if current_char == '\n' {
+            self.line += 1;
+            self.line_char = 0
+        }
 
-        return current_char
-    }     
+        return current_char;
+    }
 
     fn peek(&mut self) -> Option<char> {
-        if self.is_at_end() { return None }
-        return self.source_file.chars().skip(self.current).next()
+        if self.is_at_end() {
+            return None;
+        }
+        return self.source_file.chars().skip(self.current).next();
     }
 
     fn peek_next(&mut self) -> Option<char> {
-        if self.current + 1 >= self.source_file.len() { return None }
-        return self.source_file.chars().skip(self.current + 1).next()
+        if self.current + 1 >= self.source_file.len() {
+            return None;
+        }
+        return self.source_file.chars().skip(self.current + 1).next();
     }
 
     fn match_char(&mut self, expected: char) -> bool {
-        if self.is_at_end() { return false }
-        if self.source_file.chars().skip(self.current).next().unwrap() != expected { return false }
+        if self.is_at_end() {
+            return false;
+        }
+        if self.source_file.chars().skip(self.current).next().unwrap() != expected {
+            return false;
+        }
 
         self.current += 1;
-        return true
-        
+        return true;
     }
 
     fn consume_until(&mut self, until: char) -> bool {
         while let Some(c) = self.peek() {
-            if c == until { break }
+            if c == until {
+                break;
+            }
             self.advance();
         }
 
@@ -195,18 +211,20 @@ impl Lexer {
 
         self.advance();
 
-        return true
+        return true;
     }
 
     fn add_token(&mut self, kind: TokenKind) {
-        self.tokens.push(
-            Token {
-                kind,
-                start_line: self.lexeme_start_line,
-                start_char: self.lexeme_start_line_char,
-                lexeme: self.source_file.get(self.lexeme_start..self.current).unwrap().to_owned()
-            }
-        );
+        self.tokens.push(Token {
+            kind,
+            start_line: self.lexeme_start_line,
+            start_char: self.lexeme_start_line_char,
+            lexeme: self
+                .source_file
+                .get(self.lexeme_start..self.current)
+                .unwrap()
+                .to_owned(),
+        });
     }
 
     fn parse_multiline_comment(&mut self) -> Result<(), String> {
@@ -221,24 +239,26 @@ impl Lexer {
                 match self.parsing_multiline_comment {
                     NestedParsingCount::Count(count) if count == 0 => break,
                     NestedParsingCount::Count(_) => {}
-                    NestedParsingCount::None => unreachable!()
+                    NestedParsingCount::None => unreachable!(),
                 }
             }
             self.advance();
         }
 
         match self.parsing_multiline_comment {
-            NestedParsingCount::Count(count) if count != 0 => Err(format!("Unterminated multiline comment")),
+            NestedParsingCount::Count(count) if count != 0 => {
+                Err(format!("Unterminated multiline comment"))
+            }
             NestedParsingCount::Count(_) => {
                 self.parsing_multiline_comment = NestedParsingCount::None;
                 self.advance();
                 self.advance();
-        
+
                 self.add_token(TokenKind::MultilineComment);
 
                 Ok(())
-            },
-            NestedParsingCount::None => unreachable!()
+            }
+            NestedParsingCount::None => unreachable!(),
         }
     }
 
@@ -246,24 +266,28 @@ impl Lexer {
         let starting_line = self.line;
         let starting_line_char = self.line_char;
         if self.consume_until('"') {
-            let string = self.source_file.get((self.lexeme_start + 1)..(self.current - 1)).unwrap().to_owned();
-            self.tokens.push(Token { 
+            let string = self
+                .source_file
+                .get((self.lexeme_start + 1)..(self.current - 1))
+                .unwrap()
+                .to_owned();
+            self.tokens.push(Token {
                 kind: TokenKind::Literal(Literal::String(string.clone())),
                 start_char: self.lexeme_start_line_char,
                 start_line: self.lexeme_start_line,
-                lexeme: string 
+                lexeme: string,
             });
 
-            return Ok(())
+            return Ok(());
         } else {
-            return Err(format!("Unterminated string"))
+            return Err(format!("Unterminated string"));
         }
     }
 
     fn parse_number(&mut self) {
         while let Some(c) = self.peek() {
             if !c.is_ascii_digit() {
-                break 
+                break;
             }
             self.advance();
         }
@@ -276,20 +300,23 @@ impl Lexer {
                 self.advance();
                 while let Some(c) = self.peek() {
                     if !c.is_ascii_digit() {
-                        break 
+                        break;
                     }
                     self.advance();
                 }
-
             }
         }
 
-        let lexeme = self.source_file.get(self.lexeme_start..self.current).unwrap().to_owned();       
+        let lexeme = self
+            .source_file
+            .get(self.lexeme_start..self.current)
+            .unwrap()
+            .to_owned();
 
         match &mut literal_type {
             Literal::Int(x) => *x = lexeme.parse::<isize>().unwrap(),
             Literal::Float(x) => *x = lexeme.parse::<f32>().unwrap(),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
 
         if let Some(c) = self.peek() {
@@ -298,25 +325,23 @@ impl Lexer {
                     literal_type = Literal::Uint(lexeme.parse::<usize>().unwrap());
                     self.advance();
                 }
-                'i' => { 
+                'i' => {
                     literal_type = Literal::Int(lexeme.parse::<isize>().unwrap());
                     self.advance();
                 }
-                'f' => { 
+                'f' => {
                     literal_type = Literal::Float(lexeme.parse::<f32>().unwrap());
                     self.advance();
                 }
-                _ => {},
+                _ => {}
             };
         }
 
         self.add_token(TokenKind::Literal(literal_type));
     }
-        
+
     fn parse_identifier(&mut self) {
-        let is_alpha = |c: char| {
-            c.is_ascii_alphanumeric() || c == '_'
-        };
+        let is_alpha = |c: char| c.is_ascii_alphanumeric() || c == '_';
 
         let keywords = HashMap::from([
             ("let", Identifier::Let),
@@ -344,21 +369,25 @@ impl Lexer {
 
         while let Some(c) = self.peek() {
             if !is_alpha(c) {
-                break
+                break;
             }
             self.advance();
         }
 
-        let lexeme = self.source_file.get(self.lexeme_start..self.current).unwrap().to_owned();
+        let lexeme = self
+            .source_file
+            .get(self.lexeme_start..self.current)
+            .unwrap()
+            .to_owned();
 
         if lexeme == "true" {
             self.add_token(TokenKind::Literal(Literal::Boolean(true)));
-            return
+            return;
         } else if lexeme == "false" {
             self.add_token(TokenKind::Literal(Literal::Boolean(false)));
-            return
+            return;
         }
-        
+
         if let Some(kind) = keywords.get(lexeme.as_str()) {
             self.add_token(TokenKind::Identifier(kind.clone()));
         } else {
@@ -367,7 +396,13 @@ impl Lexer {
     }
 
     fn parse_indent(&mut self, c: char) {
-        let mut indentation_level = if c == ' ' { 1 } else if c == '\t' { 4 } else { 0 };
+        let mut indentation_level = if c == ' ' {
+            1
+        } else if c == '\t' {
+            4
+        } else {
+            0
+        };
         while let Some(c) = self.peek() {
             if c == ' ' {
                 indentation_level += 1;
@@ -381,7 +416,6 @@ impl Lexer {
         self.add_token(TokenKind::Indentation(indentation_level));
     }
 
-    
     pub fn parse(&mut self) -> Result<Vec<Token>, String> {
         while !self.is_at_end() {
             self.lexeme_start = self.current;
@@ -415,7 +449,7 @@ impl Lexer {
                 }
                 '=' => {
                     if self.match_char('=') {
-                        self.add_token(TokenKind::EqualEqual);  
+                        self.add_token(TokenKind::EqualEqual);
                     } else if self.match_char('>') {
                         self.add_token(TokenKind::FatArrow);
                     } else {
@@ -432,7 +466,7 @@ impl Lexer {
                     }
                 }
                 ',' => self.add_token(TokenKind::Comma),
-                ':' => { 
+                ':' => {
                     if self.match_char(':') {
                         self.add_token(TokenKind::DoubleColon)
                     } else {
@@ -450,7 +484,8 @@ impl Lexer {
                 '*' => {
                     if self.match_char('*') {
                         self.add_token(TokenKind::Power);
-                    } if self.match_char('=') {
+                    }
+                    if self.match_char('=') {
                         self.add_token(TokenKind::MultEqual);
                     } else {
                         self.add_token(TokenKind::Star);
@@ -459,7 +494,7 @@ impl Lexer {
                 '!' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::NotEqual);
-                    } 
+                    }
                 }
                 '/' => {
                     if self.match_char('/') {
@@ -489,7 +524,7 @@ impl Lexer {
                             self.add_token(TokenKind::Indentation(0));
                         }
                     }
-                },
+                }
                 '.' => {
                     if self.match_char('.') {
                         if self.match_char('.') {
@@ -504,7 +539,7 @@ impl Lexer {
                     } else {
                         self.add_token(TokenKind::Dot)
                     }
-                },
+                }
                 '&' => self.add_token(TokenKind::Ampersand),
                 '^' => self.add_token(TokenKind::Caret),
                 '~' => self.add_token(TokenKind::Tilde),
@@ -516,7 +551,7 @@ impl Lexer {
                             self.add_token(TokenKind::JS)
                         }
                     }
-                },
+                }
                 '"' => self.parse_string()?,
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
@@ -524,11 +559,16 @@ impl Lexer {
                     if self.line_char == 1 {
                         self.parse_indent(c);
                     }
-                },
-                c => return Err(format!("Unexpected char at {}:{} - {c}", self.line, self.line_char))
+                }
+                c => {
+                    return Err(format!(
+                        "Unexpected char at {}:{} - {c}",
+                        self.line, self.line_char
+                    ))
+                }
             }
         }
 
-        return Ok(self.tokens.clone())
+        return Ok(self.tokens.clone());
     }
-} 
+}

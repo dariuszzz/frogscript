@@ -1,8 +1,5 @@
 use std::{
-    collections::{
-        hash_map::Entry,
-        HashMap,
-    },
+    collections::{hash_map::Entry, HashMap},
     io::Write,
 };
 
@@ -23,9 +20,6 @@ impl Transpiler {
 
     pub fn replace_names_in_expr(mapped_names: &HashMap<String, String>, expr: &mut Expression) {
         match expr {
-            Expression::QualifiedIden(qiden) => {
-                unreachable!("no qualified identifiers")
-            }
             Expression::VariableDecl(_) => {
                 unreachable!("no nested blocks as of now")
             }
@@ -41,6 +35,7 @@ impl Transpiler {
             }
             Expression::FunctionCall(func) => {
                 let FunctionCall {
+                    func_module,
                     func_name,
                     arguments,
                 } = func;
@@ -49,7 +44,7 @@ impl Transpiler {
                 }
             }
             Expression::Variable(var) => {
-                let Variable { name } = var;
+                let Variable { var_module, name } = var;
                 if let Some(new_name) = mapped_names.get(name) {
                     *name = new_name.clone()
                 }
@@ -177,26 +172,25 @@ impl Transpiler {
         Ok(())
     }
 
-    pub fn bring_in_imports(&mut self) -> Result<(), String> {
-
-        Ok(())
-    }
-
     pub fn transpile(&mut self, path: &std::path::Path) -> Result<(), String> {
         self.fix_scopes()?;
-        self.bring_in_imports()?;
 
         let mut outfile =
             std::fs::File::create(path).map_err(|_| format!("Cannot open out file"))?;
 
-        // todo dupa
-        for module in &self.ast.imported_modules {
-            for funcdef in &module.function_defs {
-                _ = outfile.write(funcdef.to_js().as_bytes());
-            }
+        // for module in &self.ast.imported_modules {
+        //     for funcdef in &module.function_defs {
+        //         _ = outfile.write(funcdef.to_js().as_bytes());
+        //     }
 
-            _ = outfile.write(module.toplevel_scope.to_js().as_bytes());
+        //     _ = outfile.write(module.toplevel_scope.to_js().as_bytes());
+        // }
+
+        for funcdef in &self.ast.main_module.function_defs {
+            _ = outfile.write(funcdef.to_js().as_bytes());
         }
+
+        _ = outfile.write(self.ast.main_module.toplevel_scope.to_js().as_bytes());
 
         Ok(())
     }

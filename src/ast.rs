@@ -28,19 +28,25 @@ pub enum BinaryOperation {
 pub struct FunctionType {
     pub env_args: Vec<Type>,
     pub args: Vec<Type>,
-    pub ret: Box<Type>
+    pub ret: Box<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CustomType {
+    pub type_module: Vec<String>,
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    Infer, 
+    Infer,
     Void,
     Int,
     Uint,
     Float,
     String,
     Boolean,
-    Custom(String),
+    Custom(CustomType),
     Array(Box<Type>),
     Function(FunctionType),
     Struct(StructDef),
@@ -53,9 +59,8 @@ pub struct Type {
     pub is_structural: bool,
 }
 
-
 #[derive(Debug, Clone)]
-pub struct VariableDecl  {
+pub struct VariableDecl {
     pub var_name: String,
     pub var_type: Type,
     pub var_value: Box<Expression>,
@@ -65,7 +70,13 @@ pub struct VariableDecl  {
 
 impl ToJS for VariableDecl {
     fn to_js(&self) -> String {
-        let VariableDecl { var_name, var_type, var_value, is_mutable, is_env } = self;
+        let VariableDecl {
+            var_name,
+            var_type,
+            var_value,
+            is_mutable,
+            is_env,
+        } = self;
         let keyword = if *is_mutable { "let" } else { "const" };
         let value = var_value.to_js();
 
@@ -74,20 +85,23 @@ impl ToJS for VariableDecl {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionCall  {
+pub struct FunctionCall {
+    pub func_module: Vec<String>,
     pub func_name: String,
     pub arguments: Vec<Expression>,
 }
 
 impl ToJS for FunctionCall {
     fn to_js(&self) -> String {
-        let FunctionCall { func_name, arguments } = self;
+        let FunctionCall {
+            func_module,
+            func_name,
+            arguments,
+        } = self;
 
         let args = arguments
             .into_iter()
-            .map(|arg| {
-                arg.to_js()
-            })
+            .map(|arg| arg.to_js())
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -96,7 +110,7 @@ impl ToJS for FunctionCall {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnaryOp  {
+pub struct UnaryOp {
     pub op: UnaryOperation,
     pub operand: Box<Expression>,
 }
@@ -106,17 +120,17 @@ impl ToJS for UnaryOp {
         let UnaryOp { op, operand } = self;
 
         let op = match op {
-            UnaryOperation::Negative => "-".to_owned()
+            UnaryOperation::Negative => "-".to_owned(),
         };
 
         let expr = operand.to_js();
-        
+
         format!("({op}{expr})")
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct BinaryOp  {
+pub struct BinaryOp {
     pub op: BinaryOperation,
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
@@ -150,18 +164,19 @@ impl ToJS for BinaryOp {
 }
 
 #[derive(Debug, Clone)]
-pub struct Variable  {
+pub struct Variable {
+    pub var_module: Vec<String>,
     pub name: String,
 }
 
 impl ToJS for Variable {
     fn to_js(&self) -> String {
-       self.name.clone()
+        self.name.clone()
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Assignment  {
+pub struct Assignment {
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
 }
@@ -169,7 +184,7 @@ pub struct Assignment  {
 impl ToJS for Assignment {
     fn to_js(&self) -> String {
         let Assignment { lhs, rhs } = self;
-        
+
         let lhs = lhs.to_js();
         let rhs = rhs.to_js();
 
@@ -178,7 +193,7 @@ impl ToJS for Assignment {
 }
 
 #[derive(Debug, Clone)]
-pub struct If  {
+pub struct If {
     pub cond: Box<Expression>,
     pub true_branch: CodeBlock,
     pub else_branch: Option<CodeBlock>,
@@ -186,23 +201,25 @@ pub struct If  {
 
 impl ToJS for If {
     fn to_js(&self) -> String {
-        let If { cond, true_branch, else_branch } = self;
+        let If {
+            cond,
+            true_branch,
+            else_branch,
+        } = self;
         let cond = cond.to_js();
         let true_branch = true_branch.to_js();
 
-        let else_branch = else_branch
-            .clone()
-            .map_or(String::new(), |b| {
-                let branch = b.to_js();
-                format!(" else {{ {branch} }}")
-            });
+        let else_branch = else_branch.clone().map_or(String::new(), |b| {
+            let branch = b.to_js();
+            format!(" else {{ {branch} }}")
+        });
 
         format!("if ({cond}) {{ {true_branch} }}{else_branch}")
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct For  {
+pub struct For {
     pub binding: String,
     pub iterator: Box<Expression>,
     pub body: CodeBlock,
@@ -210,7 +227,11 @@ pub struct For  {
 
 impl ToJS for For {
     fn to_js(&self) -> String {
-        let For { binding, iterator, body } = self;
+        let For {
+            binding,
+            iterator,
+            body,
+        } = self;
 
         let iterator = iterator.to_js();
         let body = body.to_js();
@@ -220,7 +241,7 @@ impl ToJS for For {
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayAccess  {
+pub struct ArrayAccess {
     pub expr: Box<Expression>,
     pub index: Box<Expression>,
 }
@@ -237,17 +258,16 @@ impl ToJS for ArrayAccess {
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayLiteral  {
+pub struct ArrayLiteral {
     pub elements: Vec<Expression>,
 }
 
 impl ToJS for ArrayLiteral {
     fn to_js(&self) -> String {
-        let elements = self.elements
+        let elements = self
+            .elements
             .iter()
-            .map(|elem| {
-                elem.to_js()
-            })
+            .map(|elem| elem.to_js())
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -256,14 +276,17 @@ impl ToJS for ArrayLiteral {
 }
 
 #[derive(Debug, Clone)]
-pub struct NamedStruct  {
+pub struct NamedStruct {
     pub casted_to: String,
     pub struct_literal: AnonStruct,
 }
 
 impl ToJS for NamedStruct {
     fn to_js(&self) -> String {
-        let NamedStruct { casted_to, struct_literal } = self;
+        let NamedStruct {
+            casted_to,
+            struct_literal,
+        } = self;
         let struct_expr = struct_literal.to_js();
 
         format!("{struct_expr}")
@@ -271,7 +294,7 @@ impl ToJS for NamedStruct {
 }
 
 #[derive(Debug, Clone)]
-pub struct AnonStruct  {
+pub struct AnonStruct {
     pub fields: HashMap<String, Expression>,
 }
 
@@ -293,7 +316,7 @@ impl ToJS for AnonStruct {
 }
 
 #[derive(Debug, Clone)]
-pub struct Range  {
+pub struct Range {
     pub start: Box<Expression>,
     pub end: Box<Expression>,
     pub step: Box<Expression>,
@@ -302,7 +325,12 @@ pub struct Range  {
 
 impl ToJS for Range {
     fn to_js(&self) -> String {
-        let Range { start, end, inclusive, step } = self;
+        let Range {
+            start,
+            end,
+            inclusive,
+            step,
+        } = self;
 
         unimplemented!("ranges arent directly transpilable");
 
@@ -311,7 +339,7 @@ impl ToJS for Range {
 }
 
 #[derive(Debug, Clone)]
-pub struct FieldAccess  {
+pub struct FieldAccess {
     pub expr: Box<Expression>,
     pub field: String,
 }
@@ -319,26 +347,10 @@ pub struct FieldAccess  {
 impl ToJS for FieldAccess {
     fn to_js(&self) -> String {
         let FieldAccess { expr, field } = self;
-        
+
         let expr = expr.to_js();
 
         format!("{expr}.{field}")
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct QualifiedIden {
-    pub path: Vec<String>,
-    pub iden: Box<Expression>
-}
-
-impl ToJS for QualifiedIden {
-    fn to_js(&self) -> String {
-        let QualifiedIden { path, iden } = self;
-        
-        let expr = iden.to_js();
-
-        format!("{expr}")
     }
 }
 
@@ -357,14 +369,13 @@ pub enum Expression {
     ArrayAccess(ArrayAccess),
     FieldAccess(FieldAccess),
     NamedStruct(NamedStruct),
-    QualifiedIden(QualifiedIden),
     Range(Range),
     JS(String),
     If(If),
     For(For),
     Placeholder,
     Break,
-    Continue
+    Continue,
 }
 
 impl ToJS for Expression {
@@ -384,7 +395,6 @@ impl ToJS for Expression {
             Self::NamedStruct(cast_literal) => cast_literal.to_js(),
             Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
-            Self::QualifiedIden(qiden) => qiden.to_js(),
             Self::Return(expr) => {
                 let expr = expr.to_js();
                 format!("return ({expr});")
@@ -399,37 +409,35 @@ impl ToJS for Expression {
                 eprintln!("Transpiling placeholder");
                 format!("{{ /* placeholder */ }}")
             }
-            Self::Literal(literal) => {
-                match literal {
-                    Literal::Boolean(val) => format!("{val}"),
-                    Literal::Int(val) => format!("{val}"),
-                    Literal::Float(val) => format!("{val}"),
-                    Literal::Uint(val) => format!("{val}"),
-                    Literal::String(val) => format!("{val:?}"),
-                }
+            Self::Literal(literal) => match literal {
+                Literal::Boolean(val) => format!("{val}"),
+                Literal::Int(val) => format!("{val}"),
+                Literal::Float(val) => format!("{val}"),
+                Literal::Uint(val) => format!("{val}"),
+                Literal::String(val) => format!("{val:?}"),
             },
             Self::JS(code) => {
                 format!("{code}")
-            }
-            // kind => {
-            //     dbg!(kind);
-            //     unimplemented!("transpilation unimplemented")
-            // }
+            } // kind => {
+              //     dbg!(kind);
+              //     unimplemented!("transpilation unimplemented")
+              // }
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CodeBlock  {
+pub struct CodeBlock {
     pub indentation: usize,
-    pub expressions: Vec<Expression>
+    pub expressions: Vec<Expression>,
 }
 
 impl ToJS for CodeBlock {
     fn to_js(&self) -> String {
         let indentation = " ".repeat(self.indentation);
 
-        let expressions = self.expressions
+        let expressions = self
+            .expressions
             .iter()
             .map(|expr| {
                 let expr = expr.to_js();
@@ -452,14 +460,14 @@ pub struct FunctionArgument {
 #[derive(Debug, Clone)]
 pub struct Imported {
     pub name: String,
-    pub alias: Option<String>
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ImportStmt {
     pub module_name: String,
     pub imports: Vec<Imported>,
-    pub everything: bool
+    pub everything: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -468,25 +476,29 @@ pub struct FunctionDef {
     pub func_name: String,
     pub argument_list: Vec<FunctionArgument>,
     pub return_type: Type,
-    pub function_body: CodeBlock
+    pub function_body: CodeBlock,
 }
 
 impl ToJS for FunctionDef {
     fn to_js(&self) -> String {
-        let FunctionDef { export, func_name, argument_list, return_type, function_body } = self;
+        let FunctionDef {
+            export,
+            func_name,
+            argument_list,
+            return_type,
+            function_body,
+        } = self;
 
         // let export = if *export { "export " } else { "" };
 
         let args = argument_list
             .into_iter()
-            .map(|arg| {
-                arg.arg_name.clone()
-            })
+            .map(|arg| arg.arg_name.clone())
             .collect::<Vec<_>>()
             .join(", ");
 
         let body = function_body.to_js();
-        
+
         format!("function {func_name}({args}) {{ {body} }}\n")
     }
 }
@@ -494,13 +506,13 @@ impl ToJS for FunctionDef {
 #[derive(Debug, Clone)]
 pub struct VariantDef {
     pub variant_name: String,
-    pub fields: Vec<StructField>
+    pub fields: Vec<StructField>,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnumDef {
     pub enum_name: String,
-    pub variants: Vec<VariantDef>
+    pub variants: Vec<VariantDef>,
 }
 
 #[derive(Debug, Clone)]
@@ -508,13 +520,13 @@ pub struct StructField {
     pub field_name: String,
     pub field_type: Type,
     pub is_final: bool,
-    pub default_value: Option<Expression>
+    pub default_value: Option<Expression>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub fields: Vec<StructField>,
-    pub methods: Vec<FunctionDef> 
+    pub methods: Vec<FunctionDef>,
 }
 
 #[derive(Debug, Clone)]
@@ -522,7 +534,7 @@ pub struct TypeDef {
     pub name: String,
     pub export: bool,
     // TODO: come up with a better name
-    pub value: Type
+    pub value: Type,
 }
 
 #[derive(Debug, Clone, Default)]

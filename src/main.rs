@@ -1,21 +1,28 @@
-use std::{path::Path, fs::{File, self}, io::Read, collections::HashMap};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::Read,
+    path::Path,
+};
 
 use gumdrop::Options;
 
+mod ast;
 mod lexer;
 mod parser;
+mod semantics;
 mod transpiler;
-mod ast;
 
+use ast::*;
 use lexer::*;
 use parser::*;
+use semantics::*;
 use transpiler::*;
-use ast::*;
 
 #[derive(Debug, Options)]
 struct MyOptions {
     #[options(command)]
-    command: Option<Command>
+    command: Option<Command>,
 }
 
 #[derive(Debug, Options)]
@@ -25,7 +32,7 @@ enum Command {
     #[options(help = "parse a file")]
     Parse(ParseOpts),
     #[options(help = "lex a file")]
-    Lex(LexOpts)
+    Lex(LexOpts),
 }
 
 #[derive(Debug, Options)]
@@ -34,7 +41,7 @@ struct LexOpts {
     free: Vec<String>,
 
     #[options(help = "file to lex")]
-    file: String
+    file: String,
 }
 
 #[derive(Debug, Options)]
@@ -43,7 +50,7 @@ struct ParseOpts {
     free: Vec<String>,
 
     #[options(help = "file to parse")]
-    file: String
+    file: String,
 }
 
 #[derive(Debug, Options)]
@@ -55,37 +62,29 @@ struct TranspileOpts {
     file: String,
 
     #[options(help = "file to transpile")]
-    output: Option<String>
+    output: Option<String>,
 }
 
 fn main() -> Result<(), String> {
-
     let opts = MyOptions::parse_args_default_or_exit();
 
     match opts.command.expect("No command given") {
         Command::Lex(opts) => {
             let path = Path::new(&opts.file);
-            let file_contents = fs::read_to_string(path).expect("Failed to read file");
-            let mut lexer = Lexer::new(file_contents);
+            let mut lexer = Lexer::new(path);
             match lexer.parse() {
                 Ok(tokens) => {
                     for token in &tokens {
                         println!("{token:?}");
                     }
-                },
+                }
                 Err(err) => return Err(err),
             }
         }
         Command::Parse(opts) => {
             let path = Path::new(&opts.file);
-            let file_contents = fs::read_to_string(path).expect("Failed to read file");
-            let mut lexer = Lexer::new(file_contents);
+            let mut lexer = Lexer::new(path);
             let tokens = lexer.parse()?;
-            
-            let tokens = tokens
-                .into_iter()
-                .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
-                .collect::<Vec<_>>();
 
             let mut parser = Parser::new(tokens);
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
@@ -95,14 +94,8 @@ fn main() -> Result<(), String> {
         }
         Command::Transpile(opts) => {
             let path = Path::new(&opts.file);
-            let file_contents = fs::read_to_string(path).expect("Failed to read file");
-            let mut lexer = Lexer::new(file_contents);
+            let mut lexer = Lexer::new(path);
             let tokens = lexer.parse()?;
-            
-            let tokens = tokens
-                .into_iter()
-                .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
-                .collect::<Vec<_>>();
 
             let mut parser = Parser::new(tokens);
             let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
@@ -110,42 +103,45 @@ fn main() -> Result<(), String> {
 
             let mut modules = Vec::<Module>::new();
 
-            for import in &module.imports {
-                if modules.iter().any(|m| m.module_name == import.module_name) {
-                    continue;
-                }
+            // for import in &module.imports {
+            //     if modules.iter().any(|m| m.module_name == import.module_name) {
+            //         continue;
+            //     }
 
-                let path = path.parent().unwrap().join(format!("{}.fr", import.module_name));
-                let file_contents = fs::read_to_string(path).expect("Failed to read file");
-                let mut lexer = Lexer::new(file_contents);
-                let tokens = lexer.parse()?;
-                
-                let tokens = tokens
-                    .into_iter()
-                    .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
-                    .collect::<Vec<_>>();
+            //     let path = path
+            //         .parent()
+            //         .unwrap()
+            //         .join(format!("{}.fr", import.module_name));
+            //     let mut lexer = Lexer::new(&path);
+            //     let tokens = lexer.parse()?;
 
-                let mut parser = Parser::new(tokens);
-                let imported_module = parser.parse_module(import.module_name.clone())?;
+            //     let tokens = tokens
+            //         .into_iter()
+            //         .filter(|t| {
+            //             t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment
+            //         })
+            //         .collect::<Vec<_>>();
 
-                modules.push(imported_module);
-            }
+            //     let mut parser = Parser::new(tokens);
+            //     let imported_module = parser.parse_module(import.module_name.clone())?;
 
-            let program = Program {
+            //     modules.push(imported_module);
+            // }
+
+            let mut program = Program {
                 main_module: module,
-                imported_modules: modules
+                imported_modules: modules,
             };
+
+            SemanticAnalyzer::resolve_names(&mut program)?;
 
             let mut transpiler = Transpiler::new(program);
             let path_parent = path.canonicalize().unwrap();
             let path_parent = path_parent.parent().unwrap();
-            let out_filename = opts.output.unwrap_or_else(|| {
-                format!("{filename}_out.js")
-            });
+            let out_filename = opts.output.unwrap_or_else(|| format!("{filename}_out.js"));
 
             let out_path = path_parent.join(&out_filename);
 
-        
             let js_ast = transpiler.transpile(&out_path)?;
         }
     }
