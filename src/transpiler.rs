@@ -35,7 +35,6 @@ impl Transpiler {
             }
             Expression::FunctionCall(func) => {
                 let FunctionCall {
-                    func_module,
                     func_name,
                     arguments,
                 } = func;
@@ -44,7 +43,7 @@ impl Transpiler {
                 }
             }
             Expression::Variable(var) => {
-                let Variable { var_module, name } = var;
+                let Variable { name } = var;
                 if let Some(new_name) = mapped_names.get(name) {
                     *name = new_name.clone()
                 }
@@ -157,7 +156,7 @@ impl Transpiler {
     }
 
     pub fn fix_scopes(&mut self) -> Result<(), String> {
-        for module in &mut self.ast.imported_modules {
+        for module in &mut self.ast.modules {
             let mut mapped_var_names = HashMap::<String, String>::new();
             Transpiler::fix_scopes_codeblock(&mut module.toplevel_scope, &mut mapped_var_names);
 
@@ -178,20 +177,13 @@ impl Transpiler {
         let mut outfile =
             std::fs::File::create(path).map_err(|_| format!("Cannot open out file"))?;
 
-        // for module in &self.ast.imported_modules {
-        //     for funcdef in &module.function_defs {
-        //         _ = outfile.write(funcdef.to_js().as_bytes());
-        //     }
+        for module in self.ast.modules.iter().rev() {
+            for funcdef in &module.function_defs {
+                _ = outfile.write(funcdef.to_js().as_bytes());
+            }
 
-        //     _ = outfile.write(module.toplevel_scope.to_js().as_bytes());
-        // }
-
-        for funcdef in &self.ast.main_module.function_defs {
-            _ = outfile.write(funcdef.to_js().as_bytes());
+            _ = outfile.write(module.toplevel_scope.to_js().as_bytes());
         }
-
-        _ = outfile.write(self.ast.main_module.toplevel_scope.to_js().as_bytes());
-
         Ok(())
     }
 }

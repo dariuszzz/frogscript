@@ -26,6 +26,8 @@ Frogscript:
         related (i think?) cleanup match allowing for . and [ in array literal
         ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
         ✔ Parsing anon structs @done(23-12-21 21:29)
+        ☐ Struct literal field shorthand
+            { name } == { name: name }
         ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
         ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
         ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
