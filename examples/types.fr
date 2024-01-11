@@ -1,10 +1,3 @@
-use test { 
-    print as log, elo,
-    siema,
-} 
-
-use types
-
 type Siema = int
 
 type Clean = 
@@ -20,6 +13,4 @@ export fn elo => return Clean {
     age: 23
 }
 
-fn siema => print(elo())
-
-fn elo => print(field)
+let _ = test::print(elo())

@@ -1,3 +1,4 @@
+#![feature(path_file_prefix)]
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -83,62 +84,33 @@ fn main() -> Result<(), String> {
         }
         Command::Parse(opts) => {
             let path = Path::new(&opts.file);
-            let mut lexer = Lexer::new(path);
-            let tokens = lexer.parse()?;
 
-            let mut parser = Parser::new(tokens);
-            let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
-            let module = parser.parse_module(filename)?;
+            let path_parent = path.canonicalize().unwrap();
+            let path_parent = path_parent.parent().unwrap();
 
-            println!("{module:#?}");
+            let mut parser = Parser::new(path_parent.to_owned());
+            let file_name = path.file_prefix().unwrap().to_str().unwrap().to_owned();
+            let modules = parser.parse_file(file_name)?;
+
+            println!("{:#?}", modules);
         }
         Command::Transpile(opts) => {
             let path = Path::new(&opts.file);
-            let mut lexer = Lexer::new(path);
-            let tokens = lexer.parse()?;
 
-            let mut parser = Parser::new(tokens);
-            let filename = path.file_stem().unwrap().to_str().unwrap().to_owned();
-            let module = parser.parse_module(filename.clone())?;
-
-            let mut modules = Vec::<Module>::new();
-
-            // for import in &module.imports {
-            //     if modules.iter().any(|m| m.module_name == import.module_name) {
-            //         continue;
-            //     }
-
-            //     let path = path
-            //         .parent()
-            //         .unwrap()
-            //         .join(format!("{}.fr", import.module_name));
-            //     let mut lexer = Lexer::new(&path);
-            //     let tokens = lexer.parse()?;
-
-            //     let tokens = tokens
-            //         .into_iter()
-            //         .filter(|t| {
-            //             t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment
-            //         })
-            //         .collect::<Vec<_>>();
-
-            //     let mut parser = Parser::new(tokens);
-            //     let imported_module = parser.parse_module(import.module_name.clone())?;
-
-            //     modules.push(imported_module);
-            // }
-
-            let mut program = Program {
-                main_module: module,
-                imported_modules: modules,
-            };
-
-            SemanticAnalyzer::resolve_names(&mut program)?;
-
-            let mut transpiler = Transpiler::new(program);
             let path_parent = path.canonicalize().unwrap();
             let path_parent = path_parent.parent().unwrap();
-            let out_filename = opts.output.unwrap_or_else(|| format!("{filename}_out.js"));
+
+            let mut parser = Parser::new(path_parent.to_owned());
+            let file_name = path.file_prefix().unwrap().to_str().unwrap().to_owned();
+            let modules = parser.parse_file(file_name.clone())?;
+
+            let mut program = Program { modules };
+
+            let mut semantic = SemanticAnalyzer::default();
+            semantic.resolve_names(&mut program)?;
+
+            let mut transpiler = Transpiler::new(program);
+            let out_filename = opts.output.unwrap_or_else(|| format!("{file_name}_out.js"));
 
             let out_path = path_parent.join(&out_filename);
 

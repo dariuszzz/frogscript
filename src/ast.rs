@@ -86,7 +86,6 @@ impl ToJS for VariableDecl {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub func_module: Vec<String>,
     pub func_name: String,
     pub arguments: Vec<Expression>,
 }
@@ -94,7 +93,6 @@ pub struct FunctionCall {
 impl ToJS for FunctionCall {
     fn to_js(&self) -> String {
         let FunctionCall {
-            func_module,
             func_name,
             arguments,
         } = self;
@@ -165,7 +163,6 @@ impl ToJS for BinaryOp {
 
 #[derive(Debug, Clone)]
 pub struct Variable {
-    pub var_module: Vec<String>,
     pub name: String,
 }
 
@@ -540,7 +537,6 @@ pub struct TypeDef {
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub module_name: String,
-    pub imports: Vec<ImportStmt>,
     pub type_defs: Vec<TypeDef>,
     pub function_defs: Vec<FunctionDef>,
     pub toplevel_scope: CodeBlock,
