@@ -1,11 +1,11 @@
 :: x: ~Printable
 export fn print => @js"console.log(x)"
 
-:: x: [int]
+:: x: []int
 :: f: fn(int -> int)
-fn map: [int] => @js"return x.map(f);"
+fn map: []int => @js"return x.map(f);"
 
-:: arr: [~Printable]
+:: arr: []~Printable
 :: n: int
 fn print_n_elements =>
     mut i: int = 0
@@ -22,7 +22,7 @@ fn add1: int => return x + 1
 :: x: int
 fn square: int => return x * x
 
-let arr: [int] = [
+let arr: []int = [
     1, 
     2, 
     square(3), 

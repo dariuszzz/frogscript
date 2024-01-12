@@ -279,14 +279,15 @@ impl Parser {
             }
             TokenKind::SquareLeft => {
                 self.advance();
-                let inner_type = self.parse_type()?;
 
                 if let TokenKind::SquareRight = self.advance().kind {
                 } else {
                     return Err(format!("Unclosed array type"));
                 }
 
-                TypeKind::Array(Box::new(inner_type))
+                let arr_type = self.parse_type()?;
+
+                TypeKind::Array(Box::new(arr_type))
             }
             TokenKind::Identifier(Identifier::Fn) => {
                 self.advance();
@@ -456,12 +457,27 @@ impl Parser {
     ) -> Result<Expression, String> {
         let name = match self.advance() {
             Token {
-                kind: TokenKind::Identifier(Identifier::Custom(func_name)),
+                kind: TokenKind::Identifier(Identifier::Custom(iden_name)),
                 ..
-            } => func_name,
+            } => {
+                let mut path = vec![iden_name];
+
+                while let TokenKind::DoubleColon = self.peek_skip_ws(indent)?.kind {
+                    self.advance_skip_ws();
+                    match self.peek_skip_ws(indent)?.kind {
+                        TokenKind::Identifier(Identifier::Custom(iden)) => {
+                            path.push(iden);
+                            self.advance_skip_ws();
+                        }
+                        _ => break,
+                    }
+                }
+
+                path
+            }
             token => {
                 return Err(format!(
-                    "{:?}:{:?}: No func name found, got {:?} instead",
+                    "{:?}:{:?}: No func/field name found, got {:?} instead",
                     token.start_line, token.start_char, token.kind
                 ))
             }
@@ -472,9 +488,12 @@ impl Parser {
             ..
         } = self.peek(0)
         {
+            if name.len() > 1 {
+                self.modules_to_parse.push(name[0].clone());
+            }
             self.advance();
             let mut call = FunctionCall {
-                func_name: name,
+                func_name: name.join("::"),
                 arguments: vec![called_on],
             };
 
@@ -500,9 +519,13 @@ impl Parser {
 
             Ok(Expression::FunctionCall(call))
         } else {
+            if name.len() > 1 {
+                return Err(format!("Missing '(' after qualifed function name"));
+            }
+
             Ok(Expression::FieldAccess(FieldAccess {
                 expr: Box::new(called_on),
-                field: name,
+                field: name[0].clone(),
             }))
         }
     }

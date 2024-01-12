@@ -1,6 +1,6 @@
 type Siema = int
 
-type Clean = 
+type Clean =
     elo: Siema
     field: string
     name: string
@@ -13,4 +13,7 @@ export fn elo => return Clean {
     age: 23
 }
 
-let _ = test::print(elo())
+let _ = test::a.test::print()
+let _ = a.field
+let _ = test::a.field
+let _ = a.test::print()
