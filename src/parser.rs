@@ -265,7 +265,27 @@ impl Parser {
             }
             TokenKind::Identifier(Identifier::Custom(type_name)) => {
                 self.advance();
-                match type_name.as_str() {
+
+                let mut path = vec![type_name];
+
+                while let TokenKind::DoubleColon = self.peek(0).kind {
+                    self.advance_skip_ws();
+                    match self.peek(0).kind {
+                        TokenKind::Identifier(Identifier::Custom(iden)) => {
+                            path.push(iden);
+                            self.advance_skip_ws();
+                        }
+                        _ => break,
+                    }
+                }
+
+                if path.len() > 1 {
+                    self.modules_to_parse.push(path[0].clone());
+                }
+
+                let name = path.join("::");
+
+                match name.as_str() {
                     "bool" => TypeKind::Boolean,
                     "string" => TypeKind::String,
                     "float" => TypeKind::Float,
@@ -273,7 +293,7 @@ impl Parser {
                     "uint" => TypeKind::Uint,
                     _ => TypeKind::Custom(CustomType {
                         type_module: Vec::new(),
-                        name: type_name,
+                        name: name,
                     }),
                 }
             }

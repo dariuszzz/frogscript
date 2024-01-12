@@ -1,7 +1,7 @@
 type Siema = int
 
 type Clean =
-    elo: Siema
+    elo: test::Siema
     field: string
     name: string
     age: uint
