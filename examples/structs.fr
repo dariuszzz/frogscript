@@ -21,7 +21,7 @@ fn func =>
 
 let _ = func(6)
 
-:: arr: [int]
+:: arr: []int
 fn f => 
     for i in arr =>
         nieistniejaca_funkcja(i)
