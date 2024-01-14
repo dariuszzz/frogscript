@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env::vars, os::windows::fs::symlink_dir};
 
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
@@ -7,11 +7,12 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
+    pub original_name: String,
     pub symbol_type: SymbolType,
     pub exported: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum SymbolType {
     Function,
     Variable,
@@ -20,25 +21,36 @@ pub enum SymbolType {
 
 #[derive(Debug, Clone, Default)]
 pub struct SemanticAnalyzer {
-    pub symbol_table: HashMap<String, Symbol>,
+    pub symbol_table: Vec<Symbol>,
 }
 
 impl SemanticAnalyzer {
+    pub fn find_external_symbol(&self, symbol_type: SymbolType, name: &str) -> Vec<&Symbol> {
+        self.symbol_table
+            .iter()
+            .filter(|s| {
+                s.exported == true && s.symbol_type == symbol_type && s.original_name == name
+            })
+            .collect()
+    }
+
     pub fn resolve_name_expr(
-        defined_symbols: &HashMap<String, Symbol>,
+        &mut self,
+        module_name: &String,
+        local_symbols: &HashMap<String, Symbol>,
         expr: &mut Expression,
     ) -> Result<(), String> {
         match expr {
             Expression::VariableDecl(var_decl) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut var_decl.var_value)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut var_decl.var_value)?;
             }
             Expression::Literal(_) => {}
             Expression::BinaryOp(op) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut op.lhs)?;
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut op.rhs)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut op.lhs)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut op.rhs)?;
             }
             Expression::UnaryOp(op) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut op.operand)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut op.operand)?;
             }
             Expression::FunctionCall(func_call) => {
                 let FunctionCall {
@@ -46,77 +58,117 @@ impl SemanticAnalyzer {
                     arguments,
                 } = func_call;
 
-                for arg in arguments {
-                    SemanticAnalyzer::resolve_name_expr(defined_symbols, arg)?;
+                //if function comes from another module
+                if func_name.split("::").count() > 1 {
+                    let functions_with_similar_name =
+                        self.find_external_symbol(SymbolType::Function, &func_name);
+                    let vars_with_similar_name =
+                        self.find_external_symbol(SymbolType::Variable, &func_name);
+
+                    if functions_with_similar_name.len() + vars_with_similar_name.len() == 1 {
+                        // symbol exists
+                    } else if functions_with_similar_name.len() > 1
+                        || vars_with_similar_name.len() > 1
+                    {
+                        return Err(format!("Ambiguous function call '{func_name}'"));
+                    } else {
+                        return Err(format!("External function '{func_name}' is not defined"));
+                    }
+                } else {
+                    let local_func = local_symbols.get(func_name);
+                    if let Some(symbol) = local_func {
+                        if symbol.symbol_type == SymbolType::Type {
+                            return Err(format!("Function '{func_name}' is not defined"));
+                        }
+                    } else {
+                        return Err(format!("Function '{func_name}' is not defined"));
+                    }
                 }
 
-                if !defined_symbols.contains_key(func_name) {
-                    return Err(format!("Function '{func_name}' is not defined"));
+                for arg in arguments {
+                    self.resolve_name_expr(module_name, local_symbols, arg)?;
                 }
             }
             Expression::Variable(var) => {
                 let Variable { name } = var;
 
-                if !defined_symbols.contains_key(name) {
-                    return Err(format!("Identifier '{name}' is not defined"));
+                if name.split("::").count() > 1 {
+                    let functions_with_similar_name =
+                        self.find_external_symbol(SymbolType::Function, &name);
+                    let vars_with_similar_name =
+                        self.find_external_symbol(SymbolType::Variable, &name);
+
+                    if functions_with_similar_name.len() + vars_with_similar_name.len() == 1 {
+                        // symbol exists
+                    } else if functions_with_similar_name.len() > 1
+                        || vars_with_similar_name.len() > 1
+                    {
+                        return Err(format!("Ambiguous identifier '{name}'"));
+                    } else {
+                        return Err(format!("External identifier '{name}' is not defined"));
+                    }
+                } else {
+                    let local_func = local_symbols.get(name);
+                    if let Some(symbol) = local_func {
+                        if symbol.symbol_type == SymbolType::Type {
+                            return Err(format!("Identifier '{name}' is not defined"));
+                        }
+                    }
                 }
             }
-            Expression::Return(ret) => SemanticAnalyzer::resolve_name_expr(defined_symbols, ret)?,
+            Expression::Return(ret) => self.resolve_name_expr(module_name, local_symbols, ret)?,
             Expression::Assignment(assignment) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut assignment.rhs)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut assignment.rhs)?;
             }
             Expression::AnonStruct(anon_struct) => {
                 for (_, expr) in &mut anon_struct.fields {
-                    SemanticAnalyzer::resolve_name_expr(defined_symbols, expr)?
+                    self.resolve_name_expr(module_name, local_symbols, expr)?
                 }
             }
             Expression::ArrayLiteral(arr) => {
                 for expr in &mut arr.elements {
-                    SemanticAnalyzer::resolve_name_expr(defined_symbols, expr)?;
+                    self.resolve_name_expr(module_name, local_symbols, expr)?;
                 }
             }
             Expression::ArrayAccess(arr_access) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut arr_access.expr)?;
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut arr_access.index)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut arr_access.expr)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut arr_access.index)?;
             }
             Expression::FieldAccess(field_access) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut field_access.expr)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut field_access.expr)?;
             }
             Expression::NamedStruct(named_struct) => {
                 for (_, expr) in &mut named_struct.struct_literal.fields {
-                    SemanticAnalyzer::resolve_name_expr(defined_symbols, expr)?;
+                    self.resolve_name_expr(module_name, local_symbols, expr)?;
                 }
             }
             Expression::Range(range) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut range.start)?;
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut range.end)?;
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut range.step)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut range.start)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut range.end)?;
             }
             Expression::JS(_) => {}
             Expression::If(if_expr) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut if_expr.cond)?;
-                SemanticAnalyzer::resolve_names_codeblock(
-                    defined_symbols,
-                    &mut if_expr.true_branch,
-                )?;
+                self.resolve_name_expr(module_name, local_symbols, &mut if_expr.cond)?;
+                self.resolve_names_codeblock(module_name, local_symbols, &mut if_expr.true_branch)?;
 
                 if let Some(else_branch) = &mut if_expr.else_branch {
-                    SemanticAnalyzer::resolve_names_codeblock(defined_symbols, else_branch)?;
+                    self.resolve_names_codeblock(module_name, local_symbols, else_branch)?;
                 }
             }
             Expression::For(for_expr) => {
-                SemanticAnalyzer::resolve_name_expr(defined_symbols, &mut for_expr.iterator)?;
+                self.resolve_name_expr(module_name, local_symbols, &mut for_expr.iterator)?;
 
-                let mut defined_names = defined_symbols.clone();
-                defined_names.insert(
+                let mut local_symbols = local_symbols.clone();
+                local_symbols.insert(
                     for_expr.binding.clone(),
                     Symbol {
+                        original_name: for_expr.binding.clone(),
                         symbol_type: SymbolType::Variable,
                         exported: false,
                     },
                 );
 
-                SemanticAnalyzer::resolve_names_codeblock(&defined_names, &mut for_expr.body)?;
+                self.resolve_names_codeblock(module_name, &local_symbols, &mut for_expr.body)?;
             }
             Expression::Placeholder => {}
             Expression::Break => {}
@@ -127,18 +179,21 @@ impl SemanticAnalyzer {
     }
 
     pub fn resolve_names_codeblock(
-        defined_symbols: &HashMap<String, Symbol>,
+        &mut self,
+        module_name: &String,
+        local_symbols: &HashMap<String, Symbol>,
         codeblock: &mut CodeBlock,
     ) -> Result<(), String> {
-        let mut defined_symbols = defined_symbols.clone();
+        let mut local_symbols = local_symbols.clone();
 
         for expr in &mut codeblock.expressions {
-            SemanticAnalyzer::resolve_name_expr(&defined_symbols, expr)?;
+            self.resolve_name_expr(module_name, &local_symbols, expr)?;
 
             if let Expression::VariableDecl(var_decl) = expr {
-                defined_symbols.insert(
+                local_symbols.insert(
                     var_decl.var_name.clone(),
                     Symbol {
+                        original_name: var_decl.var_name.clone(),
                         symbol_type: SymbolType::Variable,
                         exported: false,
                     },
@@ -150,28 +205,36 @@ impl SemanticAnalyzer {
     }
 
     pub fn resolve_names(&mut self, program: &mut Program) -> Result<(), String> {
-        for module in &mut program.modules {
-            let mut defined_symbols: HashMap<String, Symbol> = HashMap::new();
+        let mut local_symbols_by_module: HashMap<String, HashMap<String, Symbol>> = HashMap::new();
+        for module in &program.modules {
+            local_symbols_by_module.insert(module.module_name.clone(), HashMap::new());
+
+            let local_symbols = local_symbols_by_module
+                .get_mut(&module.module_name)
+                .unwrap();
+
             for func in &module.function_defs {
-                let mut defined_arguments = Vec::new();
-                for arg in &func.argument_list {
-                    if defined_arguments.contains(&arg.arg_name) {
-                        return Err(format!("Duplicate argument '{}'", arg.arg_name));
-                    }
-
-                    defined_arguments.push(arg.arg_name.clone())
-                }
-
-                if defined_symbols.contains_key(&func.func_name) {
+                if self
+                    .find_external_symbol(SymbolType::Function, &func.func_name)
+                    .len()
+                    > 1
+                {
                     return Err(format!(
                         "Identifier '{}' is already defined",
                         func.func_name
                     ));
                 }
 
-                defined_symbols.insert(
+                self.symbol_table.push(Symbol {
+                    original_name: format!("{}::{}", module.module_name, func.func_name),
+                    symbol_type: SymbolType::Function,
+                    exported: func.export,
+                });
+
+                local_symbols.insert(
                     func.func_name.clone(),
                     Symbol {
+                        original_name: func.func_name.clone(),
                         symbol_type: SymbolType::Function,
                         exported: func.export,
                     },
@@ -180,7 +243,11 @@ impl SemanticAnalyzer {
 
             for var in &module.toplevel_scope.expressions {
                 if let Expression::VariableDecl(var_decl) = var {
-                    if var_decl.var_name != "_" && defined_symbols.contains_key(&var_decl.var_name)
+                    if var_decl.var_name != "_"
+                        && self
+                            .find_external_symbol(SymbolType::Variable, &var_decl.var_name)
+                            .len()
+                            > 1
                     {
                         return Err(format!(
                             "Top-level variable '{}' is already defined",
@@ -188,9 +255,16 @@ impl SemanticAnalyzer {
                         ));
                     }
 
-                    defined_symbols.insert(
+                    self.symbol_table.push(Symbol {
+                        original_name: format!("{}::{}", module.module_name, var_decl.var_name),
+                        symbol_type: SymbolType::Variable,
+                        exported: false,
+                    });
+
+                    local_symbols.insert(
                         var_decl.var_name.clone(),
                         Symbol {
+                            original_name: var_decl.var_name.clone(),
                             symbol_type: SymbolType::Variable,
                             exported: false,
                         },
@@ -198,34 +272,72 @@ impl SemanticAnalyzer {
                 }
             }
 
+            for custom_type in &module.type_defs {
+                if self
+                    .find_external_symbol(SymbolType::Type, &custom_type.name)
+                    .len()
+                    > 1
+                {
+                    return Err(format!("Type '{}' is already defined", custom_type.name));
+                }
+
+                self.symbol_table.push(Symbol {
+                    original_name: format!("{}::{}", module.module_name, custom_type.name),
+                    symbol_type: SymbolType::Variable,
+                    exported: false,
+                });
+
+                local_symbols.insert(
+                    custom_type.name.clone(),
+                    Symbol {
+                        original_name: custom_type.name.clone(),
+                        symbol_type: SymbolType::Variable,
+                        exported: false,
+                    },
+                );
+            }
+        }
+
+        for module in &mut program.modules {
+            let local_symbols = local_symbols_by_module
+                .get(&module.module_name.clone())
+                .unwrap();
+
             for func in &mut module.function_defs {
-                let mut defined_names = defined_symbols.clone();
+                let mut local_symbols = local_symbols.clone();
+                let mut defined_arguments = Vec::new();
 
                 for arg in &func.argument_list {
-                    defined_names.insert(
+                    local_symbols.insert(
                         arg.arg_name.clone(),
                         Symbol {
+                            original_name: arg.arg_name.clone(),
                             symbol_type: SymbolType::Variable,
                             exported: false,
                         },
                     );
+
+                    if defined_arguments.contains(&arg.arg_name) {
+                        return Err(format!("Duplicate argument '{}'", arg.arg_name));
+                    }
+
+                    defined_arguments.push(arg.arg_name.clone())
                 }
 
-                SemanticAnalyzer::resolve_names_codeblock(&defined_names, &mut func.function_body)?;
+                self.resolve_names_codeblock(
+                    &module.module_name,
+                    &local_symbols,
+                    &mut func.function_body,
+                )?;
             }
 
             for var in &mut module.toplevel_scope.expressions {
                 match var {
                     Expression::VariableDecl(var_decl) => {
-                        let VariableDecl {
-                            var_name,
-                            var_type,
-                            var_value,
-                            is_mutable,
-                            is_env,
-                        } = var_decl;
+                        let VariableDecl { var_value, .. } = var_decl;
 
-                        SemanticAnalyzer::resolve_name_expr(&defined_symbols, var_value)?;
+                        let local_symbols = local_symbols.clone();
+                        self.resolve_name_expr(&module.module_name, &local_symbols, var_value)?;
                     }
                     _ => unreachable!("Invalid toplevel expression only let bindings allowed"),
                 }

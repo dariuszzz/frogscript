@@ -1,0 +1,13 @@
+:: arr: []int
+fn square => 
+    let res = arr.util::map(util::square)
+    return res
+
+
+:: arr: []int
+fn plus1 => 
+    let res = arr.util::map(util::add1)
+    return res
+
+let _ = square([1, 2, 3, 4, 5]).util::print()
+let _ = plus1([1, 2, 3, 4, 5]).util::print()
