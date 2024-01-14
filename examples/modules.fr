@@ -1,0 +1,25 @@
+:: arr: []int
+fn square =
+    let res = arr
+        .util::map(util::square)
+
+    return res
+
+:: arr: []int
+export fn plus1 =
+    let res = arr
+        .util::map(util::add1)
+
+    return res
+
+fn main =
+    // possible lambda syntax, type is kind of annoying to write so 
+    // full type inference is needed
+    // let lambda: fn([]int -> []int) = fn x => for y in x: y * 2
+
+    square([1, 2, 3, 4, 5])
+        .util::print()
+    plus1([1, 2, 3, 4, 5])
+        .util::print()
+
+    // util::main()

@@ -1,34 +1,34 @@
 :: x: ~Printable
-export fn print => @js"console.log(x)"
+fn print = return util::print(x) 
 
-:: x: [int]
+:: x: []int
 :: f: fn(int -> int)
-fn map: [int] => @js"return x.map(f);"
+fn map: []int = return util::map(x, f)
 
-:: arr: [~Printable]
+:: arr: []~Printable
 :: n: int
-fn print_n_elements =>
+fn print_n_elements =
     mut i: int = 0
 
-    for elem in arr =>
-
-        if i >= n => break
+    for elem in arr:
+        if i >= n:
+            break
         i += 1
         print(elem)
 
 :: x: int
-fn add1: int => return x + 1
+fn add1: int = return x + 1
 
 :: x: int
-fn square: int => return x * x
+fn square: int = return x * x
 
-let arr: [int] = [
-    1, 
-    2, 
-    square(3), 
-    4, 5,
-].map(add1)
+fn main =
+    let arr: []int = [
+        1, 
+        2, 
+        square(3), 
+        4, 5,
+    ].map(add1)
 
-let _ = arr
-    .map(square)
-    .print_n_elements(3)
+    arr.map(square)
+       .print_n_elements(3)

@@ -77,6 +77,7 @@ impl ToJS for VariableDecl {
             is_mutable,
             is_env,
         } = self;
+        let var_name = var_name.replace("::", "_");
         let keyword = if *is_mutable { "let" } else { "const" };
         let value = var_value.to_js();
 
@@ -86,7 +87,6 @@ impl ToJS for VariableDecl {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub func_module: Vec<String>,
     pub func_name: String,
     pub arguments: Vec<Expression>,
 }
@@ -94,10 +94,11 @@ pub struct FunctionCall {
 impl ToJS for FunctionCall {
     fn to_js(&self) -> String {
         let FunctionCall {
-            func_module,
             func_name,
             arguments,
         } = self;
+
+        let func_name = func_name.replace("::", "_");
 
         let args = arguments
             .into_iter()
@@ -165,13 +166,13 @@ impl ToJS for BinaryOp {
 
 #[derive(Debug, Clone)]
 pub struct Variable {
-    pub var_module: Vec<String>,
     pub name: String,
 }
 
 impl ToJS for Variable {
     fn to_js(&self) -> String {
-        self.name.clone()
+        let Variable { name } = self;
+        self.name.replace("::", "_")
     }
 }
 
@@ -235,6 +236,7 @@ impl ToJS for For {
 
         let iterator = iterator.to_js();
         let body = body.to_js();
+        let binding = binding.replace("::", "_");
 
         format!("for (const {binding} of {iterator}) {{ {body} }}")
     }
@@ -319,7 +321,6 @@ impl ToJS for AnonStruct {
 pub struct Range {
     pub start: Box<Expression>,
     pub end: Box<Expression>,
-    pub step: Box<Expression>,
     pub inclusive: bool,
 }
 
@@ -329,7 +330,6 @@ impl ToJS for Range {
             start,
             end,
             inclusive,
-            step,
         } = self;
 
         unimplemented!("ranges arent directly transpilable");
@@ -370,7 +370,7 @@ pub enum Expression {
     FieldAccess(FieldAccess),
     NamedStruct(NamedStruct),
     Range(Range),
-    JS(String),
+    JS(Vec<Expression>),
     If(If),
     For(For),
     Placeholder,
@@ -417,6 +417,15 @@ impl ToJS for Expression {
                 Literal::String(val) => format!("{val:?}"),
             },
             Self::JS(code) => {
+                let code = code
+                    .iter()
+                    .map(|e| match e {
+                        Expression::Literal(Literal::String(raw)) => raw.clone(),
+                        _ => e.to_js(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+
                 format!("{code}")
             } // kind => {
               //     dbg!(kind);
@@ -490,10 +499,11 @@ impl ToJS for FunctionDef {
         } = self;
 
         // let export = if *export { "export " } else { "" };
+        let func_name = func_name.replace("::", "_");
 
         let args = argument_list
             .into_iter()
-            .map(|arg| arg.arg_name.clone())
+            .map(|arg| arg.arg_name.replace("::", "_"))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -540,7 +550,6 @@ pub struct TypeDef {
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub module_name: String,
-    pub imports: Vec<ImportStmt>,
     pub type_defs: Vec<TypeDef>,
     pub function_defs: Vec<FunctionDef>,
     pub toplevel_scope: CodeBlock,

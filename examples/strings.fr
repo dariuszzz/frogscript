@@ -1,0 +1,4 @@
+// this doesnt work yet
+let foo = 23
+fn main = 
+    "{foo + 2}".util::print()
