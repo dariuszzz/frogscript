@@ -14,8 +14,7 @@ pub struct Symbol {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum SymbolType {
-    Function,
-    Variable,
+    Identifier,
     Type,
 }
 
@@ -28,9 +27,7 @@ impl SemanticAnalyzer {
     pub fn find_external_symbol(&self, symbol_type: SymbolType, name: &str) -> Vec<&Symbol> {
         self.symbol_table
             .iter()
-            .filter(|s| {
-                s.exported == true && s.symbol_type == symbol_type && s.original_name == name
-            })
+            .filter(|s| s.symbol_type == symbol_type && s.original_name == name)
             .collect()
     }
 
@@ -60,16 +57,16 @@ impl SemanticAnalyzer {
 
                 //if function comes from another module
                 if func_name.split("::").count() > 1 {
-                    let functions_with_similar_name =
-                        self.find_external_symbol(SymbolType::Function, &func_name);
-                    let vars_with_similar_name =
-                        self.find_external_symbol(SymbolType::Variable, &func_name);
+                    let identifiers_with_the_same_name =
+                        self.find_external_symbol(SymbolType::Identifier, &func_name);
 
-                    if functions_with_similar_name.len() + vars_with_similar_name.len() == 1 {
+                    if identifiers_with_the_same_name.len() == 1 {
+                        let iden = identifiers_with_the_same_name[0];
+                        if !iden.exported {
+                            return Err(format!("External function '{func_name}' found, but it is not marked as `export`"));
+                        }
                         // symbol exists
-                    } else if functions_with_similar_name.len() > 1
-                        || vars_with_similar_name.len() > 1
-                    {
+                    } else if identifiers_with_the_same_name.len() > 1 {
                         return Err(format!("Ambiguous function call '{func_name}'"));
                     } else {
                         return Err(format!("External function '{func_name}' is not defined"));
@@ -93,16 +90,16 @@ impl SemanticAnalyzer {
                 let Variable { name } = var;
 
                 if name.split("::").count() > 1 {
-                    let functions_with_similar_name =
-                        self.find_external_symbol(SymbolType::Function, &name);
-                    let vars_with_similar_name =
-                        self.find_external_symbol(SymbolType::Variable, &name);
+                    let identifiers_with_the_same_name =
+                        self.find_external_symbol(SymbolType::Identifier, &name);
 
-                    if functions_with_similar_name.len() + vars_with_similar_name.len() == 1 {
+                    if identifiers_with_the_same_name.len() == 1 {
+                        let iden = identifiers_with_the_same_name[0];
+                        if !iden.exported {
+                            return Err(format!("External variable '{name}' found, but it is not marked as `export`"));
+                        }
                         // symbol exists
-                    } else if functions_with_similar_name.len() > 1
-                        || vars_with_similar_name.len() > 1
-                    {
+                    } else if identifiers_with_the_same_name.len() > 1 {
                         return Err(format!("Ambiguous identifier '{name}'"));
                     } else {
                         return Err(format!("External identifier '{name}' is not defined"));
@@ -163,7 +160,7 @@ impl SemanticAnalyzer {
                     for_expr.binding.clone(),
                     Symbol {
                         original_name: for_expr.binding.clone(),
-                        symbol_type: SymbolType::Variable,
+                        symbol_type: SymbolType::Identifier,
                         exported: false,
                     },
                 );
@@ -194,7 +191,7 @@ impl SemanticAnalyzer {
                     var_decl.var_name.clone(),
                     Symbol {
                         original_name: var_decl.var_name.clone(),
-                        symbol_type: SymbolType::Variable,
+                        symbol_type: SymbolType::Identifier,
                         exported: false,
                     },
                 );
@@ -215,7 +212,7 @@ impl SemanticAnalyzer {
 
             for func in &module.function_defs {
                 if self
-                    .find_external_symbol(SymbolType::Function, &func.func_name)
+                    .find_external_symbol(SymbolType::Identifier, &func.func_name)
                     .len()
                     > 1
                 {
@@ -227,7 +224,7 @@ impl SemanticAnalyzer {
 
                 self.symbol_table.push(Symbol {
                     original_name: format!("{}::{}", module.module_name, func.func_name),
-                    symbol_type: SymbolType::Function,
+                    symbol_type: SymbolType::Identifier,
                     exported: func.export,
                 });
 
@@ -235,7 +232,7 @@ impl SemanticAnalyzer {
                     func.func_name.clone(),
                     Symbol {
                         original_name: func.func_name.clone(),
-                        symbol_type: SymbolType::Function,
+                        symbol_type: SymbolType::Identifier,
                         exported: func.export,
                     },
                 );
@@ -245,7 +242,7 @@ impl SemanticAnalyzer {
                 if let Expression::VariableDecl(var_decl) = var {
                     if var_decl.var_name != "_"
                         && self
-                            .find_external_symbol(SymbolType::Variable, &var_decl.var_name)
+                            .find_external_symbol(SymbolType::Identifier, &var_decl.var_name)
                             .len()
                             > 1
                     {
@@ -257,7 +254,7 @@ impl SemanticAnalyzer {
 
                     self.symbol_table.push(Symbol {
                         original_name: format!("{}::{}", module.module_name, var_decl.var_name),
-                        symbol_type: SymbolType::Variable,
+                        symbol_type: SymbolType::Identifier,
                         exported: false,
                     });
 
@@ -265,7 +262,7 @@ impl SemanticAnalyzer {
                         var_decl.var_name.clone(),
                         Symbol {
                             original_name: var_decl.var_name.clone(),
-                            symbol_type: SymbolType::Variable,
+                            symbol_type: SymbolType::Identifier,
                             exported: false,
                         },
                     );
@@ -283,7 +280,7 @@ impl SemanticAnalyzer {
 
                 self.symbol_table.push(Symbol {
                     original_name: format!("{}::{}", module.module_name, custom_type.name),
-                    symbol_type: SymbolType::Variable,
+                    symbol_type: SymbolType::Identifier,
                     exported: false,
                 });
 
@@ -291,7 +288,7 @@ impl SemanticAnalyzer {
                     custom_type.name.clone(),
                     Symbol {
                         original_name: custom_type.name.clone(),
-                        symbol_type: SymbolType::Variable,
+                        symbol_type: SymbolType::Identifier,
                         exported: false,
                     },
                 );
@@ -312,7 +309,7 @@ impl SemanticAnalyzer {
                         arg.arg_name.clone(),
                         Symbol {
                             original_name: arg.arg_name.clone(),
-                            symbol_type: SymbolType::Variable,
+                            symbol_type: SymbolType::Identifier,
                             exported: false,
                         },
                     );
@@ -338,6 +335,11 @@ impl SemanticAnalyzer {
 
                         let local_symbols = local_symbols.clone();
                         self.resolve_name_expr(&module.module_name, &local_symbols, var_value)?;
+                    }
+                    // This is always the main() function call inserted by the parser
+                    Expression::FunctionCall(func_call) => {
+                        func_call.func_name =
+                            format!("{}::{}", module.module_name, func_call.func_name);
                     }
                     _ => unreachable!("Invalid toplevel expression only let bindings allowed"),
                 }

@@ -17,14 +17,14 @@ let expr = 2
     3.parse()
     - 23
 
-fn siema =>
+fn siema =
     if dupa * 
 2 
-+ 23 =>
++ 23:
         print(x)
         if siema
 .parse()
-                .elo() => 
+                .elo():
             x
             return 6 + 2
 

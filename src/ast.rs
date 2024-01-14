@@ -236,6 +236,7 @@ impl ToJS for For {
 
         let iterator = iterator.to_js();
         let body = body.to_js();
+        let binding = binding.replace("::", "_");
 
         format!("for (const {binding} of {iterator}) {{ {body} }}")
     }
@@ -369,7 +370,7 @@ pub enum Expression {
     FieldAccess(FieldAccess),
     NamedStruct(NamedStruct),
     Range(Range),
-    JS(String),
+    JS(Vec<Expression>),
     If(If),
     For(For),
     Placeholder,
@@ -416,6 +417,15 @@ impl ToJS for Expression {
                 Literal::String(val) => format!("{val:?}"),
             },
             Self::JS(code) => {
+                let code = code
+                    .iter()
+                    .map(|e| match e {
+                        Expression::Literal(Literal::String(raw)) => raw.clone(),
+                        _ => e.to_js(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+
                 format!("{code}")
             } // kind => {
               //     dbg!(kind);
