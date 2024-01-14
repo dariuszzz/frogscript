@@ -144,6 +144,8 @@ impl Transpiler {
                     body,
                 } = for_block;
 
+                *binding = format!("{}::{}", module_name, binding);
+
                 Transpiler::replace_names_in_expr(module_name, mapped_names, iterator);
                 Transpiler::fix_scopes_codeblock(module_name, body, &mut mapped_names.clone());
             }
@@ -151,7 +153,13 @@ impl Transpiler {
             Expression::Break => {}
             Expression::Continue => {}
             Expression::Literal(_) => {}
-            Expression::JS(_) => {}
+            Expression::JS(expressions) => {
+                for expr in expressions {
+                    if let Expression::Variable(var) = expr {
+                        var.name = format!("{}::{}", module_name, var.name);
+                    }
+                }
+            }
         }
     }
 
@@ -200,6 +208,7 @@ impl Transpiler {
 
                 let mut mapped_var_names = mapped_var_names.clone();
                 for arg in &mut func.argument_list {
+                    arg.arg_name = format!("{}::{}", module.module_name, arg.arg_name);
                     mapped_var_names.insert(arg.arg_name.clone(), arg.arg_name.clone());
                 }
 

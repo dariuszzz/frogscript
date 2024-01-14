@@ -1,5 +1,5 @@
 :: x: zzz
-fn print => @js"console.log(x);"
+fn print = util::print(x)
 
 let struct = {
     foo: "siema",
@@ -8,7 +8,7 @@ let struct = {
 }
 
 :: x : int
-fn func => 
+fn func =
     mut a = { 
         val: { 
             inner: x
@@ -19,11 +19,11 @@ fn func =>
 
     print(a)
 
-let _ = func(6)
+fn main =
+    func(6)
+    f([1, 2, 3])
 
 :: arr: []int
-fn f => 
-    for i in arr =>
-        nieistniejaca_funkcja(i)
-
-let _ = f(5)
+fn f = 
+    for i in arr:
+        print(i)
