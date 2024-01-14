@@ -1125,7 +1125,8 @@ impl Parser {
 
         loop {
             match (self.peek(0).kind, self.peek(1).kind) {
-                (TokenKind::Indentation(_), TokenKind::Newline) => {
+                (TokenKind::Indentation(_), TokenKind::Newline)
+                | (TokenKind::Indentation(_), TokenKind::EOF) => {
                     // consume indent and nl
                     self.advance();
                     self.advance();
