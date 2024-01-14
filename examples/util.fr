@@ -1,0 +1,12 @@
+:: x: ~Printable
+export fn print => @js"console.log(x)"
+
+:: x: []int
+:: f: fn(int -> int)
+export fn map: []int => @js"return x.map(f);"
+
+:: x: int
+export fn add1: int => return x + 1
+
+:: x: int
+export fn square: int => return x * x

@@ -24,6 +24,9 @@ use transpiler::*;
 struct MyOptions {
     #[options(command)]
     command: Option<Command>,
+
+    #[options(help = "print help message")]
+    help: bool,
 }
 
 #[derive(Debug, Options)]
@@ -38,32 +41,26 @@ enum Command {
 
 #[derive(Debug, Options)]
 struct LexOpts {
-    #[options(free)]
-    free: Vec<String>,
-
     #[options(help = "file to lex")]
     file: String,
 }
 
 #[derive(Debug, Options)]
 struct ParseOpts {
-    #[options(free)]
-    free: Vec<String>,
-
     #[options(help = "file to parse")]
     file: String,
 }
 
 #[derive(Debug, Options)]
 struct TranspileOpts {
-    #[options(free)]
-    free: Vec<String>,
-
     #[options(help = "file to transpile")]
     file: String,
 
-    #[options(help = "file to transpile")]
+    #[options(help = "output")]
     output: Option<String>,
+
+    #[options(help = "create a dot graph of the ast")]
+    graph: bool,
 }
 
 fn main() -> Result<(), String> {

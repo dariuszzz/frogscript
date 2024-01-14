@@ -482,12 +482,12 @@ impl Parser {
             } => {
                 let mut path = vec![iden_name];
 
-                while let TokenKind::DoubleColon = self.peek_skip_ws(indent)?.kind {
-                    self.advance_skip_ws();
-                    match self.peek_skip_ws(indent)?.kind {
+                while let TokenKind::DoubleColon = self.peek(0).kind {
+                    self.advance();
+                    match self.peek(0).kind {
                         TokenKind::Identifier(Identifier::Custom(iden)) => {
                             path.push(iden);
-                            self.advance_skip_ws();
+                            self.advance();
                         }
                         _ => break,
                     }
@@ -661,7 +661,6 @@ impl Parser {
             lhs = Expression::Range(Range {
                 start: Box::new(lhs),
                 end: Box::new(rhs),
-                step: Box::new(Expression::Literal(Literal::Int(1))),
                 inclusive,
             });
         }
@@ -878,12 +877,12 @@ impl Parser {
     ) -> Result<Expression, String> {
         let mut path = vec![identifier];
 
-        while let TokenKind::DoubleColon = self.peek_skip_ws(indent)?.kind {
-            self.advance_skip_ws();
-            match self.peek_skip_ws(indent)?.kind {
+        while let TokenKind::DoubleColon = self.peek(0).kind {
+            self.advance();
+            match self.peek(0).kind {
                 TokenKind::Identifier(Identifier::Custom(iden)) => {
                     path.push(iden);
-                    self.advance_skip_ws();
+                    self.advance();
                 }
                 _ => break,
             }
@@ -894,6 +893,7 @@ impl Parser {
         }
 
         let final_name = path.join("::");
+
         let expr = match self.peek_skip_ws(0)?.kind {
             TokenKind::ParenLeft => self.parse_standalone_function_call(final_name, indent)?,
             TokenKind::CurlyLeft => {

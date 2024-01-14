@@ -77,6 +77,7 @@ impl ToJS for VariableDecl {
             is_mutable,
             is_env,
         } = self;
+        let var_name = var_name.replace("::", "_");
         let keyword = if *is_mutable { "let" } else { "const" };
         let value = var_value.to_js();
 
@@ -96,6 +97,8 @@ impl ToJS for FunctionCall {
             func_name,
             arguments,
         } = self;
+
+        let func_name = func_name.replace("::", "_");
 
         let args = arguments
             .into_iter()
@@ -168,7 +171,8 @@ pub struct Variable {
 
 impl ToJS for Variable {
     fn to_js(&self) -> String {
-        self.name.clone()
+        let Variable { name } = self;
+        self.name.replace("::", "_")
     }
 }
 
@@ -316,7 +320,6 @@ impl ToJS for AnonStruct {
 pub struct Range {
     pub start: Box<Expression>,
     pub end: Box<Expression>,
-    pub step: Box<Expression>,
     pub inclusive: bool,
 }
 
@@ -326,7 +329,6 @@ impl ToJS for Range {
             start,
             end,
             inclusive,
-            step,
         } = self;
 
         unimplemented!("ranges arent directly transpilable");
@@ -487,10 +489,11 @@ impl ToJS for FunctionDef {
         } = self;
 
         // let export = if *export { "export " } else { "" };
+        let func_name = func_name.replace("::", "_");
 
         let args = argument_list
             .into_iter()
-            .map(|arg| arg.arg_name.clone())
+            .map(|arg| arg.arg_name.replace("::", "_"))
             .collect::<Vec<_>>()
             .join(", ");
 
