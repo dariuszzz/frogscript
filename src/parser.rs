@@ -17,6 +17,7 @@ pub struct Parser {
     pub path: PathBuf,
     pub modules_to_parse: Vec<String>,
     pub parsed_modules: Vec<String>,
+    pub current_module: String,
 }
 
 impl Parser {
@@ -28,6 +29,7 @@ impl Parser {
             path,
             modules_to_parse: Vec::new(),
             parsed_modules: Vec::new(),
+            current_module: String::new(),
         }
     }
 
@@ -148,7 +150,7 @@ impl Parser {
             (false, "fn_key", TokenKind::Identifier(Identifier::Fn)),
             (
                 false,
-                "func_name",
+                "name",
                 TokenKind::Identifier(Identifier::_MatchAnyCustom),
             ),
         ]) {
@@ -156,27 +158,65 @@ impl Parser {
                 function_def.export = true;
             }
 
-            let name_token = fn_decl_tokens.get("func_name").unwrap().clone();
-            match name_token.kind {
-                TokenKind::Identifier(Identifier::Custom(name)) => function_def.func_name = name,
-                _ => unreachable!(),
-            };
-
-            match self.peek(0).kind {
-                TokenKind::Colon => {
-                    self.advance();
-
-                    function_def.return_type = self.parse_type()?;
+            let name_token = fn_decl_tokens.get("name").unwrap();
+            match &name_token.kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => {
+                    function_def.func_name = name.clone()
                 }
-                _ => {}
-            };
+                _ => unreachable!(),
+            }
+
+            if let TokenKind::ParenLeft = self.peek(0).kind {
+                self.advance();
+
+                loop {
+                    let mut arg = FunctionArgument {
+                        arg_name: String::new(),
+                        arg_type: Type {
+                            type_kind: TypeKind::Infer,
+                            is_reference: false,
+                            is_structural: false,
+                        },
+                        is_env: false,
+                    };
+
+                    match self.peek_skip_ws(0)?.kind {
+                        TokenKind::Identifier(Identifier::Custom(arg_name)) => {
+                            self.advance_skip_ws(0);
+                            arg.arg_name = arg_name.clone();
+                            arg.arg_type = self.parse_type()?;
+
+                            if let TokenKind::Comma = self.peek_skip_ws(0)?.kind {
+                                self.advance_skip_ws(0);
+                            }
+
+                            function_def.argument_list.push(arg);
+                        }
+                        TokenKind::ParenRight => {
+                            self.advance_skip_ws(0);
+                            break;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+
+            if let TokenKind::ThinArrow = self.peek(0).kind {
+                self.advance();
+                function_def.return_type = self.parse_type()?;
+            }
 
             if let TokenKind::Equal = self.advance().kind {
             } else {
                 return Err(format!("'=' missing in func definition"));
             }
         } else {
-            return Err("Missing tokens in '(export) fn funcname'".to_owned());
+            let line = self.peek(0).start_line;
+            let pos = self.peek(0).start_char;
+            return Err(format!(
+                "{}:{line}:{pos} Missing tokens in '(export) fn funcname'",
+                self.current_module
+            ));
         }
 
         match self.peek(0) {
@@ -205,13 +245,11 @@ impl Parser {
         while let Some(arg_tokens) = self.safe_collect_pattern(&[
             (true, "indent_1", TokenKind::Indentation(0)),
             (false, "double_colon", TokenKind::DoubleColon),
-            (true, "env", TokenKind::Identifier(Identifier::Env)),
             (
                 false,
-                "var_name",
+                "name",
                 TokenKind::Identifier(Identifier::_MatchAnyCustom),
             ),
-            (false, "colon", TokenKind::Colon),
         ]) {
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
@@ -220,22 +258,19 @@ impl Parser {
                     is_reference: false,
                     is_structural: false,
                 },
-                is_env: false,
+                is_env: true,
             };
 
-            let name_token = arg_tokens.get("var_name").unwrap().clone();
-            match name_token.kind {
-                TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name,
-                _ => unreachable!(),
+            let name_token = arg_tokens.get("name").unwrap();
+            match &name_token.kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => arg_def.arg_name = name.clone(),
+                _ => {}
             };
 
             arg_def.arg_type = self.parse_type()?;
 
+            // newline i believe
             self.advance();
-
-            if let Some(_) = arg_tokens.get("env") {
-                arg_def.is_env = true;
-            }
 
             argument_list.push(arg_def);
         }
@@ -376,12 +411,16 @@ impl Parser {
                 self.advance();
 
                 // yuck
-                if let TokenKind::ParenRight = self.peek(0).kind {
+                let token = self.peek(0);
+                if let TokenKind::ParenRight = token.kind {
                     // handle () type
                     self.advance();
                     TypeKind::Void
                 } else {
-                    return Err(format!("Unexpected token after '(' in type"));
+                    return Err(format!(
+                        "{}:{}:{} Unexpected token after '(' in type",
+                        self.current_module, token.start_line, token.start_char
+                    ));
                 }
             }
             token => return Err(format!("Invalid token in type: {token:?}")),
@@ -422,29 +461,27 @@ impl Parser {
         if let Some(variable_decl_tokens) = self.safe_collect_pattern(&[
             (true, "indent_1", TokenKind::Indentation(0)),
             (true, "env", TokenKind::Identifier(Identifier::Env)),
-            (
-                false,
-                "var_name",
-                TokenKind::Identifier(Identifier::_MatchAnyCustom),
-            ),
         ]) {
             let is_env = variable_decl_tokens.get("env").is_some();
 
-            let name_token = variable_decl_tokens.get("var_name").unwrap().clone();
-            let var_name = match name_token.kind {
-                TokenKind::Identifier(Identifier::Custom(name)) => name,
-                _ => unreachable!(),
+            let var_type = match self.peek(1).kind {
+                TokenKind::Equal => {
+                    // No type
+                    Type {
+                        type_kind: TypeKind::Infer,
+                        is_reference: false,
+                        is_structural: false,
+                    }
+                }
+                _ => {
+                    // Type
+                    self.parse_type()?
+                }
             };
 
-            let var_type = if let TokenKind::Colon = self.peek(0).kind {
-                self.advance();
-                self.parse_type()?
-            } else {
-                Type {
-                    type_kind: TypeKind::Infer,
-                    is_reference: false,
-                    is_structural: false,
-                }
+            let var_name = match self.advance().kind {
+                TokenKind::Identifier(Identifier::Custom(name)) => name,
+                _ => return Err(format!("Variable name missing in declaration")),
             };
 
             match self.advance().kind {
@@ -1429,10 +1466,10 @@ impl Parser {
                         _ => return Err(format!("field name missing in function decl")),
                     };
 
-                    match self.advance().kind {
-                        TokenKind::Colon => {}
-                        _ => return Err(format!("colon missing in function field decl")),
-                    };
+                    // match self.advance().kind {
+                    //     TokenKind::Colon => {}
+                    //     _ => return Err(format!("colon missing in function field decl")),
+                    // };
 
                     let field_type = self.parse_type()?;
 
@@ -1472,6 +1509,7 @@ impl Parser {
         self.modules_to_parse.push(file_name);
 
         while let Some(module_name) = self.modules_to_parse.pop() {
+            self.current_module = module_name.clone();
             if self.parsed_modules.contains(&module_name) {
                 continue;
             }

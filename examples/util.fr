@@ -1,15 +1,14 @@
-:: x: ~Printable
-export fn print = @js("console.log(" x ")")
+export fn print(x ~Printable) -> () = @js("console.log(" x ")")
 
-:: x: []int
-:: f: fn(int -> int)
-export fn map: []int = @js("return " x ".map(" f ")")
+export fn map(
+    arr  []int
+    func fn(int -> int)
+) -> []int = 
+    @js("return " arr ".map(" func ")")
 
-:: x: int
-export fn add1: int = return x + 1
+export fn add1(x int) -> int = return x + 1
 
-:: x: int
-export fn square: int = return x * x
+export fn square(x int) -> int = return x * x
 
 export fn main = 
     print("siema")
