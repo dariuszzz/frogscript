@@ -30,6 +30,36 @@ maybe new syntax
 // putting the type before func name and foo does seem kind of inconsistent though
 
 let fn([]int -> ()) lambda = 
-    fn x => for y in x: y * 2
+    fn(x) for y in x: util::print(y * 2)
+
+let fn(int, int -> int) mul = fn(x int, y int) -> int x * y
+let mul = fn(x int, y int) -> int x * y
+let mul = fn(x int, y int) x * y
+let mul = fn(x, y) x * y
+let mul = fn(_) $1 * $2
+
+let implicit_arg = fn(ctx Context)(_) Context::do_smth(ctx, $1 * $2)
+
+let multiline = fn(x, y)
+    let foo = x * y
+    return foo
+
+let multiline = fn(x int, y int) -> int
+    let foo = x * y
+    return foo
+
+let multiline = fn(_)
+    let foo = $1 * $2
+    return foo
+
+func_that_takes_lambda(
+    arg1,
+    fn(_)
+        let foo = $1 * $2
+        return foo,
+    arg3
+)
+
+func_that_takes_lambda(arg1, fn(_) $1 * $2, arg3)
 
 */
