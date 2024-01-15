@@ -1509,10 +1509,11 @@ impl Parser {
         self.modules_to_parse.push(file_name);
 
         while let Some(module_name) = self.modules_to_parse.pop() {
-            self.current_module = module_name.clone();
             if self.parsed_modules.contains(&module_name) {
                 continue;
             }
+            self.current_module = module_name.clone();
+            println!("parsing {module_name:?}");
 
             let file_path = &self.path.join(format!("{}.fr", module_name.clone()));
             let mut lexer = Lexer::new(&file_path);
