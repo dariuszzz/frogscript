@@ -204,6 +204,7 @@ impl SemanticAnalyzer {
     pub fn resolve_names(&mut self, program: &mut Program) -> Result<(), String> {
         let mut local_symbols_by_module: HashMap<String, HashMap<String, Symbol>> = HashMap::new();
         for module in &program.modules {
+            println!("resolving names in {:?}", module.module_name);
             local_symbols_by_module.insert(module.module_name.clone(), HashMap::new());
 
             let local_symbols = local_symbols_by_module

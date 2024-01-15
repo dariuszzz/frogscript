@@ -2,7 +2,7 @@
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::Path,
 };
 
@@ -49,6 +49,9 @@ struct LexOpts {
 struct ParseOpts {
     #[options(help = "file to parse")]
     file: String,
+
+    #[options(help = "file to dump the parsed ast to")]
+    output: Option<String>,
 }
 
 #[derive(Debug, Options)]
@@ -89,7 +92,16 @@ fn main() -> Result<(), String> {
             let file_name = path.file_prefix().unwrap().to_str().unwrap().to_owned();
             let modules = parser.parse_file(file_name)?;
 
-            println!("{:#?}", modules);
+            if let Some(output) = opts.output {
+                println!(
+                    "dumping parsed modules to {:?}",
+                    std::env::current_dir().unwrap().join(&output)
+                );
+                let mut outfile =
+                    std::fs::File::create(output).map_err(|_| format!("Cannot open out file"))?;
+
+                _ = outfile.write(format!("{modules:#?}").as_bytes());
+            }
         }
         Command::Transpile(opts) => {
             let path = Path::new(&opts.file);

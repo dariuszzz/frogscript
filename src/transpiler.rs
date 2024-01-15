@@ -230,6 +230,7 @@ impl Transpiler {
             std::fs::File::create(path).map_err(|_| format!("Cannot open out file"))?;
 
         for module in self.ast.modules.iter().rev() {
+            println!("transpiling {:?}", module.module_name);
             _ = outfile.write(format!("\n // {} \n", module.module_name).as_bytes());
             for funcdef in &module.function_defs {
                 _ = outfile.write(funcdef.to_js().as_bytes());

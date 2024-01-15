@@ -38,7 +38,8 @@ let mul = fn(x int, y int) x * y
 let mul = fn(x, y) x * y
 let mul = fn(_) $1 * $2
 
-let implicit_arg = fn(ctx Context)(_) Context::do_smth(ctx, $1 * $2)
+let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
+let fn(Context)(int, int -> int) implicit_arg = fn(ctx)(_) Context::multiply(ctx, $1 * $2)
 
 let multiline = fn(x, y)
     let foo = x * y
