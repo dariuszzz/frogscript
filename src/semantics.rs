@@ -3,6 +3,7 @@ use std::{collections::HashMap, env::vars, os::windows::fs::symlink_dir};
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
+    Lambda,
 };
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,15 @@ impl SemanticAnalyzer {
         expr: &mut Expression,
     ) -> Result<(), String> {
         match expr {
+            Expression::Lambda(lambda) => {
+                let Lambda {
+                    argument_list,
+                    return_type,
+                    function_body,
+                } = lambda;
+
+                self.resolve_names_codeblock(module_name, local_symbols, function_body)?;
+            }
             Expression::VariableDecl(var_decl) => {
                 self.resolve_name_expr(module_name, local_symbols, &mut var_decl.var_value)?;
             }

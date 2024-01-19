@@ -24,6 +24,22 @@ impl Transpiler {
         expr: &mut Expression,
     ) {
         match expr {
+            Expression::Lambda(lambda) => {
+                let Lambda {
+                    argument_list,
+                    return_type,
+                    function_body,
+                } = lambda;
+
+                let mut mapped_names = mapped_names.clone();
+
+                for arg in argument_list {
+                    arg.arg_name = format!("{}::{}", module_name, arg.arg_name);
+                    mapped_names.insert(arg.arg_name.clone(), arg.arg_name.clone());
+                }
+
+                Transpiler::fix_scopes_codeblock(module_name, function_body, &mut mapped_names)
+            }
             Expression::VariableDecl(var_decl) => {
                 unreachable!("this is done in fix_codeblock")
             }

@@ -2,23 +2,54 @@ type Person =
     age  int
     name string
 
-fn square(arr []int) -> []int =
+fn square(arr [int]) -> [int] =
     let res = arr.util::map(util::square)
 
     return res
 
-export fn plus1(arr []int) -> []int = 
-    let []int res = arr
+export fn plus1(arr [int]) -> int =
+    let [int] res = arr
         .util::map(util::add1)
 
     return res
 
+fn map_and_add(arr [int], f fn(int -> int), add int) -> int =
+    let mapped = util::map(arr, f)
+    let mapped = util::map(mapped, fn(x) return x + add)
+    return mapped
+
 fn main =
-    let []int arr1 = square([1, 2, 3, 4, 5])
+    map_and_add(
+        [1, 2, 3],
+        fn(x) 
+            let square = x * x
+            return square,
+        2
+    )
+    .util::print()
+
+    let [int] arr1 = square([1, 2, 3, 4, 5])
     util::print(arr1)
     
     let arr2 = plus1([1, 2, 3, 4, 5])
     arr2.util::print()
+
+    arr2.util::map(fn(x) return x * x, 2)
+        .util::print()
+
+    // this works
+    // let lambda = fn(x, y) return x + y
+    // let lambda2 = fn(x int, y) return x + y
+    // let lambda3 = fn(x int, y int) return x + y
+    // let lambda4 = fn(x int, y int) -> int return x + y
+    // let lambda5 = fn(x int, y int) -> int 
+    //     let sum = x + y
+    //     return sum
+
+    // let arr = [lambda, lambda2, lambda3, lambda4, lambda5]
+
+    // for l in arr:
+    //     l(2, 3).util::print()
 
     // util::main()
 
@@ -29,17 +60,18 @@ maybe new syntax
 // while you change the type manually
 // putting the type before func name and foo does seem kind of inconsistent though
 
-let fn([]int -> ()) lambda = 
+let fn([int] -> ()) lambda = 
     fn(x) for y in x: util::print(y * 2)
 
 let fn(int, int -> int) mul = fn(x int, y int) -> int x * y
 let mul = fn(x int, y int) -> int x * y
 let mul = fn(x int, y int) x * y
-let mul = fn(x, y) x * y
+let mul = fn(x y) x * y
 let mul = fn(_) $1 * $2
 
 let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
-let fn(Context)(int, int -> int) implicit_arg = fn(ctx)(_) Context::multiply(ctx, $1 * $2)
+let fn(Context)(int, int) implicit_arg = 
+    fn(ctx)(_) Context::multiply(ctx, $1 * $2)
 
 let multiline = fn(x, y)
     let foo = x * y

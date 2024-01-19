@@ -1,9 +1,9 @@
 export fn print(x ~Printable) -> () = @js("console.log(" x ")")
 
 export fn map(
-    arr  []int
-    func fn(int -> int)
-) -> []int = 
+    arr  [int]
+    func fn(int -> int) 
+) -> [int] = 
     @js("return " arr ".map(" func ")")
 
 export fn add1(x int) -> int = return x + 1
