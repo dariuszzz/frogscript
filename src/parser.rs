@@ -131,7 +131,10 @@ impl Parser {
         Some(tokens)
     }
 
-    fn parse_fn_no_args(&mut self, args: Vec<FunctionArgument>) -> Result<FunctionDef, String> {
+    fn parse_fn_no_implicits(
+        &mut self,
+        args: Vec<FunctionArgument>,
+    ) -> Result<FunctionDef, String> {
         let mut function_def = FunctionDef {
             export: false,
             func_name: String::new(),
@@ -186,8 +189,18 @@ impl Parser {
                             arg.arg_name = arg_name.clone();
                             arg.arg_type = self.parse_type()?;
 
-                            if let TokenKind::Comma = self.peek_skip_ws(0)?.kind {
-                                self.advance_skip_ws(0);
+                            match self.peek(0).kind {
+                                TokenKind::Comma => {
+                                    self.advance();
+                                }
+                                TokenKind::Newline => {
+                                    self.advance_skip_ws(0);
+                                    self.current -= 1;
+                                }
+                                _ => match self.peek_skip_ws(0)?.kind {
+                                    TokenKind::ParenRight => {}
+                                    _ => return Err(format!("Function args must be separated by either a comma or a newline"))
+                                }
                             }
 
                             function_def.argument_list.push(arg);
@@ -239,7 +252,7 @@ impl Parser {
         Ok(function_def)
     }
 
-    fn parse_fn_with_args(&mut self, module: &mut Module) -> Result<FunctionDef, String> {
+    fn parse_fn_with_implicits(&mut self, module: &mut Module) -> Result<FunctionDef, String> {
         let mut argument_list = Vec::new();
 
         while let Some(arg_tokens) = self.safe_collect_pattern(&[
@@ -275,7 +288,7 @@ impl Parser {
             argument_list.push(arg_def);
         }
 
-        self.parse_fn_no_args(argument_list)
+        self.parse_fn_no_implicits(argument_list)
     }
 
     pub fn parse_type(&mut self) -> Result<Type, String> {
@@ -298,47 +311,53 @@ impl Parser {
             }
             TokenKind::Identifier(Identifier::Custom(type_name)) => {
                 self.advance();
+                if type_name == "_" {
+                    TypeKind::Infer
+                } else {
+                    let mut path = vec![type_name];
 
-                let mut path = vec![type_name];
-
-                while let TokenKind::DoubleColon = self.peek(0).kind {
-                    self.advance();
-                    match self.peek(0).kind {
-                        TokenKind::Identifier(Identifier::Custom(iden)) => {
-                            path.push(iden);
-                            self.advance();
+                    while let TokenKind::DoubleColon = self.peek(0).kind {
+                        self.advance();
+                        match self.peek(0).kind {
+                            TokenKind::Identifier(Identifier::Custom(iden)) => {
+                                path.push(iden);
+                                self.advance();
+                            }
+                            _ => break,
                         }
-                        _ => break,
+                    }
+
+                    if path.len() > 1 {
+                        self.modules_to_parse.push(path[0].clone());
+                    }
+
+                    let name = path.join("::");
+
+                    match name.as_str() {
+                        "bool" => TypeKind::Boolean,
+                        "string" => TypeKind::String,
+                        "float" => TypeKind::Float,
+                        "int" => TypeKind::Int,
+                        "uint" => TypeKind::Uint,
+                        _ => TypeKind::Custom(CustomType {
+                            type_module: Vec::new(),
+                            name: name,
+                        }),
                     }
                 }
-
-                if path.len() > 1 {
-                    self.modules_to_parse.push(path[0].clone());
-                }
-
-                let name = path.join("::");
-
-                match name.as_str() {
-                    "bool" => TypeKind::Boolean,
-                    "string" => TypeKind::String,
-                    "float" => TypeKind::Float,
-                    "int" => TypeKind::Int,
-                    "uint" => TypeKind::Uint,
-                    _ => TypeKind::Custom(CustomType {
-                        type_module: Vec::new(),
-                        name: name,
-                    }),
-                }
+            }
+            TokenKind::SquareRight => {
+                return Err(format!("Empty array type"));
             }
             TokenKind::SquareLeft => {
                 self.advance();
+
+                let arr_type = self.parse_type()?;
 
                 if let TokenKind::SquareRight = self.advance().kind {
                 } else {
                     return Err(format!("Unclosed array type"));
                 }
-
-                let arr_type = self.parse_type()?;
 
                 TypeKind::Array(Box::new(arr_type))
             }
@@ -777,6 +796,7 @@ impl Parser {
                 TokenKind::Identifier(Identifier::Custom(name)) => {
                     self.parse_custom_iden(name, indent)?
                 }
+                TokenKind::Identifier(Identifier::Fn) => self.parse_lambda(indent)?,
                 TokenKind::SquareLeft => self.parse_array_literal(indent)?,
                 kind => {
                     dbg!(format!(
@@ -810,6 +830,95 @@ impl Parser {
         }
 
         Ok(term)
+    }
+
+    pub fn parse_lambda(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lambda = Lambda {
+            argument_list: Vec::new(),
+            return_type: Type {
+                type_kind: TypeKind::Infer,
+                is_reference: false,
+                is_structural: false,
+            },
+            function_body: CodeBlock::default(),
+        };
+
+        match self.advance().kind {
+            TokenKind::ParenLeft => {}
+            _ => return Err(format!("'(' missing after 'fn' in lambda decl")),
+        }
+
+        loop {
+            let mut arg = FunctionArgument {
+                arg_name: String::new(),
+                arg_type: Type {
+                    type_kind: TypeKind::Infer,
+                    is_reference: false,
+                    is_structural: false,
+                },
+                is_env: false,
+            };
+
+            match self.peek_skip_ws(0)?.kind {
+                TokenKind::Identifier(Identifier::Custom(arg_name)) => {
+                    self.advance_skip_ws(0);
+                    arg.arg_name = arg_name.clone();
+
+                    if let Ok(arg_type) = self.parse_type() {
+                        arg.arg_type = arg_type;
+                    }
+
+                    match self.peek(0).kind {
+                        TokenKind::Comma => {
+                            self.advance();
+                        }
+                        TokenKind::Newline => {
+                            self.advance_skip_ws(0);
+                            self.current -= 1;
+                        }
+                        _ => match self.peek_skip_ws(0)?.kind {
+                            TokenKind::ParenRight => {}
+                            _ => {
+                                return Err(format!(
+                                    "Lambda args must be separated by either a comma or a newline"
+                                ))
+                            }
+                        },
+                    }
+
+                    lambda.argument_list.push(arg);
+                }
+                TokenKind::ParenRight => {
+                    self.advance_skip_ws(0);
+                    break;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if let TokenKind::ThinArrow = self.peek(0).kind {
+            self.advance();
+            lambda.return_type = self.parse_type()?;
+        }
+
+        match self.peek(0) {
+            Token {
+                kind: TokenKind::Newline,
+                ..
+            } => {
+                //consume nl
+                self.advance();
+
+                let block = self.parse_codeblock(0)?;
+                lambda.function_body = block;
+            }
+            _ => {
+                let expr = self.parse_codeblock_expression(0)?;
+                lambda.function_body.expressions.push(expr);
+            }
+        }
+
+        Ok(Expression::Lambda(lambda))
     }
 
     pub fn parse_array_literal(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1543,7 +1652,7 @@ impl Parser {
                         current_module.toplevel_scope.expressions.push(expr);
                     }
                     TokenKind::DoubleColon => {
-                        let func_def = self.parse_fn_with_args(&mut current_module)?;
+                        let func_def = self.parse_fn_with_implicits(&mut current_module)?;
                         current_module.function_defs.push(func_def);
                     }
                     TokenKind::Newline => {
@@ -1572,7 +1681,7 @@ impl Parser {
                                 current_module.type_defs.push(type_def);
                             }
                             TokenKind::Identifier(Identifier::Fn) => {
-                                let func_def = self.parse_fn_no_args(Vec::new())?;
+                                let func_def = self.parse_fn_no_implicits(Vec::new())?;
                                 current_module.function_defs.push(func_def);
                             }
                             TokenKind::Identifier(Identifier::Let) => {
@@ -1587,7 +1696,7 @@ impl Parser {
                             // module.imports.push(import);
                         }
                         Identifier::Fn => {
-                            let func_def = self.parse_fn_no_args(Vec::new())?;
+                            let func_def = self.parse_fn_no_implicits(Vec::new())?;
                             current_module.function_defs.push(func_def);
                         }
                         Identifier::Let => {

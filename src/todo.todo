@@ -13,7 +13,13 @@ Frogscript:
         ✘ Parse imports @cancelled(23-12-23 01:31)
         ✔ Reimplement import parsing cuz of new syntax @done(23-12-23 18:59)
         ☐ Allow for some kind of nested modules or namespaces
-        ☐ Come up with syntax for calling functions by their fully qualified name
+        ☐ `using` statement to bring modules into scope
+            instead of `module::foo()` you could do
+            `
+                using module
+                foo()
+            `
+        ✔ Come up with syntax for calling functions by their fully qualified name @done(24-01-19 16:05)
             Basically something like mod::func(foo), also how would that look with ufcs?
             foo.mod::func()?
     
@@ -45,17 +51,16 @@ Frogscript:
             ☐ String templates ("var: ${var}") @high
             ☐ Escape sequences in strings ("\"siema\"") @high
             ☐ Allow for single quoted strings and multiline strings and maybe raw string literals
-    
+            ☐ Make "" strings single-line only, support maybe """...""" for multiline strings
 
         Lambdas:
-            ☐ Come up with a syntax for lambdas and parse it
-                el => el
-                el =>
-                    let foo = el
-                    return foo
-                () => 13
+            ✔ Come up with a syntax for lambdas and parse it @done(24-01-19 16:01)
+                fn(x) x
+                fn(x int) x
+                fn(x int) -> int x
                 
             ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
+                fn(_) $1
         
         Parsing custom types:
             ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
@@ -69,13 +74,24 @@ Frogscript:
         ✔ Redeclaration support @done(24-01-02 20:15)
         ✔ Shadowing @done(24-01-02 20:15)
         ☐ Generate truly unique names for shadowed variables @critical
-        ☐ Stop grouping function at the top of the file and toplevel statements at the bottom
-        ☐ Transpile inline functions correctly
+        ✔ Stop grouping function at the top of the file and toplevel statements at the bottom @done(24-01-19 16:04)
+        ✘ Transpile inline functions correctly @cancelled(24-01-19 16:03)
+        ☐ Automatically inline functions
         ☐ Transpile implicit returns
         ☐ Transpile ranges into generator functions @critical
+        ☐ Indexing arrays with ranges
+            let arr = [1,2,3]
+            let val = arr[1..3] // [1, 2] 
+            let val = arr[1..=3] // [1, 2, 3] 
+        ☐ Bug when returning redeclared variable [INVESTIGATE] @critical
+            fn foo() =
+                let var = 123
+                let var = 321
+                return var // returns '123' for some reason
 
     Validation:
-        ☐ Figure out whether the language should allow for top level expressions like if/for etc
+        ✔ Figure out whether the language should allow for top level expressions like if/for etc @done(24-01-19 16:05)
+        ☐ Dont allow for non-const top-level expressions 
         ☐ Make _ a special write-only identifier
 
     Testing: 

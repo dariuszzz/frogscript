@@ -355,6 +355,33 @@ impl ToJS for FieldAccess {
 }
 
 #[derive(Debug, Clone)]
+pub struct Lambda {
+    pub argument_list: Vec<FunctionArgument>,
+    pub return_type: Type,
+    pub function_body: CodeBlock,
+}
+
+impl ToJS for Lambda {
+    fn to_js(&self) -> String {
+        let Lambda {
+            argument_list,
+            return_type,
+            function_body,
+        } = self;
+
+        let args = argument_list
+            .into_iter()
+            .map(|arg| arg.arg_name.replace("::", "_"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let body = function_body.to_js();
+
+        format!("({args}) => {{ {body} }}\n")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -369,6 +396,7 @@ pub enum Expression {
     ArrayAccess(ArrayAccess),
     FieldAccess(FieldAccess),
     NamedStruct(NamedStruct),
+    Lambda(Lambda),
     Range(Range),
     JS(Vec<Expression>),
     If(If),
@@ -390,6 +418,7 @@ impl ToJS for Expression {
             Self::Assignment(assignment) => assignment.to_js(),
             Self::AnonStruct(struct_literal) => struct_literal.to_js(),
             Self::ArrayLiteral(array_literal) => array_literal.to_js(),
+            Self::Lambda(lambda) => lambda.to_js(),
             Self::ArrayAccess(array_access) => array_access.to_js(),
             Self::FieldAccess(field_access) => field_access.to_js(),
             Self::NamedStruct(cast_literal) => cast_literal.to_js(),
@@ -536,7 +565,7 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub fields: Vec<StructField>,
-    pub methods: Vec<FunctionDef>,
+    pub methods: Vec<Lambda>,
 }
 
 #[derive(Debug, Clone)]
