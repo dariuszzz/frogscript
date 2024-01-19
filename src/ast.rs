@@ -33,7 +33,6 @@ pub struct FunctionType {
 
 #[derive(Debug, Clone)]
 pub struct CustomType {
-    pub type_module: Vec<String>,
     pub name: String,
 }
 
@@ -565,7 +564,6 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub fields: Vec<StructField>,
-    pub methods: Vec<Lambda>,
 }
 
 #[derive(Debug, Clone)]

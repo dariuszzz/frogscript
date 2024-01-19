@@ -36,6 +36,8 @@ fn main =
 
     arr2.util::map(fn(x) return x * x, 2)
         .util::print()
+        
+    let util::Printable something_that_can_be_printed = ...
 
     // this works
     // let lambda = fn(x, y) return x + y

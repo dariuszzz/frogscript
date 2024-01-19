@@ -339,10 +339,7 @@ impl Parser {
                         "float" => TypeKind::Float,
                         "int" => TypeKind::Int,
                         "uint" => TypeKind::Uint,
-                        _ => TypeKind::Custom(CustomType {
-                            type_module: Vec::new(),
-                            name: name,
-                        }),
+                        _ => TypeKind::Custom(CustomType { name: name }),
                     }
                 }
             }
@@ -1543,10 +1540,7 @@ impl Parser {
                     _ => return Err(format!("type decl body must be indented")),
                 };
 
-                let mut struct_def = StructDef {
-                    fields: Vec::new(),
-                    methods: Vec::new(),
-                };
+                let mut struct_def = StructDef { fields: Vec::new() };
 
                 loop {
                     match (self.peek(0).kind, self.peek(1).kind) {
