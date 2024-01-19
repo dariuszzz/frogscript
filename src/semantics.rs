@@ -1,9 +1,13 @@
-use std::{collections::HashMap, env::vars, os::windows::fs::symlink_dir};
+use std::{
+    collections::HashMap,
+    env::{self, vars},
+    os::windows::fs::symlink_dir,
+};
 
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
-    Lambda,
+    CustomType, FunctionType, Lambda, StructDef, TypeKind,
 };
 
 #[derive(Debug, Clone)]
@@ -32,6 +36,81 @@ impl SemanticAnalyzer {
             .collect()
     }
 
+    pub fn resolve_type_name(
+        &mut self,
+        module_name: &String,
+        local_symbols: &HashMap<String, Symbol>,
+        kind: &mut TypeKind,
+    ) -> Result<(), String> {
+        match kind {
+            TypeKind::Infer => {}
+            TypeKind::Void
+            | TypeKind::Int
+            | TypeKind::Uint
+            | TypeKind::Float
+            | TypeKind::String
+            | TypeKind::Boolean => {}
+            TypeKind::Custom(custom) => {
+                let CustomType { name } = custom;
+
+                let split_name = name.split("::").collect::<Vec<_>>();
+                if split_name.len() == 1 {
+                    let local_type = local_symbols.get(name);
+                    if let Some(symbol) = local_type {
+                        if symbol.symbol_type != SymbolType::Type {
+                            return Err(format!("Identifier '{name}' exists, but is not a type"));
+                        }
+                    } else {
+                        return Err(format!("Type '{name}' is not defined"));
+                    }
+                } else {
+                    let type_symbol = self.find_external_symbol(SymbolType::Type, &name);
+                    if type_symbol.len() == 1 {
+                        if !type_symbol[0].exported {
+                            return Err(format!("Type '{name}' is defined but not exported"));
+                        }
+                    } else if type_symbol.len() == 0 {
+                        return Err(format!("Type '{name}' is not defined"));
+                    } else {
+                        return Err(format!("Type '{name}' is ambiguous"));
+                    }
+                }
+            }
+            TypeKind::Array(inner) => {
+                self.resolve_type_name(module_name, local_symbols, &mut inner.type_kind)?;
+            }
+            TypeKind::Function(func) => {
+                let FunctionType {
+                    env_args,
+                    args,
+                    ret,
+                } = func;
+
+                for env_arg in env_args {
+                    self.resolve_type_name(module_name, local_symbols, &mut env_arg.type_kind)?;
+                }
+                for arg in args {
+                    self.resolve_type_name(module_name, local_symbols, &mut arg.type_kind)?;
+                }
+
+                self.resolve_type_name(module_name, local_symbols, &mut ret.type_kind)?;
+            }
+            TypeKind::Struct(struct_type) => {
+                let StructDef { fields } = struct_type;
+
+                for field in fields {
+                    self.resolve_type_name(
+                        module_name,
+                        local_symbols,
+                        &mut field.field_type.type_kind,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn resolve_name_expr(
         &mut self,
         module_name: &String,
@@ -46,9 +125,33 @@ impl SemanticAnalyzer {
                     function_body,
                 } = lambda;
 
-                self.resolve_names_codeblock(module_name, local_symbols, function_body)?;
+                let mut local_symbols = local_symbols.clone();
+
+                for arg in argument_list {
+                    self.resolve_type_name(
+                        module_name,
+                        &local_symbols,
+                        &mut arg.arg_type.type_kind,
+                    )?;
+
+                    local_symbols.insert(
+                        arg.arg_name.clone(),
+                        Symbol {
+                            original_name: arg.arg_name.clone(),
+                            symbol_type: SymbolType::Identifier,
+                            exported: false,
+                        },
+                    );
+                }
+                self.resolve_type_name(module_name, &local_symbols, &mut return_type.type_kind)?;
+                self.resolve_names_codeblock(module_name, &local_symbols, function_body)?;
             }
             Expression::VariableDecl(var_decl) => {
+                self.resolve_type_name(
+                    module_name,
+                    local_symbols,
+                    &mut var_decl.var_type.type_kind,
+                )?;
                 self.resolve_name_expr(module_name, local_symbols, &mut var_decl.var_value)?;
             }
             Expression::Literal(_) => {}
@@ -117,9 +220,11 @@ impl SemanticAnalyzer {
                 } else {
                     let local_func = local_symbols.get(name);
                     if let Some(symbol) = local_func {
-                        if symbol.symbol_type == SymbolType::Type {
-                            return Err(format!("Identifier '{name}' is not defined"));
+                        if symbol.symbol_type != SymbolType::Identifier {
+                            return Err(format!("Identifier '{name}' exists, but does not refer to a variable or function"));
                         }
+                    } else {
+                        return Err(format!("Identifier '{name}' is not defined"));
                     }
                 }
             }
@@ -213,7 +318,7 @@ impl SemanticAnalyzer {
 
     pub fn resolve_names(&mut self, program: &mut Program) -> Result<(), String> {
         let mut local_symbols_by_module: HashMap<String, HashMap<String, Symbol>> = HashMap::new();
-        for module in &program.modules {
+        for module in &mut program.modules {
             println!("resolving names in {:?}", module.module_name);
             local_symbols_by_module.insert(module.module_name.clone(), HashMap::new());
 
@@ -221,7 +326,32 @@ impl SemanticAnalyzer {
                 .get_mut(&module.module_name)
                 .unwrap();
 
-            for func in &module.function_defs {
+            for custom_type in &module.type_defs {
+                if self
+                    .find_external_symbol(SymbolType::Type, &custom_type.name)
+                    .len()
+                    > 1
+                {
+                    return Err(format!("Type '{}' is already defined", custom_type.name));
+                }
+
+                self.symbol_table.push(Symbol {
+                    original_name: format!("{}::{}", module.module_name, custom_type.name),
+                    symbol_type: SymbolType::Type,
+                    exported: custom_type.export,
+                });
+
+                local_symbols.insert(
+                    custom_type.name.clone(),
+                    Symbol {
+                        original_name: custom_type.name.clone(),
+                        symbol_type: SymbolType::Type,
+                        exported: custom_type.export,
+                    },
+                );
+            }
+
+            for func in &mut module.function_defs {
                 if self
                     .find_external_symbol(SymbolType::Identifier, &func.func_name)
                     .len()
@@ -279,31 +409,6 @@ impl SemanticAnalyzer {
                     );
                 }
             }
-
-            for custom_type in &module.type_defs {
-                if self
-                    .find_external_symbol(SymbolType::Type, &custom_type.name)
-                    .len()
-                    > 1
-                {
-                    return Err(format!("Type '{}' is already defined", custom_type.name));
-                }
-
-                self.symbol_table.push(Symbol {
-                    original_name: format!("{}::{}", module.module_name, custom_type.name),
-                    symbol_type: SymbolType::Identifier,
-                    exported: false,
-                });
-
-                local_symbols.insert(
-                    custom_type.name.clone(),
-                    Symbol {
-                        original_name: custom_type.name.clone(),
-                        symbol_type: SymbolType::Identifier,
-                        exported: false,
-                    },
-                );
-            }
         }
 
         for module in &mut program.modules {
@@ -315,7 +420,19 @@ impl SemanticAnalyzer {
                 let mut local_symbols = local_symbols.clone();
                 let mut defined_arguments = Vec::new();
 
-                for arg in &func.argument_list {
+                self.resolve_type_name(
+                    &module.module_name,
+                    &local_symbols,
+                    &mut func.return_type.type_kind,
+                )?;
+
+                for arg in &mut func.argument_list {
+                    self.resolve_type_name(
+                        &module.module_name,
+                        &local_symbols,
+                        &mut arg.arg_type.type_kind,
+                    )?;
+
                     local_symbols.insert(
                         arg.arg_name.clone(),
                         Symbol {
