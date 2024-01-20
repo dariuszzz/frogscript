@@ -1064,7 +1064,6 @@ impl Parser {
                 "binding",
                 TokenKind::Identifier(Identifier::_MatchAnyCustom),
             ),
-            (false, "in", TokenKind::Identifier(Identifier::In)),
         ]) {
             let binding = if let TokenKind::Identifier(Identifier::Custom(binding_name)) =
                 tokens.get("binding").unwrap().clone().kind
@@ -1073,6 +1072,30 @@ impl Parser {
             } else {
                 unreachable!()
             };
+
+            let binding_type =
+                match self.peek(0).kind {
+                    TokenKind::Identifier(Identifier::In) => {
+                        self.advance();
+                        Type {
+                            type_kind: TypeKind::Infer,
+                            is_reference: false,
+                            is_structural: false,
+                        }
+                    }
+                    _ => {
+                        let binding_type = self.parse_type()?;
+
+                        match self.advance().kind {
+                            TokenKind::Identifier(Identifier::In) => {}
+                            kind => return Err(format!(
+                                "missing 'in' after binding type in for expression, found {kind:?}"
+                            )),
+                        }
+
+                        binding_type
+                    }
+                };
 
             let iterator = self.parse_range(indent)?;
 
@@ -1102,6 +1125,7 @@ impl Parser {
 
             Ok(Expression::For(For {
                 binding,
+                binding_type,
                 iterator: Box::new(iterator),
                 body,
             }))
@@ -1587,7 +1611,6 @@ impl Parser {
                         field_name,
                         field_type,
                         is_final: false,
-                        default_value: None,
                     });
                 }
 

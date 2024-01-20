@@ -39,19 +39,18 @@ fn main =
         
     let util::Printable something_that_can_be_printed = ...
 
-    // this works
-    // let lambda = fn(x, y) return x + y
-    // let lambda2 = fn(x int, y) return x + y
-    // let lambda3 = fn(x int, y int) return x + y
-    // let lambda4 = fn(x int, y int) -> int return x + y
-    // let lambda5 = fn(x int, y int) -> int 
-    //     let sum = x + y
-    //     return sum
+    let people = [
+        Person { age: 10, name: "Marque" },
+        Person { age: 14, name: "Marc" },
+        Person { age: 93, name: "Mark" },
+    ]
 
-    // let arr = [lambda, lambda2, lambda3, lambda4, lambda5]
+    let fn(Person -> string) person_lambda = fn(person) 
+        return util::to_string(person.age) + " - " + person.name
 
-    // for l in arr:
-    //     l(2, 3).util::print()
+    for person Person in people:
+        let str = person_lambda(person)
+        util::print(str)
 
     // util::main()
 
