@@ -156,6 +156,7 @@ impl Transpiler {
             Expression::For(for_block) => {
                 let For {
                     binding,
+                    binding_type,
                     iterator,
                     body,
                 } = for_block;

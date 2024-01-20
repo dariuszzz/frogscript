@@ -24,19 +24,19 @@ pub enum BinaryOperation {
     NotEqual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionType {
     pub env_args: Vec<Type>,
     pub args: Vec<Type>,
     pub ret: Box<Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomType {
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeKind {
     Infer,
     Void,
@@ -51,7 +51,7 @@ pub enum TypeKind {
     Struct(StructDef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
     pub type_kind: TypeKind,
     pub is_reference: bool,
@@ -221,6 +221,7 @@ impl ToJS for If {
 #[derive(Debug, Clone)]
 pub struct For {
     pub binding: String,
+    pub binding_type: Type,
     pub iterator: Box<Expression>,
     pub body: CodeBlock,
 }
@@ -229,6 +230,7 @@ impl ToJS for For {
     fn to_js(&self) -> String {
         let For {
             binding,
+            binding_type,
             iterator,
             body,
         } = self;
@@ -553,15 +555,14 @@ pub struct EnumDef {
     pub variants: Vec<VariantDef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
     pub field_name: String,
     pub field_type: Type,
     pub is_final: bool,
-    pub default_value: Option<Expression>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDef {
     pub fields: Vec<StructField>,
 }
