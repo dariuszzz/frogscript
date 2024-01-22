@@ -712,7 +712,14 @@ impl Parser {
             // FIXME: goofy ahh way to get ranges working, this shouldnt happen in the parser
             lhs = Expression::FunctionCall(FunctionCall {
                 func_name: "util::range".to_owned(),
-                arguments: vec![lhs, rhs, Expression::Literal(Literal::Boolean(inclusive))],
+                arguments: vec![
+                    lhs,
+                    Expression::BinaryOp(BinaryOp {
+                        op: BinaryOperation::Add,
+                        lhs: Box::new(rhs),
+                        rhs: Box::new(Expression::Literal(Literal::Int(1))),
+                    }),
+                ],
             });
             self.modules_to_parse.push("util".to_owned());
 

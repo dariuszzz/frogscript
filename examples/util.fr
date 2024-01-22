@@ -12,9 +12,7 @@ export fn map(
 export fn to_string(n int) -> string = return @js(n ".toString()")
 
 // TODO: change this so its not just injecting random js
-export fn range(start int, end int, inclusive bool) =
-    if inclusive: end += 1 
-
+export fn range(start int, end int) =
     return @js("
         (function*() {
             for(let i = " start "; i < " end "; i++) {
