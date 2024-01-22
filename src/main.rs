@@ -8,12 +8,14 @@ use std::{
 
 use gumdrop::Options;
 
+mod arena;
 mod ast;
 mod lexer;
 mod parser;
 mod semantics;
 mod transpiler;
 
+use arena::*;
 use ast::*;
 use lexer::*;
 use parser::*;

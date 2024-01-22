@@ -709,11 +709,18 @@ impl Parser {
 
             let rhs = self.parse_sum(indent)?;
 
-            lhs = Expression::Range(Range {
-                start: Box::new(lhs),
-                end: Box::new(rhs),
-                inclusive,
+            // FIXME: goofy ahh way to get ranges working, this shouldnt happen in the parser
+            lhs = Expression::FunctionCall(FunctionCall {
+                func_name: "util::range".to_owned(),
+                arguments: vec![lhs, rhs, Expression::Literal(Literal::Boolean(inclusive))],
             });
+            self.modules_to_parse.push("util".to_owned());
+
+            // lhs = Expression::Range(Range {
+            //     start: Box::new(lhs),
+            //     end: Box::new(rhs),
+            //     inclusive,
+            // });
         }
 
         Ok(lhs)
@@ -923,6 +930,15 @@ impl Parser {
             elements: Vec::new(),
         };
 
+        let token = self.peek_skip_ws(indent)?;
+        match token.kind {
+            TokenKind::SquareRight => {
+                self.advance_skip_ws(indent);
+                return Ok(Expression::ArrayLiteral(array));
+            }
+            _ => {}
+        }
+
         loop {
             let elem = self.parse_expression(indent)?;
 
@@ -1073,29 +1089,30 @@ impl Parser {
                 unreachable!()
             };
 
-            let binding_type =
-                match self.peek(0).kind {
-                    TokenKind::Identifier(Identifier::In) => {
-                        self.advance();
-                        Type {
-                            type_kind: TypeKind::Infer,
-                            is_reference: false,
-                            is_structural: false,
-                        }
+            let binding_type = match self.peek(0).kind {
+                TokenKind::Identifier(Identifier::In) => {
+                    self.advance();
+                    Type {
+                        type_kind: TypeKind::Infer,
+                        is_reference: false,
+                        is_structural: false,
                     }
-                    _ => {
-                        let binding_type = self.parse_type()?;
+                }
+                _ => {
+                    let binding_type = self.parse_type()?;
 
-                        match self.advance().kind {
-                            TokenKind::Identifier(Identifier::In) => {}
-                            kind => return Err(format!(
+                    match self.advance().kind {
+                        TokenKind::Identifier(Identifier::In) => {}
+                        kind => {
+                            return Err(format!(
                                 "missing 'in' after binding type in for expression, found {kind:?}"
-                            )),
+                            ))
                         }
-
-                        binding_type
                     }
-                };
+
+                    binding_type
+                }
+            };
 
             let iterator = self.parse_range(indent)?;
 
