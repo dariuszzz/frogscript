@@ -71,10 +71,11 @@ impl Transpiler {
 
                 // is not qualified
                 if name.split("::").count() == 1 {
-                    let new_name = if let Some(new_name) = mapped_names.get(name) {
+                    let full_name = format!("{}::{}", module_name, name.clone());
+                    let new_name = if let Some(new_name) = mapped_names.get(&full_name) {
                         new_name.clone()
                     } else {
-                        format!("{}::{}", module_name, name.clone())
+                        full_name
                     };
                     *name = new_name;
                 }
@@ -192,6 +193,10 @@ impl Transpiler {
                     var_value,
                     ..
                 }) => {
+                    // First replace the names in rhs
+                    Transpiler::replace_names_in_expr(module_name, mapped_names, var_value);
+
+                    // Then redeclare
                     *var_name = format!("{}::{}", module_name, var_name);
                     match mapped_names.entry(var_name.clone()) {
                         Entry::Occupied(mut entry) => {
@@ -204,7 +209,6 @@ impl Transpiler {
                             entry.insert(var_name.clone());
                         }
                     }
-                    Transpiler::replace_names_in_expr(module_name, mapped_names, var_value);
                 }
                 _ => Transpiler::replace_names_in_expr(module_name, &mapped_names, expr),
             }
