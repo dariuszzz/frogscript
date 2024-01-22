@@ -16,9 +16,11 @@ export fn plus1(arr [int]) -> int =
 fn map_and_add(arr [int], f fn(int -> int), add int) -> int =
     let mapped = util::map(arr, f)
     let mapped = util::map(mapped, fn(x) return x + add)
+    let mapped = mapped
     return mapped
 
 fn main =
+    util::print("Square and add 2: [1, 2, 3]")
     map_and_add(
         [1, 2, 3],
         fn(x)
@@ -28,6 +30,7 @@ fn main =
     )
     .util::print()
 
+    util::print("Create array filled with numbers 1-10")
     let push = fn(arr, x) @js(arr ".push(" x ")")
 
     mut arr2 = []
@@ -38,6 +41,8 @@ fn main =
         
     let util::Printable something_that_can_be_printed = ...
 
+
+    util::print("Print people data")
     let people = [
         Person { age: 10, name: "Marque" },
         Person { age: 14, name: "Marc" },
