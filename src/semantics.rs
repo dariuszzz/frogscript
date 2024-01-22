@@ -41,347 +41,348 @@ impl SemanticAnalyzer {
     }
 
     pub fn typecheck(&mut self, expr: &mut Expression) -> Result<Type, String> {
-        match expr {
-            Expression::VariableDecl(var_decl) => {
-                let rhs_type = self.typecheck(&mut var_decl.var_value)?;
+        todo!()
+        // match expr {
+        //     Expression::VariableDecl(var_decl) => {
+        //         let rhs_type = self.typecheck(&mut var_decl.var_value)?;
 
-                if let TypeKind::Infer = var_decl.var_type.type_kind {
-                    var_decl.var_type = rhs_type.clone();
-                } else if var_decl.var_type != rhs_type {
-                    return Err(format!("Invalid rhs type in var decl"));
-                }
+        //         if let TypeKind::Infer = var_decl.var_type.type_kind {
+        //             var_decl.var_type = rhs_type.clone();
+        //         } else if var_decl.var_type != rhs_type {
+        //             return Err(format!("Invalid rhs type in var decl"));
+        //         }
 
-                Ok(rhs_type)
-            }
-            Expression::Literal(literal) => {
-                let type_kind = match literal {
-                    crate::Literal::String(_) => TypeKind::String,
-                    crate::Literal::Int(_) => TypeKind::Int,
-                    crate::Literal::Uint(_) => TypeKind::Uint,
-                    crate::Literal::Float(_) => TypeKind::Float,
-                    crate::Literal::Boolean(_) => TypeKind::Boolean,
-                };
+        //         Ok(rhs_type)
+        //     }
+        //     Expression::Literal(literal) => {
+        //         let type_kind = match literal {
+        //             crate::Literal::String(_) => TypeKind::String,
+        //             crate::Literal::Int(_) => TypeKind::Int,
+        //             crate::Literal::Uint(_) => TypeKind::Uint,
+        //             crate::Literal::Float(_) => TypeKind::Float,
+        //             crate::Literal::Boolean(_) => TypeKind::Boolean,
+        //         };
 
-                Ok(Type {
-                    type_kind,
-                    is_reference: false,
-                    is_structural: false,
-                })
-            }
-            Expression::BinaryOp(bin_op) => {
-                let lhs_type = self.typecheck(&mut bin_op.lhs)?;
-                let rhs_type = self.typecheck(&mut bin_op.rhs)?;
+        //         Ok(Type {
+        //             type_kind,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         })
+        //     }
+        //     Expression::BinaryOp(bin_op) => {
+        //         let lhs_type = self.typecheck(&mut bin_op.lhs)?;
+        //         let rhs_type = self.typecheck(&mut bin_op.rhs)?;
 
-                let int_type = Type {
-                    type_kind: TypeKind::Int,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let uint_type = Type {
-                    type_kind: TypeKind::Uint,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let float_type = Type {
-                    type_kind: TypeKind::Float,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let bool_type = Type {
-                    type_kind: TypeKind::Boolean,
-                    is_reference: false,
-                    is_structural: false,
-                };
+        //         let int_type = Type {
+        //             type_kind: TypeKind::Int,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
+        //         let uint_type = Type {
+        //             type_kind: TypeKind::Uint,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
+        //         let float_type = Type {
+        //             type_kind: TypeKind::Float,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
+        //         let bool_type = Type {
+        //             type_kind: TypeKind::Boolean,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
 
-                match bin_op.op {
-                    BinaryOperation::Add
-                    | BinaryOperation::Subtract
-                    | BinaryOperation::Multiply
-                    | BinaryOperation::Divide
-                    | BinaryOperation::Less
-                    | BinaryOperation::LessEqual
-                    | BinaryOperation::Greater
-                    | BinaryOperation::GreaterEqual
-                    | BinaryOperation::Power => {
-                        if lhs_type != int_type && lhs_type != uint_type && lhs_type != float_type {
-                            return Err(format!(
-                                "Operands to this binary operation must be int/float/uint"
-                            ));
-                        }
-                    }
-                    BinaryOperation::Equal
-                    | BinaryOperation::And
-                    | BinaryOperation::Or
-                    | BinaryOperation::NotEqual => {
-                        if lhs_type != bool_type {
-                            return Err(format!("Operands to this binary operation must be bool"));
-                        }
-                    }
-                }
+        //         match bin_op.op {
+        //             BinaryOperation::Add
+        //             | BinaryOperation::Subtract
+        //             | BinaryOperation::Multiply
+        //             | BinaryOperation::Divide
+        //             | BinaryOperation::Less
+        //             | BinaryOperation::LessEqual
+        //             | BinaryOperation::Greater
+        //             | BinaryOperation::GreaterEqual
+        //             | BinaryOperation::Power => {
+        //                 if lhs_type != int_type && lhs_type != uint_type && lhs_type != float_type {
+        //                     return Err(format!(
+        //                         "Operands to this binary operation must be int/float/uint"
+        //                     ));
+        //                 }
+        //             }
+        //             BinaryOperation::Equal
+        //             | BinaryOperation::And
+        //             | BinaryOperation::Or
+        //             | BinaryOperation::NotEqual => {
+        //                 if lhs_type != bool_type {
+        //                     return Err(format!("Operands to this binary operation must be bool"));
+        //                 }
+        //             }
+        //         }
 
-                if lhs_type != rhs_type {
-                    return Err(format!("Binary op operands are of different types"));
-                }
+        //         if lhs_type != rhs_type {
+        //             return Err(format!("Binary op operands are of different types"));
+        //         }
 
-                Ok(lhs_type.clone())
-            }
-            Expression::UnaryOp(unary) => self.typecheck(&mut unary.operand),
-            Expression::FunctionCall(func_call) => {
-                let FunctionCall {
-                    func_name,
-                    arguments,
-                } = func_call;
+        //         Ok(lhs_type.clone())
+        //     }
+        //     Expression::UnaryOp(unary) => self.typecheck(&mut unary.operand),
+        //     Expression::FunctionCall(func_call) => {
+        //         let FunctionCall {
+        //             func_name,
+        //             arguments,
+        //         } = func_call;
 
-                let function_symbol =
-                    self.find_external_symbol(SymbolType::Identifier, &func_name)[0].clone();
+        //         let function_symbol =
+        //             self.find_external_symbol(SymbolType::Identifier, &func_name)[0].clone();
 
-                let func_arg_types = if let TypeKind::Function(func_type) =
-                    function_symbol.value_type.type_kind.clone()
-                {
-                    func_type.args.clone()
-                } else {
-                    unreachable!()
-                };
+        //         let func_arg_types = if let TypeKind::Function(func_type) =
+        //             function_symbol.value_type.type_kind.clone()
+        //         {
+        //             func_type.args.clone()
+        //         } else {
+        //             unreachable!()
+        //         };
 
-                for (i, arg) in arguments.iter_mut().enumerate() {
-                    let arg_type = self.typecheck(arg)?;
+        //         for (i, arg) in arguments.iter_mut().enumerate() {
+        //             let arg_type = self.typecheck(arg)?;
 
-                    if arg_type != func_arg_types[i] {
-                        return Err(format!("Invalid arg type in function call"));
-                    }
-                }
+        //             if arg_type != func_arg_types[i] {
+        //                 return Err(format!("Invalid arg type in function call"));
+        //             }
+        //         }
 
-                Ok(function_symbol.value_type)
-            }
-            Expression::Variable(variable) => {
-                let var_type = self.find_external_symbol(SymbolType::Identifier, &variable.name)[0]
-                    .value_type
-                    .clone();
+        //         Ok(function_symbol.value_type)
+        //     }
+        //     Expression::Variable(variable) => {
+        //         let var_type = self.find_external_symbol(SymbolType::Identifier, &variable.name)[0]
+        //             .value_type
+        //             .clone();
 
-                Ok(var_type)
-            }
-            Expression::Return(ret) => self.typecheck(ret),
-            Expression::Assignment(assignment) => {
-                let lhs_type = self.typecheck(&mut assignment.lhs)?;
-                let rhs_type = self.typecheck(&mut assignment.rhs)?;
+        //         Ok(var_type)
+        //     }
+        //     Expression::Return(ret) => self.typecheck(ret),
+        //     Expression::Assignment(assignment) => {
+        //         let lhs_type = self.typecheck(&mut assignment.lhs)?;
+        //         let rhs_type = self.typecheck(&mut assignment.rhs)?;
 
-                if lhs_type != rhs_type {
-                    return Err(format!("Assignment operands are of different types"));
-                }
+        //         if lhs_type != rhs_type {
+        //             return Err(format!("Assignment operands are of different types"));
+        //         }
 
-                Ok(lhs_type.clone())
-            }
-            Expression::AnonStruct(anon) => {
-                let mut struct_type = StructDef { fields: Vec::new() };
+        //         Ok(lhs_type.clone())
+        //     }
+        //     Expression::AnonStruct(anon) => {
+        //         let mut struct_type = StructDef { fields: Vec::new() };
 
-                for (name, field) in &mut anon.fields {
-                    struct_type.fields.push(StructField {
-                        field_name: name.clone(),
-                        field_type: self.typecheck(field)?,
-                        is_final: false,
-                    });
-                }
+        //         for (name, field) in &mut anon.fields {
+        //             struct_type.fields.push(StructField {
+        //                 field_name: name.clone(),
+        //                 field_type: self.typecheck(field)?,
+        //                 is_final: false,
+        //             });
+        //         }
 
-                Ok(Type {
-                    type_kind: TypeKind::Struct(struct_type),
-                    is_reference: false,
-                    is_structural: false,
-                })
-            }
-            Expression::ArrayLiteral(arr) => {
-                if arr.elements.len() > 0 {
-                    let arr_type = self.typecheck(&mut arr.elements[0])?;
+        //         Ok(Type {
+        //             type_kind: TypeKind::Struct(struct_type),
+        //             is_reference: false,
+        //             is_structural: false,
+        //         })
+        //     }
+        //     Expression::ArrayLiteral(arr) => {
+        //         if arr.elements.len() > 0 {
+        //             let arr_type = self.typecheck(&mut arr.elements[0])?;
 
-                    for elem in &mut arr.elements {
-                        let elem_type = self.typecheck(elem)?;
+        //             for elem in &mut arr.elements {
+        //                 let elem_type = self.typecheck(elem)?;
 
-                        if arr_type != elem_type {
-                            return Err(format!("Elements in array arent all of the same type"));
-                        }
-                    }
+        //                 if arr_type != elem_type {
+        //                     return Err(format!("Elements in array arent all of the same type"));
+        //                 }
+        //             }
 
-                    Ok(arr_type)
-                } else {
-                    return Err(format!("Cannot infer type of array"));
-                    // Ok(Type {
-                    //     type_kind: TypeKind::Infer,
-                    //     is_reference: false,
-                    //     is_structural: false,
-                    // })
-                }
-            }
-            Expression::ArrayAccess(arr_access) => {
-                if let TypeKind::Array(inner) = self.typecheck(&mut arr_access.expr)?.type_kind {
-                    let valid_index_type = Type {
-                        type_kind: TypeKind::Uint,
-                        is_reference: false,
-                        is_structural: false,
-                    };
-                    if self.typecheck(&mut arr_access.index)? != valid_index_type {
-                        return Err(format!("Array access index must be a uint"));
-                    }
+        //             Ok(arr_type)
+        //         } else {
+        //             return Err(format!("Cannot infer type of array"));
+        //             // Ok(Type {
+        //             //     type_kind: TypeKind::Infer,
+        //             //     is_reference: false,
+        //             //     is_structural: false,
+        //             // })
+        //         }
+        //     }
+        //     Expression::ArrayAccess(arr_access) => {
+        //         if let TypeKind::Array(inner) = self.typecheck(&mut arr_access.expr)?.type_kind {
+        //             let valid_index_type = Type {
+        //                 type_kind: TypeKind::Uint,
+        //                 is_reference: false,
+        //                 is_structural: false,
+        //             };
+        //             if self.typecheck(&mut arr_access.index)? != valid_index_type {
+        //                 return Err(format!("Array access index must be a uint"));
+        //             }
 
-                    Ok(inner.as_ref().clone())
-                } else {
-                    return Err(format!("Array access operator is used on non-array type"));
-                }
-            }
-            Expression::FieldAccess(field_access) => {
-                if let TypeKind::Struct(struct_type) =
-                    self.typecheck(&mut field_access.expr)?.type_kind
-                {
-                    let mut field_type = None;
-                    for field in &struct_type.fields {
-                        if field.field_name == field_access.field {
-                            field_type = Some(field.field_type.clone());
-                            break;
-                        }
-                    }
+        //             Ok(inner.as_ref().clone())
+        //         } else {
+        //             return Err(format!("Array access operator is used on non-array type"));
+        //         }
+        //     }
+        //     Expression::FieldAccess(field_access) => {
+        //         if let TypeKind::Struct(struct_type) =
+        //             self.typecheck(&mut field_access.expr)?.type_kind
+        //         {
+        //             let mut field_type = None;
+        //             for field in &struct_type.fields {
+        //                 if field.field_name == field_access.field {
+        //                     field_type = Some(field.field_type.clone());
+        //                     break;
+        //                 }
+        //             }
 
-                    if field_type.is_none() {
-                        return Err(format!("Field {} doesn't exist", field_access.field));
-                    }
+        //             if field_type.is_none() {
+        //                 return Err(format!("Field {} doesn't exist", field_access.field));
+        //             }
 
-                    Ok(field_type.unwrap())
-                } else {
-                    return Err(format!("Field access is only possible on structs"));
-                }
-            }
-            Expression::NamedStruct(named_struct) => {
-                let precast_type = self.typecheck(&mut Expression::AnonStruct(
-                    named_struct.struct_literal.clone(),
-                ))?;
+        //             Ok(field_type.unwrap())
+        //         } else {
+        //             return Err(format!("Field access is only possible on structs"));
+        //         }
+        //     }
+        //     Expression::NamedStruct(named_struct) => {
+        //         let precast_type = self.typecheck(&mut Expression::AnonStruct(
+        //             named_struct.struct_literal.clone(),
+        //         ))?;
 
-                let casted_type = self
-                    .find_external_symbol(SymbolType::Type, &named_struct.casted_to)[0]
-                    .value_type
-                    .clone();
+        //         let casted_type = self
+        //             .find_external_symbol(SymbolType::Type, &named_struct.casted_to)[0]
+        //             .value_type
+        //             .clone();
 
-                match (precast_type.type_kind, casted_type.type_kind.clone()) {
-                    (TypeKind::Struct(precast), TypeKind::Struct(casted)) => {
-                        for field in &precast.fields {
-                            if !casted.fields.contains(field) {
-                                return Err(format!(
-                                    "Field {} does not exist on {}",
-                                    field.field_name, named_struct.casted_to
-                                ));
-                            }
-                        }
+        //         match (precast_type.type_kind, casted_type.type_kind.clone()) {
+        //             (TypeKind::Struct(precast), TypeKind::Struct(casted)) => {
+        //                 for field in &precast.fields {
+        //                     if !casted.fields.contains(field) {
+        //                         return Err(format!(
+        //                             "Field {} does not exist on {}",
+        //                             field.field_name, named_struct.casted_to
+        //                         ));
+        //                     }
+        //                 }
 
-                        for field in &casted.fields {
-                            if !precast.fields.contains(field) {
-                                return Err(format!(
-                                    "Field {} is missing from struct literal",
-                                    field.field_name
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Named struct doesn't consist of a struct type and a struct literal"
-                        ))
-                    }
-                }
+        //                 for field in &casted.fields {
+        //                     if !precast.fields.contains(field) {
+        //                         return Err(format!(
+        //                             "Field {} is missing from struct literal",
+        //                             field.field_name
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //             _ => {
+        //                 return Err(format!(
+        //                     "Named struct doesn't consist of a struct type and a struct literal"
+        //                 ))
+        //             }
+        //         }
 
-                Ok(casted_type)
-            }
-            Expression::Lambda(lambda) => {
-                let mut lambda_type = FunctionType {
-                    env_args: Vec::new(),
-                    args: Vec::new(),
-                    ret: Box::new(lambda.return_type.clone()),
-                };
+        //         Ok(casted_type)
+        //     }
+        //     Expression::Lambda(lambda) => {
+        //         let mut lambda_type = FunctionType {
+        //             env_args: Vec::new(),
+        //             args: Vec::new(),
+        //             ret: Box::new(lambda.return_type.clone()),
+        //         };
 
-                for arg in &lambda.argument_list {
-                    let arg_type = arg.arg_type.clone();
-                    if arg.is_env {
-                        lambda_type.env_args.push(arg_type);
-                    } else {
-                        lambda_type.args.push(arg_type);
-                    }
-                }
+        //         for arg in &lambda.argument_list {
+        //             let arg_type = arg.arg_type.clone();
+        //             if arg.is_env {
+        //                 lambda_type.env_args.push(arg_type);
+        //             } else {
+        //                 lambda_type.args.push(arg_type);
+        //             }
+        //         }
 
-                Ok(Type {
-                    type_kind: TypeKind::Function(lambda_type),
-                    is_reference: false,
-                    is_structural: false,
-                })
-            }
-            Expression::Range(range) => {
-                let lhs_type = self.typecheck(&mut range.start)?;
-                let rhs_type = self.typecheck(&mut range.end)?;
+        //         Ok(Type {
+        //             type_kind: TypeKind::Function(lambda_type),
+        //             is_reference: false,
+        //             is_structural: false,
+        //         })
+        //     }
+        //     Expression::Range(range) => {
+        //         let lhs_type = self.typecheck(&mut range.start)?;
+        //         let rhs_type = self.typecheck(&mut range.end)?;
 
-                let int_type = Type {
-                    type_kind: TypeKind::Int,
-                    is_reference: false,
-                    is_structural: false,
-                };
+        //         let int_type = Type {
+        //             type_kind: TypeKind::Int,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
 
-                let uint_type = Type {
-                    type_kind: TypeKind::Uint,
-                    is_reference: false,
-                    is_structural: false,
-                };
+        //         let uint_type = Type {
+        //             type_kind: TypeKind::Uint,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
 
-                if lhs_type != int_type && lhs_type != uint_type {
-                    return Err(format!("Range start and end must be ints or uints"));
-                }
+        //         if lhs_type != int_type && lhs_type != uint_type {
+        //             return Err(format!("Range start and end must be ints or uints"));
+        //         }
 
-                if lhs_type != rhs_type {
-                    return Err(format!("Assignment operands are of different types"));
-                }
+        //         if lhs_type != rhs_type {
+        //             return Err(format!("Assignment operands are of different types"));
+        //         }
 
-                Ok(lhs_type.clone())
-            }
-            Expression::If(if_expr) => {
-                let bool_type = Type {
-                    type_kind: TypeKind::Boolean,
-                    is_reference: false,
-                    is_structural: false,
-                };
+        //         Ok(lhs_type.clone())
+        //     }
+        //     Expression::If(if_expr) => {
+        //         let bool_type = Type {
+        //             type_kind: TypeKind::Boolean,
+        //             is_reference: false,
+        //             is_structural: false,
+        //         };
 
-                if self.typecheck(&mut if_expr.cond)? != bool_type {
-                    return Err(format!("If condition must be a boolean"));
-                }
+        //         if self.typecheck(&mut if_expr.cond)? != bool_type {
+        //             return Err(format!("If condition must be a boolean"));
+        //         }
 
-                let true_type = self.typecheck_codeblock(&mut if_expr.true_branch)?;
-                if let Some(else_branch) = if_expr.else_branch {
-                    let false_type = self.typecheck_codeblock(&mut if_expr.true_branch)?;
+        //         let true_type = self.typecheck_codeblock(&mut if_expr.true_branch)?;
+        //         if let Some(else_branch) = if_expr.else_branch {
+        //             let false_type = self.typecheck_codeblock(&mut if_expr.true_branch)?;
 
-                    if true_type != false_type {
-                        return Err(format!("True and else branches must have the same type"));
-                    }
-                }
+        //             if true_type != false_type {
+        //                 return Err(format!("True and else branches must have the same type"));
+        //             }
+        //         }
 
-                Ok(true_type)
-            }
-            Expression::For(for_expr) => {
-                let iterator_type = if let TypeKind::Array(inner) =
-                    self.typecheck(&mut for_expr.iterator)?.type_kind
-                {
-                    inner.as_ref().clone()
-                } else {
-                    return Err(format!("For expression iterator must be an array"));
-                };
+        //         Ok(true_type)
+        //     }
+        //     Expression::For(for_expr) => {
+        //         let iterator_type = if let TypeKind::Array(inner) =
+        //             self.typecheck(&mut for_expr.iterator)?.type_kind
+        //         {
+        //             inner.as_ref().clone()
+        //         } else {
+        //             return Err(format!("For expression iterator must be an array"));
+        //         };
 
-                if let TypeKind::Infer = for_expr.binding_type.type_kind {
-                    for_expr.binding_type = iterator_type.clone();
-                } else if iterator_type != for_expr.binding_type {
-                    return Err(format!(
-                        "For expression iterator must be the same type as binding"
-                    ));
-                }
+        //         if let TypeKind::Infer = for_expr.binding_type.type_kind {
+        //             for_expr.binding_type = iterator_type.clone();
+        //         } else if iterator_type != for_expr.binding_type {
+        //             return Err(format!(
+        //                 "For expression iterator must be the same type as binding"
+        //             ));
+        //         }
 
-                let body_type = self.typecheck_codeblock(&mut for_expr.body)?;
+        //         let body_type = self.typecheck_codeblock(&mut for_expr.body)?;
 
-                Ok(body_type)
-            }
-            Expression::JS(_) => todo!(),
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
-        }
+        //         Ok(body_type)
+        //     }
+        //     Expression::JS(_) => todo!(),
+        //     Expression::Placeholder => todo!(),
+        //     Expression::Break => todo!(),
+        //     Expression::Continue => todo!(),
+        // }
     }
 
     pub fn resolve_type_name(

@@ -9,11 +9,19 @@ export fn map(
 ) -> [int] = 
     @js("return " arr ".map(" func ")")
 
-export fn add1(x int) -> int = return x + 1
-
-export fn square(x int) -> int = return x * x
-
 export fn to_string(n int) -> string = return @js(n ".toString()")
+
+// TODO: change this so its not just injecting random js
+export fn range(start int, end int, inclusive bool) =
+    if inclusive: end += 1 
+
+    return @js("
+        (function*() {
+            for(let i = " start "; i < " end "; i++) {
+                yield i;
+            }
+        })()
+    ")
 
 export fn main = 
     print("siema")
