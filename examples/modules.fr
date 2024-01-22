@@ -30,7 +30,7 @@ fn main =
     )
     .util::print()
 
-    util::print("Create array filled with numbers 1-10")
+    util::print("Create array filled with squares of numbers 1-10")
     let push = fn(arr, x) @js(arr ".push(" x ")")
 
     mut arr2 = []
@@ -40,7 +40,6 @@ fn main =
         .util::print()
         
     let util::Printable something_that_can_be_printed = ...
-
 
     util::print("Print people data")
     let people = [
