@@ -1080,45 +1080,28 @@ impl Parser {
     }
 
     pub fn parse_for(&mut self, indent: usize) -> Result<Expression, String> {
-        if let Some(tokens) = self.safe_collect_pattern(&[
-            (false, "for", TokenKind::Identifier(Identifier::For)),
-            (
-                false,
-                "binding",
-                TokenKind::Identifier(Identifier::_MatchAnyCustom),
-            ),
-        ]) {
-            let binding = if let TokenKind::Identifier(Identifier::Custom(binding_name)) =
-                tokens.get("binding").unwrap().clone().kind
-            {
-                binding_name
-            } else {
-                unreachable!()
-            };
-
-            let binding_type = match self.peek(0).kind {
+        if let TokenKind::Identifier(Identifier::For) = self.advance().kind {
+            let binding_type = match self.peek(1).kind {
                 TokenKind::Identifier(Identifier::In) => {
-                    self.advance();
                     Type {
                         type_kind: TypeKind::Infer,
                         is_reference: false,
-                        is_structural: false,
+                        is_structural: false
                     }
                 }
-                _ => {
-                    let binding_type = self.parse_type()?;
+                _ => self.parse_type()?
+            };
 
-                    match self.advance().kind {
-                        TokenKind::Identifier(Identifier::In) => {}
-                        kind => {
-                            return Err(format!(
-                                "missing 'in' after binding type in for expression, found {kind:?}"
-                            ))
-                        }
-                    }
-
-                    binding_type
+            let binding = match self.advance().kind {
+                TokenKind::Identifier(Identifier::Custom(binding_name)) => {
+                    binding_name
                 }
+                _ => return Err(format!("Invalid or missing binding in for loop"))
+            };
+
+            match self.advance().kind {
+                TokenKind::Identifier(Identifier::In) => {}
+                _ => return Err(format!("Expected 'in' keyword after for loop binding"))
             };
 
             let iterator = self.parse_range(indent)?;
@@ -1154,7 +1137,7 @@ impl Parser {
                 body,
             }))
         } else {
-            return Err(format!("Invalid for loop construction"));
+            return Err(format!("Expected for keyword"));
         }
     }
 
