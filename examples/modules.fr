@@ -51,8 +51,8 @@ fn main =
     let fn(Person -> string) person_lambda = fn(person) 
         return util::to_string(person.age) + " - " + person.name
 
-    for person Person in people:
-        let str = person_lambda(person)
+    for Person p in people:
+        let str = person_lambda(p)
         util::print(str)
 
     // util::main()

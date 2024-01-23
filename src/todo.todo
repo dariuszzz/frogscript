@@ -47,6 +47,8 @@ Frogscript:
 
             print(foo) // prints "4"
 
+        ✔ Fix inconsistent type annotation in for (binding type -> type binding) @done(24-01-23 11:34)
+
         Strings: 
             ☐ String templates ("var: ${var}") @high
             ☐ Escape sequences in strings ("\"siema\"") @high
@@ -73,17 +75,18 @@ Frogscript:
         ✔ Associate variables/functions with ids so its possible to change their names when transpiling @done(24-01-02 20:14)
         ✔ Redeclaration support @done(24-01-02 20:15)
         ✔ Shadowing @done(24-01-02 20:15)
-        ☐ Generate truly unique names for shadowed variables @critical
+        ✔ Generate truly unique names for shadowed variables @critical @done(24-01-23 11:20)
         ✔ Stop grouping function at the top of the file and toplevel statements at the bottom @done(24-01-19 16:04)
         ✘ Transpile inline functions correctly @cancelled(24-01-19 16:03)
         ☐ Automatically inline functions
         ☐ Transpile implicit returns
-        ☐ Transpile ranges into generator functions @critical
+        ✘ Transpile ranges into generator functions @critical @cancelled(24-01-23 11:19)
+            transpiles to range() func call instead
         ☐ Indexing arrays with ranges
             let arr = [1,2,3]
             let val = arr[1..3] // [1, 2] 
             let val = arr[1..=3] // [1, 2, 3] 
-        ☐ Bug when returning redeclared variable [INVESTIGATE] @critical
+        ✔ Bug when returning redeclared variable [INVESTIGATE] @critical @done(24-01-23 11:19)
             fn foo() =
                 let var = 123
                 let var = 321
@@ -92,7 +95,8 @@ Frogscript:
     Validation:
         ✔ Figure out whether the language should allow for top level expressions like if/for etc @done(24-01-19 16:05)
         ☐ Dont allow for non-const top-level expressions 
-        ☐ Make _ a special write-only identifier
+        ✘ Make _ a special write-only identifier @cancelled(24-01-23 11:33)
+            no use for this
 
     Testing: 
         ☐ Maybe make some test cases
