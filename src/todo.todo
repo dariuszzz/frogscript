@@ -48,6 +48,15 @@ Frogscript:
         
         ✔ Fix inconsistent type annotation in for (binding type -> type binding) @done(24-01-23 11:34)
         
+        Bindings:
+            Like `for <binding> in ...` or `let <binding> = ...`
+            this could be either 
+                `<type> <iden>`                                   for regular values
+                `(<type> <iden>, <type> <iden>, ... )`            for tuples(? they dont exist yet) 
+                `<type> { <type> <iden>, <type> <iden>, ... }`    for named structs
+                `{ <type> <iden>, <type> <iden>, ... }`           for anon structs
+                `[<type> <iden>, <type> <iden>, ...]`             for arrays
+
         Refactor the parser:
             ☐ Split things into helper methods
             ☐ Revamp if parsing to allow for one liners
