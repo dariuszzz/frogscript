@@ -39,14 +39,19 @@ fn main =
     arr2.util::map(fn(x) return x * x, 2)
         .util::print()
         
-    let util::Printable something_that_can_be_printed = ...
+    // let util::Printable something_that_can_be_printed = ...
 
     util::print("Print people data")
-    let people = [
+    mut people = [
         Person { age: 10, name: "Marque" },
         Person { age: 14, name: "Marc" },
         Person { age: 93, name: "Mark" },
     ]
+
+    // Struct field shorthand
+    let age = 23
+    let name = "Maciej"
+    people.push(Person { age, name })
 
     let fn(Person -> string) person_lambda = fn(person) 
         return util::to_string(person.age) + " - " + person.name
@@ -55,4 +60,26 @@ fn main =
         let str = person_lambda(p)
         util::print(str)
 
-    // util::main()
+    util::print("Lambdas as fields")
+
+    thingy()
+
+type StructWithLambda =
+    l fn(int -> int)
+
+fn thingy =
+    let StructWithLambda s = StructWithLambda {
+        l: fn(x) return x + 10
+    }
+
+    util::print(
+        (s.l)(20)
+    )
+
+    let higher_order = fn(x) 
+        return fn(y) 
+            return x * y
+
+    util::print(
+        higher_order(5)(5) // 25
+    )

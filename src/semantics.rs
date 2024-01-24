@@ -514,35 +514,42 @@ impl SemanticAnalyzer {
             }
             Expression::FunctionCall(func_call) => {
                 let FunctionCall {
-                    func_name,
+                    func_expr,
                     arguments,
                 } = func_call;
 
                 //if function comes from another module
-                if func_name.split("::").count() > 1 {
-                    let identifiers_with_the_same_name =
-                        self.find_external_symbol(SymbolType::Identifier, &func_name);
+                match func_expr.as_mut() {
+                    Expression::Variable(Variable { name: func_name }) => {
+                        if func_name.split("::").count() > 1 {
+                            let identifiers_with_the_same_name =
+                                self.find_external_symbol(SymbolType::Identifier, &func_name);
 
-                    if identifiers_with_the_same_name.len() == 1 {
-                        let iden = identifiers_with_the_same_name[0];
-                        if !iden.exported {
-                            return Err(format!("External function '{func_name}' found, but it is not marked as `export`"));
+                            if identifiers_with_the_same_name.len() == 1 {
+                                let iden = identifiers_with_the_same_name[0];
+                                if !iden.exported {
+                                    return Err(format!("External function '{func_name}' found, but it is not marked as `export`"));
+                                }
+                                // symbol exists
+                            } else if identifiers_with_the_same_name.len() > 1 {
+                                return Err(format!("Ambiguous function call '{func_name}'"));
+                            } else {
+                                return Err(format!(
+                                    "External function '{func_name}' is not defined"
+                                ));
+                            }
+                        } else {
+                            let local_func = local_symbols.get(func_name);
+                            if let Some(symbol) = local_func {
+                                if symbol.symbol_type == SymbolType::Type {
+                                    return Err(format!("Function '{func_name}' is not defined"));
+                                }
+                            } else {
+                                return Err(format!("Function '{func_name}' is not defined"));
+                            }
                         }
-                        // symbol exists
-                    } else if identifiers_with_the_same_name.len() > 1 {
-                        return Err(format!("Ambiguous function call '{func_name}'"));
-                    } else {
-                        return Err(format!("External function '{func_name}' is not defined"));
                     }
-                } else {
-                    let local_func = local_symbols.get(func_name);
-                    if let Some(symbol) = local_func {
-                        if symbol.symbol_type == SymbolType::Type {
-                            return Err(format!("Function '{func_name}' is not defined"));
-                        }
-                    } else {
-                        return Err(format!("Function '{func_name}' is not defined"));
-                    }
+                    expr => self.resolve_name_expr(module_name, local_symbols, expr)?,
                 }
 
                 for arg in arguments {
@@ -854,8 +861,11 @@ impl SemanticAnalyzer {
                     }
                     // This is always the main() function call inserted by the parser
                     Expression::FunctionCall(func_call) => {
-                        func_call.func_name =
-                            format!("{}::{}", module.module_name, func_call.func_name);
+                        if let Expression::Variable(Variable { name }) =
+                            func_call.func_expr.as_mut()
+                        {
+                            *name = format!("{}::{}", module.module_name, name.clone());
+                        }
                     }
                     _ => unreachable!("Invalid toplevel expression only let bindings allowed"),
                 }
