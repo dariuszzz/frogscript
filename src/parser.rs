@@ -564,7 +564,9 @@ impl Parser {
             }
             self.advance();
             let mut call = FunctionCall {
-                func_name: name.join("::"),
+                func_expr: Box::new(Expression::Variable(Variable {
+                    name: name.join("::"),
+                })),
                 arguments: vec![called_on],
             };
 
@@ -603,11 +605,11 @@ impl Parser {
 
     pub fn parse_standalone_function_call(
         &mut self,
-        name: String,
+        expr: Expression,
         indent: usize,
     ) -> Result<Expression, String> {
         let mut call = FunctionCall {
-            func_name: name,
+            func_expr: Box::new(expr),
             arguments: Vec::new(),
         };
 
@@ -711,14 +713,20 @@ impl Parser {
 
             // FIXME: goofy ahh way to get ranges working, this shouldnt happen in the parser
             lhs = Expression::FunctionCall(FunctionCall {
-                func_name: "util::range".to_owned(),
+                func_expr: Box::new(Expression::Variable(Variable {
+                    name: "util::range".to_owned(),
+                })),
                 arguments: vec![
                     lhs,
-                    Expression::BinaryOp(BinaryOp {
-                        op: BinaryOperation::Add,
-                        lhs: Box::new(rhs),
-                        rhs: Box::new(Expression::Literal(Literal::Int(1))),
-                    }),
+                    if inclusive {
+                        Expression::BinaryOp(BinaryOp {
+                            op: BinaryOperation::Add,
+                            lhs: Box::new(rhs),
+                            rhs: Box::new(Expression::Literal(Literal::Int(1))),
+                        })
+                    } else {
+                        rhs
+                    },
                 ],
             });
             self.modules_to_parse.push("util".to_owned());
@@ -821,18 +829,13 @@ impl Parser {
 
         loop {
             let token = self.peek_skip_ws(indent)?;
-            term = match token {
-                Token {
-                    kind: TokenKind::Dot,
-                    ..
-                } => {
+            term = match token.kind {
+                TokenKind::ParenLeft => self.parse_standalone_function_call(term, indent)?,
+                TokenKind::Dot => {
                     self.advance_skip_ws(indent);
                     self.parse_method_call_or_field_access(term, indent)?
                 }
-                Token {
-                    kind: TokenKind::SquareLeft,
-                    ..
-                } => {
+                TokenKind::SquareLeft => {
                     self.advance_skip_ws(indent);
                     self.parse_array_access(term, indent)?
                 }
@@ -1057,9 +1060,12 @@ impl Parser {
         }
 
         let final_name = path.join("::");
+        let func_expr = Expression::Variable(Variable {
+            name: final_name.clone(),
+        });
 
         let expr = match self.peek_skip_ws(0)?.kind {
-            TokenKind::ParenLeft => self.parse_standalone_function_call(final_name, indent)?,
+            TokenKind::ParenLeft => self.parse_standalone_function_call(func_expr, indent)?,
             TokenKind::CurlyLeft => {
                 let struct_literal =
                     if let Expression::AnonStruct(lit) = self.parse_struct_literal(indent)? {
@@ -1082,26 +1088,22 @@ impl Parser {
     pub fn parse_for(&mut self, indent: usize) -> Result<Expression, String> {
         if let TokenKind::Identifier(Identifier::For) = self.advance().kind {
             let binding_type = match self.peek(1).kind {
-                TokenKind::Identifier(Identifier::In) => {
-                    Type {
-                        type_kind: TypeKind::Infer,
-                        is_reference: false,
-                        is_structural: false
-                    }
-                }
-                _ => self.parse_type()?
+                TokenKind::Identifier(Identifier::In) => Type {
+                    type_kind: TypeKind::Infer,
+                    is_reference: false,
+                    is_structural: false,
+                },
+                _ => self.parse_type()?,
             };
 
             let binding = match self.advance().kind {
-                TokenKind::Identifier(Identifier::Custom(binding_name)) => {
-                    binding_name
-                }
-                _ => return Err(format!("Invalid or missing binding in for loop"))
+                TokenKind::Identifier(Identifier::Custom(binding_name)) => binding_name,
+                _ => return Err(format!("Invalid or missing binding in for loop")),
             };
 
             match self.advance().kind {
                 TokenKind::Identifier(Identifier::In) => {}
-                _ => return Err(format!("Expected 'in' keyword after for loop binding"))
+                _ => return Err(format!("Expected 'in' keyword after for loop binding")),
             };
 
             let iterator = self.parse_range(indent)?;
@@ -1231,14 +1233,22 @@ impl Parser {
                 _ => return Err(format!("Unexpected token, expected struct field name")),
             };
 
-            match self.advance_skip_ws(indent).kind {
-                TokenKind::Colon => {}
-                _ => return Err(format!("Unexpected token, expected struct field name")),
+            let field_value = match self.peek_skip_ws(indent)?.kind {
+                TokenKind::Colon => {
+                    self.advance_skip_ws(indent);
+                    self.parse_expression(indent)?
+                }
+                TokenKind::Comma | TokenKind::CurlyRight => Expression::Variable(Variable {
+                    name: field_name.clone(),
+                }),
+                _ => {
+                    return Err(format!(
+                        "Unexpected token, expected struct field value, comma or right curly"
+                    ))
+                }
             };
 
-            let field_val = self.parse_expression(indent)?;
-
-            struct_literal.fields.insert(field_name, field_val);
+            struct_literal.fields.insert(field_name, field_value);
 
             let token = self.peek_skip_ws(indent)?;
             match token.kind {
@@ -1770,7 +1780,9 @@ impl Parser {
             .toplevel_scope
             .expressions
             .push(Expression::FunctionCall(FunctionCall {
-                func_name: "main".to_owned(),
+                func_expr: Box::new(Expression::Variable(Variable {
+                    name: "main".to_owned(),
+                })),
                 arguments: Vec::new(),
             }));
 

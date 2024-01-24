@@ -86,18 +86,21 @@ impl ToJS for VariableDecl {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub func_name: String,
+    pub func_expr: Box<Expression>,
     pub arguments: Vec<Expression>,
 }
 
 impl ToJS for FunctionCall {
     fn to_js(&self) -> String {
         let FunctionCall {
-            func_name,
+            func_expr,
             arguments,
         } = self;
 
-        let func_name = func_name.replace("::", "_");
+        let func_expr = match func_expr.as_ref() {
+            Expression::Variable(Variable { name }) => name.replace("::", "_"),
+            expr => expr.to_js(),
+        };
 
         let args = arguments
             .into_iter()
@@ -105,7 +108,7 @@ impl ToJS for FunctionCall {
             .collect::<Vec<_>>()
             .join(", ");
 
-        format!("{func_name}({args})")
+        format!("{func_expr}({args})")
     }
 }
 

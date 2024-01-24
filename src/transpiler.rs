@@ -54,12 +54,16 @@ impl Transpiler {
             }
             Expression::FunctionCall(func) => {
                 let FunctionCall {
-                    func_name,
+                    func_expr,
                     arguments,
                 } = func;
 
-                if func_name.split("::").count() == 1 {
-                    *func_name = format!("{}::{}", module_name, func_name);
+                if let Expression::Variable(Variable { name }) = func_expr.as_mut() {
+                    if name.split("::").count() == 1 {
+                        *name = format!("{}::{}", module_name, name.clone());
+                    }
+                } else {
+                    Transpiler::replace_names_in_expr(module_name, mapped_names, func_expr)
                 }
 
                 for arg in arguments {
