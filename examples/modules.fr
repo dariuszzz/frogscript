@@ -20,7 +20,7 @@ fn map_and_add(arr [int], f fn(int -> int), add int) -> int =
     return mapped
 
 fn main =
-    util::print("Square and add 2: [1, 2, 3]")
+    core::print("Square and add 2: [1, 2, 3]")
     map_and_add(
         [1, 2, 3],
         fn(x)
@@ -28,30 +28,28 @@ fn main =
             return square,
         2
     )
-    .util::print()
+    .core::print()
 
-    util::print("Create array filled with squares of numbers 1-10")
+    core::print("Create array filled with squares of numbers 1-10")
     let push = fn(arr, x) @js(arr ".push(" x ")")
 
     mut arr2 = []
     for i in 1..=10: arr2.push(i)
 
     arr2.util::map(fn(x) return x * x, 2)
-        .util::print()
-        
+        .core::print()
+
     // let util::Printable something_that_can_be_printed = ...
 
-
     let [int] arr1 = square([1, 2, 3, 4, 5])
-    util::print(arr1)
+    core::print(arr1)
 
     let arr2 = plus1([1, 2, 3, 4, 5])
-    arr2.util::print()
+    arr2.core::print()
 
     arr2.util::map(fn(x) return x * x, 2)
-        .util::print()
+        .core::print()
 
-    let util::Printable something_that_can_be_printed = ...
 
     mut a = 1
 
@@ -69,9 +67,9 @@ fn main =
     // let arr = [lambda, lambda2, lambda3, lambda4, lambda5]
 
     // for l in arr:
-    //     l(2, 3).util::print()
+    //     l(2, 3).core::print()
 
-    util::print("Print people data")
+    core::print("Print people data")
     mut people = [
         Person { age: 10, name: "Marque" },
         Person { age: 14, name: "Marc" },
@@ -83,24 +81,23 @@ fn main =
     let name = "Maciej"
     people.push(Person { age, name })
 
-    let fn(Person -> string) person_lambda = fn(person) 
+    let fn(Person -> string) person_lambda = fn(person)
         return util::to_string(person.age) + " - " + person.name
 
     for Person p in people:
         let str = person_lambda(p)
-        util::print(str)
+        core::print(str)
 
 let fn([int] -> ()) lambda =
-    fn(x) for y in x: util::print(y * 2)
+    fn(x) for y in x: core::print(y * 2)
 
+//    core::print("Lambdas as fields")
 
-    util::print("Lambdas as fields")
+//    thingy()
 
-    thingy()
-
-let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
-let fn(Context)(int, int) implicit_arg =
-    fn(ctx)(_) Context::multiply(ctx, $1 * $2)
+// let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
+// let fn(Context)(int, int) implicit_arg =
+// fn(ctx)(_) Context::multiply(ctx, $1 * $2)
 
 
 type StructWithLambda =
@@ -111,15 +108,14 @@ fn thingy =
         l: fn(x) return x + 10
     }
 
-    util::print(
+    core::print(
         (s.l)(20)
     )
 
-    let higher_order = fn(x) 
-        return fn(y) 
+    let higher_order = fn(x)
+        return fn(y)
             return x * y
-            
-    util::print(
+
+    core::print(
         higher_order(5)(5) // 25
     )
-*/
