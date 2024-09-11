@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     env::{self, vars},
-    os::windows::fs::symlink_dir,
 };
 
 use crate::{
