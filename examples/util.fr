@@ -1,12 +1,48 @@
+
+/*
+// Templates specify a function which can be implemented for any type
+generic T:
+    export template to_string(x T) -> string
+    export template print(x T) -> ()
+
+// Impls implement the corresponding template func for the given type
+export impl to_string(n int) -> string = return @js(n ".toString()")
+
+// Generic blocks help to write type parameter requirements
+generic T:
+    req T impl to_string
+
+    export impl print(x T) -> () = return x.to_string()
+
+
+// OTHER APPROACH
+
+type ToString = 
+    to_string fn(Printable -> string)
+
+export fn print(x ~ToString) -> () = 
+    let str = (x.to_string)()
+    @js("console.log(x)")
+*/
+
+
+export fn to_string(x int) -> string = return @js(x ".toString()")
+
 export fn map(
     arr  [int]
     func fn(int -> int)
 ) -> [int] =
     @js("return " arr ".map(" func ")")
 
-export fn add1(x int) -> int = return x + 1
-
-export fn square(x int) -> int = return x * x
+// TODO: change this so its not just injecting random js
+export fn range(start int, end int) =
+    return @js("
+        (function*() {
+            for(let i = " start "; i < " end "; i++) {
+                yield i;
+            }
+        })()
+    ")
 
 export fn main =
     core::print("siema")

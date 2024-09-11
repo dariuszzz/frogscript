@@ -3,22 +3,24 @@ type Person =
     name string
 
 fn square(arr [int]) -> [int] =
-    let res = arr.util::map(util::square)
+    let res = arr.util::map(fn(x) return x * x)
 
     return res
 
 export fn plus1(arr [int]) -> int =
     let [int] res = arr
-        .util::map(util::add1)
+        .util::map(fn(x) return x + 1)
 
     return res
 
 fn map_and_add(arr [int], f fn(int -> int), add int) -> int =
     let mapped = util::map(arr, f)
     let mapped = util::map(mapped, fn(x) return x + add)
+    let mapped = mapped
     return mapped
 
 fn main =
+    util::print("Square and add 2: [1, 2, 3]")
     map_and_add(
         [1, 2, 3],
         fn(x)
@@ -27,6 +29,18 @@ fn main =
         2
     )
     .util::print()
+
+    util::print("Create array filled with squares of numbers 1-10")
+    let push = fn(arr, x) @js(arr ".push(" x ")")
+
+    mut arr2 = []
+    for i in 1..=10: arr2.push(i)
+
+    arr2.util::map(fn(x) return x * x, 2)
+        .util::print()
+        
+    // let util::Printable something_that_can_be_printed = ...
+
 
     let [int] arr1 = square([1, 2, 3, 4, 5])
     util::print(arr1)
@@ -57,48 +71,55 @@ fn main =
     // for l in arr:
     //     l(2, 3).util::print()
 
-    // util::main()
+    util::print("Print people data")
+    mut people = [
+        Person { age: 10, name: "Marque" },
+        Person { age: 14, name: "Marc" },
+        Person { age: 93, name: "Mark" },
+    ]
 
-/*
-maybe new syntax
+    // Struct field shorthand
+    let age = 23
+    let name = "Maciej"
+    people.push(Person { age, name })
 
-// This seems better since you usually change the arg name with some ide functionality
-// while you change the type manually
-// putting the type before func name and foo does seem kind of inconsistent though
+    let fn(Person -> string) person_lambda = fn(person) 
+        return util::to_string(person.age) + " - " + person.name
+
+    for Person p in people:
+        let str = person_lambda(p)
+        util::print(str)
 
 let fn([int] -> ()) lambda =
     fn(x) for y in x: util::print(y * 2)
 
-let fn(int, int -> int) mul = fn(x int, y int) -> int x * y
-let mul = fn(x int, y int) -> int x * y
-let mul = fn(x int, y int) x * y
-let mul = fn(x y) x * y
-let mul = fn(_) $1 * $2
+
+    util::print("Lambdas as fields")
+
+    thingy()
 
 let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
 let fn(Context)(int, int) implicit_arg =
     fn(ctx)(_) Context::multiply(ctx, $1 * $2)
 
-let multiline = fn(x, y)
-    let foo = x * y
-    return foo
 
-let multiline = fn(x int, y int) -> int
-    let foo = x * y
-    return foo
+type StructWithLambda =
+    l fn(int -> int)
 
-let multiline = fn(_)
-    let foo = $1 * $2
-    return foo
+fn thingy =
+    let StructWithLambda s = StructWithLambda {
+        l: fn(x) return x + 10
+    }
 
-func_that_takes_lambda(
-    arg1,
-    fn(_)
-        let foo = $1 * $2
-        return foo,
-    arg3
-)
+    util::print(
+        (s.l)(20)
+    )
 
-func_that_takes_lambda(arg1, fn(_) $1 * $2, arg3)
-
+    let higher_order = fn(x) 
+        return fn(y) 
+            return x * y
+            
+    util::print(
+        higher_order(5)(5) // 25
+    )
 */

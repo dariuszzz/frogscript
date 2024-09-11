@@ -54,12 +54,16 @@ impl Transpiler {
             }
             Expression::FunctionCall(func) => {
                 let FunctionCall {
-                    func_name,
+                    func_expr,
                     arguments,
                 } = func;
 
-                if func_name.split("::").count() == 1 {
-                    *func_name = format!("{}::{}", module_name, func_name);
+                if let Expression::Variable(Variable { name }) = func_expr.as_mut() {
+                    if name.split("::").count() == 1 {
+                        *name = format!("{}::{}", module_name, name.clone());
+                    }
+                } else {
+                    Transpiler::replace_names_in_expr(module_name, mapped_names, func_expr)
                 }
 
                 for arg in arguments {
@@ -71,6 +75,7 @@ impl Transpiler {
 
                 // is not qualified
                 if name.split("::").count() == 1 {
+
                     let qualified_name = format!("{}::{}", module_name, name.clone());
                     let new_name = if let Some(new_name) = mapped_names.get(&qualified_name) {
                         new_name.clone()
@@ -157,6 +162,7 @@ impl Transpiler {
             Expression::For(for_block) => {
                 let For {
                     binding,
+                    binding_type,
                     iterator,
                     body,
                 } = for_block;
@@ -192,6 +198,10 @@ impl Transpiler {
                     var_value,
                     ..
                 }) => {
+                    // First replace the names in rhs
+                    Transpiler::replace_names_in_expr(module_name, mapped_names, var_value);
+
+                    // Then redeclare
                     *var_name = format!("{}::{}", module_name, var_name);
                     match mapped_names.entry(var_name.clone()) {
                         Entry::Occupied(mut entry) => {
@@ -204,7 +214,6 @@ impl Transpiler {
                             entry.insert(var_name.clone());
                         }
                     }
-                    Transpiler::replace_names_in_expr(module_name, mapped_names, var_value);
                 }
                 _ => Transpiler::replace_names_in_expr(module_name, &mapped_names, expr),
             }

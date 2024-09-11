@@ -24,19 +24,19 @@ pub enum BinaryOperation {
     NotEqual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionType {
     pub env_args: Vec<Type>,
     pub args: Vec<Type>,
     pub ret: Box<Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomType {
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeKind {
     Infer,
     Void,
@@ -51,7 +51,7 @@ pub enum TypeKind {
     Struct(StructDef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
     pub type_kind: TypeKind,
     pub is_reference: bool,
@@ -86,18 +86,21 @@ impl ToJS for VariableDecl {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub func_name: String,
+    pub func_expr: Box<Expression>,
     pub arguments: Vec<Expression>,
 }
 
 impl ToJS for FunctionCall {
     fn to_js(&self) -> String {
         let FunctionCall {
-            func_name,
+            func_expr,
             arguments,
         } = self;
 
-        let func_name = func_name.replace("::", "_");
+        let func_expr = match func_expr.as_ref() {
+            Expression::Variable(Variable { name }) => name.replace("::", "_"),
+            expr => expr.to_js(),
+        };
 
         let args = arguments
             .into_iter()
@@ -105,7 +108,7 @@ impl ToJS for FunctionCall {
             .collect::<Vec<_>>()
             .join(", ");
 
-        format!("{func_name}({args})")
+        format!("{func_expr}({args})")
     }
 }
 
@@ -221,6 +224,7 @@ impl ToJS for If {
 #[derive(Debug, Clone)]
 pub struct For {
     pub binding: String,
+    pub binding_type: Type,
     pub iterator: Box<Expression>,
     pub body: CodeBlock,
 }
@@ -229,6 +233,7 @@ impl ToJS for For {
     fn to_js(&self) -> String {
         let For {
             binding,
+            binding_type,
             iterator,
             body,
         } = self;
@@ -553,15 +558,14 @@ pub struct EnumDef {
     pub variants: Vec<VariantDef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
     pub field_name: String,
     pub field_type: Type,
     pub is_final: bool,
-    pub default_value: Option<Expression>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDef {
     pub fields: Vec<StructField>,
 }
