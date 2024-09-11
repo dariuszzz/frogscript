@@ -117,13 +117,14 @@ fn main() -> Result<(), String> {
 
             let mut semantic = SemanticAnalyzer::default();
             semantic.resolve_names(&mut program)?;
+            semantic.ensure_mutability(&mut program)?;
 
             let mut transpiler = Transpiler::new(program);
             let out_filename = opts.output.unwrap_or_else(|| format!("{file_name}_out.js"));
 
             let out_path = path_parent.join(&out_filename);
 
-            let js_ast = transpiler.transpile(&out_path)?;
+            transpiler.transpile(&out_path)?;
         }
     }
 

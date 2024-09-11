@@ -1,12 +1,11 @@
-:: x: ananas
-fn print = @js"console.log(x);"
+fn print(x ()) = @js("console.log(" x ");")
 
 let val = 0
 
 fn siema =
     print(val)
 
-    let val = 12
+    mut val = 12
     print(val)
 
     for i in [1, 2, 3]:
@@ -14,7 +13,7 @@ fn siema =
 
         print(val)
 
-    print(val) 
+    print(val)
 
     let val = "siema"
 

@@ -3,8 +3,7 @@ type Person =
     name string
 
 fn square(arr [int]) -> [int] =
-    let res = 2
-    //let res = arr.util::map(util::square)
+    let res = arr.util::map(util::square)
 
     return res
 
@@ -39,6 +38,10 @@ fn main =
         .util::print()
 
     let util::Printable something_that_can_be_printed = ...
+
+    mut a = 1
+
+    a = 2
 
     // this works
     // let lambda = fn(x, y) return x + y

@@ -1,17 +1,12 @@
-export type Printable = 
-    placeholder void
-
-export fn print(x ~Printable) -> () = @js("console.log(" x ")")
-
 export fn map(
     arr  [int]
-    func fn(int -> int) 
-) -> [int] = 
+    func fn(int -> int)
+) -> [int] =
     @js("return " arr ".map(" func ")")
 
 export fn add1(x int) -> int = return x + 1
 
 export fn square(x int) -> int = return x * x
 
-export fn main = 
-    print("siema")
+export fn main =
+    core::print("siema")
