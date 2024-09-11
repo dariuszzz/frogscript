@@ -1794,7 +1794,9 @@ impl Parser {
                 .toplevel_scope
                 .expressions
                 .push(Expression::FunctionCall(FunctionCall {
-                    func_name: "main".to_owned(),
+                    func_expr: Box::new(Expression::Variable(Variable {
+                        name: "main".to_string(),
+                    })),
                     arguments: Vec::new(),
                 }));
         }

@@ -75,7 +75,6 @@ impl Transpiler {
 
                 // is not qualified
                 if name.split("::").count() == 1 {
-
                     let qualified_name = format!("{}::{}", module_name, name.clone());
                     let new_name = if let Some(new_name) = mapped_names.get(&qualified_name) {
                         new_name.clone()
@@ -253,7 +252,9 @@ impl Transpiler {
         let curr_expr = expr.clone();
 
         *expr = Expression::FunctionCall(FunctionCall {
-            func_name: "core::deep_copy".to_string(),
+            func_expr: Box::new(Expression::Variable(Variable {
+                name: "core::deep_copy".to_string(),
+            })),
             arguments: vec![curr_expr],
         })
     }
