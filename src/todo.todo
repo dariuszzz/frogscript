@@ -32,20 +32,35 @@ Frogscript:
         related (i think?) cleanup match allowing for . and [ in array literal
         ✔ Splitting expression to multiple lines with \n @critical @done(23-12-21 21:11)
         ✔ Parsing anon structs @done(23-12-21 21:29)
-        ☐ Struct literal field shorthand
+        ✔ Struct literal field shorthand @done(24-01-24 20:14)
             { name } == { name: name }
         ✔ Parse +=, -=, *=, /= @done(23-12-21 21:40)
         ✔ Parse field accessing (foo.field) @done(23-12-21 21:48)
         ✔ Field access assignment (foo.field = ...) @done(23-12-21 22:59)
-        ☐ Revamp if parsing to allow for one liners
         ✔ Fix codeblock/function (idk) parsing bug if the first line of a block is empty @critical @done(24-01-09 11:18)
         ☐ Parse codeblocks as expressions, basically allow for nested codeblocks
             let foo = 
-                let a = 2
-                a += 2
-                a
-
+            let a = 2
+            a += 2
+            a
+            
             print(foo) // prints "4"
+        
+        ✔ Fix inconsistent type annotation in for (binding type -> type binding) @done(24-01-23 11:34)
+        
+        Bindings:
+            Like `for <binding> in ...` or `let <binding> = ...`
+            this could be either 
+                `<type> <iden>`                                   for regular values
+                `(<type> <iden>, <type> <iden>, ... )`            for tuples(? they dont exist yet) 
+                `<type> { <type> <iden>, <type> <iden>, ... }`    for named structs
+                `{ <type> <iden>, <type> <iden>, ... }`           for anon structs
+                `[<type> <iden>, <type> <iden>, ...]`             for arrays
+
+        Refactor the parser:
+            ☐ Split things into helper methods
+            ☐ Revamp if parsing to allow for one liners
+
 
         Strings: 
             ☐ String templates ("var: ${var}") @high
@@ -62,6 +77,10 @@ Frogscript:
             ☐ Allow for lambda shorthands aka $0 * $0 for squaring or $0 + $1 for sum
                 fn(_) $1
         
+        ✔ How do you actually call lambdas that are fields on structs? The parser always assumes its a standalone function @critical @done(24-01-24 20:14)
+            thinking about (obj.field)(args) but as of now the parser doesnt support calling arbitratry expressions
+        ✔ Function call syntax on arbitrary expressions @critical @done(24-01-24 20:14)
+
         Parsing custom types:
             ✔ Basic type aliases for primitives and structs @done(23-12-23 01:08)
             ✘ Methods @cancelled(24-01-08 22:47)
@@ -73,17 +92,18 @@ Frogscript:
         ✔ Associate variables/functions with ids so its possible to change their names when transpiling @done(24-01-02 20:14)
         ✔ Redeclaration support @done(24-01-02 20:15)
         ✔ Shadowing @done(24-01-02 20:15)
-        ☐ Generate truly unique names for shadowed variables @critical
+        ✔ Generate truly unique names for shadowed variables @critical @done(24-01-23 11:20)
         ✔ Stop grouping function at the top of the file and toplevel statements at the bottom @done(24-01-19 16:04)
         ✘ Transpile inline functions correctly @cancelled(24-01-19 16:03)
         ☐ Automatically inline functions
         ☐ Transpile implicit returns
-        ☐ Transpile ranges into generator functions @critical
+        ✘ Transpile ranges into generator functions @critical @cancelled(24-01-23 11:19)
+            transpiles to range() func call instead
         ☐ Indexing arrays with ranges
             let arr = [1,2,3]
             let val = arr[1..3] // [1, 2] 
             let val = arr[1..=3] // [1, 2, 3] 
-        ☐ Bug when returning redeclared variable [INVESTIGATE] @critical
+        ✔ Bug when returning redeclared variable [INVESTIGATE] @critical @done(24-01-23 11:19)
             fn foo() =
                 let var = 123
                 let var = 321
@@ -92,7 +112,8 @@ Frogscript:
     Validation:
         ✔ Figure out whether the language should allow for top level expressions like if/for etc @done(24-01-19 16:05)
         ☐ Dont allow for non-const top-level expressions 
-        ☐ Make _ a special write-only identifier
+        ✘ Make _ a special write-only identifier @cancelled(24-01-23 11:33)
+            no use for this
 
     Testing: 
         ☐ Maybe make some test cases
