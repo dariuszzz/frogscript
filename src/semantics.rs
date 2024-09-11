@@ -1,9 +1,6 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env::{self, vars},
-    future::pending,
-    os::windows::fs::symlink_dir,
-    sync::{Arc, WaitTimeoutResult},
 };
 
 use crate::{
@@ -869,6 +866,71 @@ impl SemanticAnalyzer {
                     }
                     _ => unreachable!("Invalid toplevel expression only let bindings allowed"),
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn ensure_mutability_expr(
+        &self,
+        mutable_vars: &mut HashSet<String>,
+        expr: &Expression,
+    ) -> Result<(), String> {
+        match expr {
+            Expression::Assignment(expr) => {
+                self.ensure_mutability_expr(mutable_vars, &expr.lhs)?;
+            }
+            Expression::Lambda(expr) => {
+                self.ensure_mutability_codeblock(mutable_vars, &expr.function_body)?
+            }
+            Expression::If(expr) => {
+                self.ensure_mutability_codeblock(mutable_vars, &expr.true_branch)?;
+                if let Some(else_branch) = &expr.else_branch {
+                    self.ensure_mutability_codeblock(mutable_vars, else_branch)?;
+                }
+            }
+            Expression::For(expr) => {
+                self.ensure_mutability_codeblock(mutable_vars, &expr.body)?;
+            }
+            Expression::Variable(var) => {
+                if !mutable_vars.contains(&var.name) {
+                    return Err(format!("Variable `{}` is not mutable", var.name));
+                }
+            }
+            Expression::ArrayAccess(arr) => self.ensure_mutability_expr(mutable_vars, &arr.expr)?,
+            Expression::FieldAccess(access) => {
+                self.ensure_mutability_expr(mutable_vars, &access.expr)?
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn ensure_mutability_codeblock(
+        &self,
+        mutable_vars: &mut HashSet<String>,
+        codeblock: &CodeBlock,
+    ) -> Result<(), String> {
+        for expr in &codeblock.expressions {
+            self.ensure_mutability_expr(mutable_vars, &expr)?;
+
+            if let Expression::VariableDecl(var_decl) = expr {
+                if var_decl.is_mutable {
+                    mutable_vars.insert(var_decl.var_name.clone());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn ensure_mutability(&mut self, program: &mut Program) -> Result<(), String> {
+        for module in &program.modules {
+            for func in &module.function_defs {
+                let mut mutable_vars: HashSet<String> = HashSet::new();
+                self.ensure_mutability_codeblock(&mut mutable_vars, &func.function_body)?;
             }
         }
 

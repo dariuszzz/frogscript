@@ -1,3 +1,4 @@
+
 /*
 // Templates specify a function which can be implemented for any type
 generic T:
@@ -26,12 +27,11 @@ export fn print(x ~ToString) -> () =
 
 
 export fn to_string(x int) -> string = return @js(x ".toString()")
-export fn print(x ()) -> () = @js("console.log(" x ")")
 
 export fn map(
     arr  [int]
-    func fn(int -> int) 
-) -> [int] = 
+    func fn(int -> int)
+) -> [int] =
     @js("return " arr ".map(" func ")")
 
 // TODO: change this so its not just injecting random js
@@ -44,5 +44,5 @@ export fn range(start int, end int) =
         })()
     ")
 
-export fn main = 
-    print("siema")
+export fn main =
+    core::print("siema")

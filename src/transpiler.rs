@@ -75,11 +75,12 @@ impl Transpiler {
 
                 // is not qualified
                 if name.split("::").count() == 1 {
-                    let full_name = format!("{}::{}", module_name, name.clone());
-                    let new_name = if let Some(new_name) = mapped_names.get(&full_name) {
+
+                    let qualified_name = format!("{}::{}", module_name, name.clone());
+                    let new_name = if let Some(new_name) = mapped_names.get(&qualified_name) {
                         new_name.clone()
                     } else {
-                        full_name
+                        qualified_name
                     };
                     *name = new_name;
                 }
@@ -248,7 +249,78 @@ impl Transpiler {
         Ok(())
     }
 
+    fn wrap_in_copy(expr: &mut Expression) {
+        let curr_expr = expr.clone();
+
+        *expr = Expression::FunctionCall(FunctionCall {
+            func_name: "core::deep_copy".to_string(),
+            arguments: vec![curr_expr],
+        })
+    }
+
+    fn ensure_pass_by_value_expr(expr: &mut Expression) {
+        match expr {
+            Expression::FunctionCall(expr) => {
+                for expr in &mut expr.arguments {
+                    Transpiler::wrap_in_copy(expr);
+                }
+            }
+            Expression::Assignment(expr) => Transpiler::wrap_in_copy(&mut expr.rhs),
+            Expression::VariableDecl(expr) => Transpiler::wrap_in_copy(&mut expr.var_value),
+            Expression::AnonStruct(expr) => {
+                for (_, expr) in &mut expr.fields {
+                    Transpiler::wrap_in_copy(expr)
+                }
+            }
+            Expression::ArrayLiteral(expr) => {
+                for expr in &mut expr.elements {
+                    Transpiler::wrap_in_copy(expr)
+                }
+            }
+            Expression::NamedStruct(expr) => {
+                for (_, expr) in &mut expr.struct_literal.fields {
+                    Transpiler::wrap_in_copy(expr)
+                }
+            }
+            Expression::Lambda(expr) => {
+                Transpiler::ensure_pass_by_value_codeblock(&mut expr.function_body);
+            }
+            Expression::If(expr) => {
+                Transpiler::ensure_pass_by_value_codeblock(&mut expr.true_branch);
+                if let Some(else_branch) = &mut expr.else_branch {
+                    Transpiler::ensure_pass_by_value_codeblock(else_branch);
+                }
+            }
+            Expression::For(expr) => Transpiler::ensure_pass_by_value_codeblock(&mut expr.body),
+
+            // TODO: Maybe return should copy?
+            Expression::Return(_) => {}
+
+            // TODO: get rid of copying primitive types
+            _ => {}
+        }
+    }
+
+    fn ensure_pass_by_value_codeblock(codeblock: &mut CodeBlock) {
+        for expr in &mut codeblock.expressions {
+            Transpiler::ensure_pass_by_value_expr(expr);
+        }
+    }
+
+    fn ensure_pass_by_value(&mut self) -> Result<(), String> {
+        for module in &mut self.ast.modules {
+            Transpiler::ensure_pass_by_value_codeblock(&mut module.toplevel_scope);
+
+            for func in &mut module.function_defs {
+                Transpiler::ensure_pass_by_value_codeblock(&mut func.function_body);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn transpile(&mut self, path: &std::path::Path) -> Result<(), String> {
+        self.ensure_pass_by_value()?;
         self.fix_scopes()?;
 
         let mut outfile =

@@ -134,7 +134,8 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(path: &Path) -> Self {
-        let source_file = fs::read_to_string(path).expect("Failed to read file");
+        let source_file =
+            fs::read_to_string(path).expect(&format!("Module does not exist: {:?}", path.to_str()));
 
         Self {
             source_file,
