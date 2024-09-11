@@ -41,6 +41,36 @@ fn main =
         
     // let util::Printable something_that_can_be_printed = ...
 
+
+    let [int] arr1 = square([1, 2, 3, 4, 5])
+    util::print(arr1)
+
+    let arr2 = plus1([1, 2, 3, 4, 5])
+    arr2.util::print()
+
+    arr2.util::map(fn(x) return x * x, 2)
+        .util::print()
+
+    let util::Printable something_that_can_be_printed = ...
+
+    mut a = 1
+
+    a = 2
+
+    // this works
+    // let lambda = fn(x, y) return x + y
+    // let lambda2 = fn(x int, y) return x + y
+    // let lambda3 = fn(x int, y int) return x + y
+    // let lambda4 = fn(x int, y int) -> int return x + y
+    // let lambda5 = fn(x int, y int) -> int
+    //     let sum = x + y
+    //     return sum
+
+    // let arr = [lambda, lambda2, lambda3, lambda4, lambda5]
+
+    // for l in arr:
+    //     l(2, 3).util::print()
+
     util::print("Print people data")
     mut people = [
         Person { age: 10, name: "Marque" },
@@ -60,9 +90,18 @@ fn main =
         let str = person_lambda(p)
         util::print(str)
 
+let fn([int] -> ()) lambda =
+    fn(x) for y in x: util::print(y * 2)
+
+
     util::print("Lambdas as fields")
 
     thingy()
+
+let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
+let fn(Context)(int, int) implicit_arg =
+    fn(ctx)(_) Context::multiply(ctx, $1 * $2)
+
 
 type StructWithLambda =
     l fn(int -> int)
@@ -79,7 +118,8 @@ fn thingy =
     let higher_order = fn(x) 
         return fn(y) 
             return x * y
-
+            
     util::print(
         higher_order(5)(5) // 25
     )
+*/

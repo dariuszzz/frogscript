@@ -1,0 +1,25 @@
+fn main =
+    mut value = { foo: 23 }
+
+    let copy = value
+
+    value.foo = 54
+
+    core::print(value)
+    core::print(copy)
+
+    mut arr = [1, 3, 5]
+
+    let copy = arr
+
+    for i in [0, 1, 2]:
+        mut copy = arr[i]
+
+        arr[i] = 0
+
+        core::print(copy)
+
+    arr[1] = 32
+
+    core::print(arr)
+    core::print(copy)

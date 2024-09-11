@@ -27,7 +27,7 @@ impl Parser {
             current: 0,
             expr_start: 0,
             path,
-            modules_to_parse: Vec::new(),
+            modules_to_parse: vec!["core".to_string()],
             parsed_modules: Vec::new(),
             current_module: String::new(),
         }
@@ -1010,23 +1010,24 @@ impl Parser {
             return Err(format!("Array access operator not closed"));
         };
 
-        match self.peek(0) {
-            Token {
-                kind: TokenKind::Dot,
-                ..
-            } => {
-                self.advance();
-                self.parse_method_call_or_field_access(expr, indent)
-            }
-            Token {
-                kind: TokenKind::SquareLeft,
-                ..
-            } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        // match self.peek(0) {
+        //     Token {
+        //         kind: TokenKind::Dot,
+        //         ..
+        //     } => {
+        //         self.advance();
+        //         self.parse_method_call_or_field_access(expr, indent)
+        //     }
+        //     Token {
+        //         kind: TokenKind::SquareLeft,
+        //         ..
+        //     } => {
+        //         self.advance();
+        //         self.parse_array_access(expr, indent)
+        //     }
+        //     _ => Ok(expr),
+        // }
+        Ok(expr)
     }
 
     pub fn parse_variable(
@@ -1309,6 +1310,10 @@ impl Parser {
 
         loop {
             match (self.peek(0).kind, self.peek(1).kind) {
+                (TokenKind::Newline, _) => {
+                    self.advance();
+                    continue;
+                }
                 (TokenKind::Indentation(_), TokenKind::Newline)
                 | (TokenKind::Indentation(_), TokenKind::EOF) => {
                     // consume indent and nl
@@ -1316,7 +1321,7 @@ impl Parser {
                     self.advance();
                     continue;
                 }
-                (TokenKind::Indentation(indent), _) => {
+                (TokenKind::Indentation(indent), smth) => {
                     if indent < block.indentation {
                         break;
                     }
@@ -1331,6 +1336,7 @@ impl Parser {
             self.advance();
 
             let expr = self.parse_codeblock_expression(block.indentation)?;
+            // println!("{:?}", expr);
 
             block.expressions.push(expr);
 
@@ -1750,6 +1756,7 @@ impl Parser {
                             current_module.toplevel_scope.expressions.push(expr);
                         }
                         Identifier::Custom(iden) => {
+                            println!("{}:{} -> {iden:?}", t.start_line, t.start_char);
                             panic!("Top level expressions are yuck");
                             let expr = self.parse_assignment_or_call(0)?;
 
@@ -1774,17 +1781,23 @@ impl Parser {
         }
 
         // add a main() method invocation at the end of the compiled module
-        modules
-            .first_mut()
+        if modules
+            .first()
             .unwrap()
-            .toplevel_scope
-            .expressions
-            .push(Expression::FunctionCall(FunctionCall {
-                func_expr: Box::new(Expression::Variable(Variable {
-                    name: "main".to_owned(),
-                })),
-                arguments: Vec::new(),
-            }));
+            .function_defs
+            .iter()
+            .any(|f| f.func_name == "main")
+        {
+            modules
+                .first_mut()
+                .unwrap()
+                .toplevel_scope
+                .expressions
+                .push(Expression::FunctionCall(FunctionCall {
+                    func_name: "main".to_owned(),
+                    arguments: Vec::new(),
+                }));
+        }
 
         Ok(modules)
     }
