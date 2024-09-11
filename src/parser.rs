@@ -27,7 +27,7 @@ impl Parser {
             current: 0,
             expr_start: 0,
             path,
-            modules_to_parse: Vec::new(),
+            modules_to_parse: vec!["core".to_string()],
             parsed_modules: Vec::new(),
             current_module: String::new(),
         }
@@ -1288,9 +1288,7 @@ impl Parser {
                         return Err(format!("Code block has inconsistent indentation"));
                     }
                 }
-                (_, _) => {
-                    break
-                }
+                (_, _) => break,
             }
 
             // consume indent
@@ -1743,15 +1741,23 @@ impl Parser {
         }
 
         // add a main() method invocation at the end of the compiled module
-        modules
-            .first_mut()
+        if modules
+            .first()
             .unwrap()
-            .toplevel_scope
-            .expressions
-            .push(Expression::FunctionCall(FunctionCall {
-                func_name: "main".to_owned(),
-                arguments: Vec::new(),
-            }));
+            .function_defs
+            .iter()
+            .any(|f| f.func_name == "main")
+        {
+            modules
+                .first_mut()
+                .unwrap()
+                .toplevel_scope
+                .expressions
+                .push(Expression::FunctionCall(FunctionCall {
+                    func_name: "main".to_owned(),
+                    arguments: Vec::new(),
+                }));
+        }
 
         Ok(modules)
     }
