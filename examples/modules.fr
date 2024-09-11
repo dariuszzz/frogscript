@@ -3,7 +3,8 @@ type Person =
     name string
 
 fn square(arr [int]) -> [int] =
-    let res = arr.util::map(util::square)
+    let res = 2
+    //let res = arr.util::map(util::square)
 
     return res
 
@@ -21,7 +22,7 @@ fn map_and_add(arr [int], f fn(int -> int), add int) -> int =
 fn main =
     map_and_add(
         [1, 2, 3],
-        fn(x) 
+        fn(x)
             let square = x * x
             return square,
         2
@@ -30,13 +31,13 @@ fn main =
 
     let [int] arr1 = square([1, 2, 3, 4, 5])
     util::print(arr1)
-    
+
     let arr2 = plus1([1, 2, 3, 4, 5])
     arr2.util::print()
 
     arr2.util::map(fn(x) return x * x, 2)
         .util::print()
-        
+
     let util::Printable something_that_can_be_printed = ...
 
     // this works
@@ -44,7 +45,7 @@ fn main =
     // let lambda2 = fn(x int, y) return x + y
     // let lambda3 = fn(x int, y int) return x + y
     // let lambda4 = fn(x int, y int) -> int return x + y
-    // let lambda5 = fn(x int, y int) -> int 
+    // let lambda5 = fn(x int, y int) -> int
     //     let sum = x + y
     //     return sum
 
@@ -62,7 +63,7 @@ maybe new syntax
 // while you change the type manually
 // putting the type before func name and foo does seem kind of inconsistent though
 
-let fn([int] -> ()) lambda = 
+let fn([int] -> ()) lambda =
     fn(x) for y in x: util::print(y * 2)
 
 let fn(int, int -> int) mul = fn(x int, y int) -> int x * y
@@ -72,7 +73,7 @@ let mul = fn(x y) x * y
 let mul = fn(_) $1 * $2
 
 let implicit_arg = fn(ctx Context)(_) Context::multiply(ctx, $1 * $2)
-let fn(Context)(int, int) implicit_arg = 
+let fn(Context)(int, int) implicit_arg =
     fn(ctx)(_) Context::multiply(ctx, $1 * $2)
 
 let multiline = fn(x, y)

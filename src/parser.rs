@@ -984,23 +984,24 @@ impl Parser {
             return Err(format!("Array access operator not closed"));
         };
 
-        match self.peek(0) {
-            Token {
-                kind: TokenKind::Dot,
-                ..
-            } => {
-                self.advance();
-                self.parse_method_call_or_field_access(expr, indent)
-            }
-            Token {
-                kind: TokenKind::SquareLeft,
-                ..
-            } => {
-                self.advance();
-                self.parse_array_access(expr, indent)
-            }
-            _ => Ok(expr),
-        }
+        // match self.peek(0) {
+        //     Token {
+        //         kind: TokenKind::Dot,
+        //         ..
+        //     } => {
+        //         self.advance();
+        //         self.parse_method_call_or_field_access(expr, indent)
+        //     }
+        //     Token {
+        //         kind: TokenKind::SquareLeft,
+        //         ..
+        //     } => {
+        //         self.advance();
+        //         self.parse_array_access(expr, indent)
+        //     }
+        //     _ => Ok(expr),
+        // }
+        Ok(expr)
     }
 
     pub fn parse_variable(
@@ -1268,6 +1269,10 @@ impl Parser {
 
         loop {
             match (self.peek(0).kind, self.peek(1).kind) {
+                (TokenKind::Newline, _) => {
+                    self.advance();
+                    continue;
+                }
                 (TokenKind::Indentation(_), TokenKind::Newline)
                 | (TokenKind::Indentation(_), TokenKind::EOF) => {
                     // consume indent and nl
@@ -1275,7 +1280,7 @@ impl Parser {
                     self.advance();
                     continue;
                 }
-                (TokenKind::Indentation(indent), _) => {
+                (TokenKind::Indentation(indent), smth) => {
                     if indent < block.indentation {
                         break;
                     }
@@ -1283,13 +1288,16 @@ impl Parser {
                         return Err(format!("Code block has inconsistent indentation"));
                     }
                 }
-                (_, _) => break,
+                (_, _) => {
+                    break
+                }
             }
 
             // consume indent
             self.advance();
 
             let expr = self.parse_codeblock_expression(block.indentation)?;
+            // println!("{:?}", expr);
 
             block.expressions.push(expr);
 
@@ -1710,6 +1718,7 @@ impl Parser {
                             current_module.toplevel_scope.expressions.push(expr);
                         }
                         Identifier::Custom(iden) => {
+                            println!("{}:{} -> {iden:?}", t.start_line, t.start_char);
                             panic!("Top level expressions are yuck");
                             let expr = self.parse_assignment_or_call(0)?;
 
