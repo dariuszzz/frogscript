@@ -321,7 +321,7 @@ impl Transpiler {
     }
 
     pub fn transpile(&mut self, path: &std::path::Path) -> Result<(), String> {
-        self.ensure_pass_by_value()?;
+        // self.ensure_pass_by_value()?;
         self.fix_scopes()?;
 
         let mut outfile =

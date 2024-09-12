@@ -94,6 +94,13 @@ fn main() -> Result<(), String> {
             let file_name = path.file_prefix().unwrap().to_str().unwrap().to_owned();
             let modules = parser.parse_file(file_name)?;
 
+            let mut program = Program {
+                modules: modules.clone(),
+            };
+
+            let mut semantic = SemanticAnalyzer::default();
+            semantic.perform_analysis(&mut program)?;
+
             if let Some(output) = opts.output {
                 println!(
                     "dumping parsed modules to {:?}",
@@ -118,8 +125,7 @@ fn main() -> Result<(), String> {
             let mut program = Program { modules };
 
             let mut semantic = SemanticAnalyzer::default();
-            semantic.resolve_names(&mut program)?;
-            semantic.ensure_mutability(&mut program)?;
+            semantic.perform_analysis(&mut program)?;
 
             let mut transpiler = Transpiler::new(program);
             let out_filename = opts.output.unwrap_or_else(|| format!("{file_name}_out.js"));
