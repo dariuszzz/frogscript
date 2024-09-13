@@ -1099,9 +1099,9 @@ impl SemanticAnalyzer {
                     self.populate_symbol_table_expr(scope, expr)?;
                 }
             }
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
         }
         Ok(())
     }
@@ -1222,13 +1222,19 @@ impl SemanticAnalyzer {
         match expr {
             Expression::Variable(expr) => {
                 let name_parts = expr.name.split("::").collect::<Vec<_>>();
+                let module_parts = name_parts
+                    .clone()
+                    .into_iter()
+                    .take(name_parts.len() - 1)
+                    .collect::<Vec<_>>();
+                let module_name = module_parts.join("::");
 
                 let mut scope_idx = if name_parts.len() == 1 {
                     Some(scope.clone())
                 } else {
                     let scope = self
                         .module_to_scope
-                        .get(name_parts[0])
+                        .get(&module_name)
                         .expect("Symbol table not built");
 
                     Some(scope.clone())
@@ -1326,9 +1332,9 @@ impl SemanticAnalyzer {
                     self.resolve_names_expr(scope, expr)?;
                 }
             }
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
         }
 
         Ok(())

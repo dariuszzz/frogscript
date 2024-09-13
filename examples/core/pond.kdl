@@ -1,0 +1,12 @@
+name "core"
+version "0.1"
+
+dependencies {
+    //util path="../util/"
+    // siema "1.2.3"
+    // elo git="https://www.github.com/dariuszzz/frogscript/core"
+}
+
+// targets {
+//     main "core.fr"
+// }

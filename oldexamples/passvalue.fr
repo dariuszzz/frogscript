@@ -1,6 +1,16 @@
 let foo = 23
 
 fn main =
+/*
+    let value = 23
+
+    let value = 54
+    let value_unique = 40
+
+    core::print(value_unique)
+
+*/
+
     mut value = { foo: 23 }
 
     let int copy = bar

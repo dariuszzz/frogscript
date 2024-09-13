@@ -34,6 +34,7 @@ pub enum Identifier {
     As,
     In,
     Inline,
+    Module,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -366,6 +367,7 @@ impl Lexer {
             ("fn", Identifier::Fn),
             ("in", Identifier::In),
             ("inline", Identifier::Inline),
+            ("module", Identifier::Module),
         ]);
 
         while let Some(c) = self.peek() {

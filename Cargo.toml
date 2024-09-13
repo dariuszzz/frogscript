@@ -1,5 +1,5 @@
 [package]
-name = "frogscript"
+name = "ribbit"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 gumdrop = "0.8"
+kdl = "4.6.0"

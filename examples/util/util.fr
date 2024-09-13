@@ -17,10 +17,10 @@ generic T:
 
 // OTHER APPROACH
 
-type ToString = 
+type ToString =
     to_string fn(Printable -> string)
 
-export fn print(x ~ToString) -> () = 
+export fn print(x ~ToString) -> () =
     let str = (x.to_string)()
     @js("console.log(x)")
 */
@@ -35,14 +35,6 @@ export fn map(
     @js("return " arr ".map(" func ")")
 
 // TODO: change this so its not just injecting random js
-export fn range(start int, end int) =
-    return @js("
-        (function*() {
-            for(let i = " start "; i < " end "; i++) {
-                yield i;
-            }
-        })()
-    ")
 
 export fn main =
     core::print("siema")

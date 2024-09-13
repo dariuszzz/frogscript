@@ -320,12 +320,39 @@ impl Transpiler {
         Ok(())
     }
 
-    pub fn transpile(&mut self, path: &std::path::Path) -> Result<(), String> {
+    pub fn transpile(&mut self, path: &std::path::Path, entrypoint: &str) -> Result<(), String> {
         // self.ensure_pass_by_value()?;
         self.fix_scopes()?;
 
+        if let Some(entrypoint) = self
+            .ast
+            .modules
+            .last()
+            .unwrap()
+            .function_defs
+            .iter()
+            .cloned()
+            .find(|f| f.func_name.split("::").last().unwrap() == entrypoint)
+        {
+            self.ast
+                .modules
+                .first_mut()
+                .unwrap()
+                .toplevel_scope
+                .expressions
+                .push(Expression::FunctionCall(FunctionCall {
+                    func_expr: Box::new(Expression::Variable(Variable {
+                        name: entrypoint.func_name.clone(),
+                    })),
+                    arguments: Vec::new(),
+                }));
+        } else {
+            return Err("No main function".to_string());
+        }
+
+        std::fs::create_dir_all(path.parent().unwrap());
         let mut outfile =
-            std::fs::File::create(path).map_err(|_| format!("Cannot open out file"))?;
+            std::fs::File::create(path).map_err(|_| format!("Cannot open out file {:?}", path))?;
 
         for module in self.ast.modules.iter().rev() {
             println!("transpiling {:?}", module.module_name);
