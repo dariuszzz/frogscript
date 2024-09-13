@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::*;
 use crate::lexer::{Identifier, Lexer, Literal, Token, TokenKind};
+use crate::pond::Pond;
 
 #[derive(Debug, Clone, Default)]
 pub struct Program {
@@ -14,22 +15,14 @@ pub struct Parser {
     pub tokens: Vec<Token>,
     pub current: usize,
     pub expr_start: usize,
-    pub path: PathBuf,
-    pub modules_to_parse: Vec<String>,
-    pub parsed_modules: Vec<String>,
-    pub current_module: String,
 }
 
 impl Parser {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
             tokens: Vec::new(),
             current: 0,
             expr_start: 0,
-            path,
-            modules_to_parse: vec!["core".to_string()],
-            parsed_modules: Vec::new(),
-            current_module: String::new(),
         }
     }
 
@@ -227,8 +220,7 @@ impl Parser {
             let line = self.peek(0).start_line;
             let pos = self.peek(0).start_char;
             return Err(format!(
-                "{}:{line}:{pos} Missing tokens in '(export) fn funcname'",
-                self.current_module
+                "{line}:{pos} Missing tokens in '(export) fn funcname'",
             ));
         }
 
@@ -325,10 +317,6 @@ impl Parser {
                             }
                             _ => break,
                         }
-                    }
-
-                    if path.len() > 1 {
-                        self.modules_to_parse.push(path[0].clone());
                     }
 
                     let name = path.join("::");
@@ -434,8 +422,8 @@ impl Parser {
                     TypeKind::Void
                 } else {
                     return Err(format!(
-                        "{}:{}:{} Unexpected token after '(' in type",
-                        self.current_module, token.start_line, token.start_char
+                        "{}:{} Unexpected token after '(' in type",
+                        token.start_line, token.start_char
                     ));
                 }
             }
@@ -559,9 +547,6 @@ impl Parser {
             ..
         } = self.peek(0)
         {
-            if name.len() > 1 {
-                self.modules_to_parse.push(name[0].clone());
-            }
             self.advance();
             let mut call = FunctionCall {
                 func_expr: Box::new(Expression::Variable(Variable {
@@ -714,7 +699,7 @@ impl Parser {
             // FIXME: goofy ahh way to get ranges working, this shouldnt happen in the parser
             lhs = Expression::FunctionCall(FunctionCall {
                 func_expr: Box::new(Expression::Variable(Variable {
-                    name: "util::range".to_owned(),
+                    name: "core::range".to_owned(),
                 })),
                 arguments: vec![
                     lhs,
@@ -729,7 +714,6 @@ impl Parser {
                     },
                 ],
             });
-            self.modules_to_parse.push("util".to_owned());
 
             // lhs = Expression::Range(Range {
             //     start: Box::new(lhs),
@@ -1054,10 +1038,6 @@ impl Parser {
                 }
                 _ => break,
             }
-        }
-
-        if path.len() > 1 {
-            self.modules_to_parse.push(path[0].clone());
         }
 
         let final_name = path.join("::");
@@ -1653,154 +1633,215 @@ impl Parser {
         })
     }
 
-    pub fn parse_file(&mut self, file_name: String) -> Result<Vec<Module>, String> {
-        let mut modules = Vec::new();
-        self.modules_to_parse.push(file_name);
+    fn parse_module(
+        &mut self,
+        original_indent: usize,
+        curr_module_name: &str,
+        modules: &mut Vec<Module>,
+    ) -> Result<(), String> {
+        let mut current_module = Module {
+            module_name: curr_module_name.to_string(),
+            ..Default::default()
+        };
 
-        while let Some(module_name) = self.modules_to_parse.pop() {
-            if self.parsed_modules.contains(&module_name) {
-                continue;
-            }
-            self.current_module = module_name.clone();
-            println!("parsing {module_name:?}");
+        if original_indent != 0 {
+            self.advance_skip_ws(original_indent);
+            self.current -= 2;
+        }
 
-            let file_path = &self.path.join(format!("{}.fr", module_name.clone()));
-            let mut lexer = Lexer::new(&file_path);
-            let tokens = lexer.parse()?;
-            self.tokens = tokens
-                .into_iter()
-                .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
-                .collect::<Vec<_>>();
+        let curr_indent = match self.peek(0).kind {
+            TokenKind::Indentation(indent) if indent > original_indent => indent,
+            _ if original_indent != 0 => return Err(format!("Module must be indented")),
+            _ => 0,
+        };
 
-            self.current = 0;
-            self.expr_start = 0;
-
-            let mut current_module = Module {
-                module_name,
-                type_defs: Vec::new(),
-                function_defs: Vec::new(),
-                toplevel_scope: CodeBlock::default(),
-            };
-
-            while !self.is_at_end() {
-                self.expr_start = self.current;
-                let t = self.peek(0);
-                match t.kind {
-                    TokenKind::EOF => break,
-                    TokenKind::ParenLeft => {
-                        let expr = self.parse_expression(0)?;
-                        current_module.toplevel_scope.expressions.push(expr);
+        loop {
+            self.expr_start = self.current;
+            let t = self.peek(0);
+            let next = self.peek(1);
+            match t.kind {
+                TokenKind::EOF => break,
+                TokenKind::ParenLeft => {
+                    let expr = self.parse_expression(curr_indent)?;
+                    current_module.toplevel_scope.expressions.push(expr);
+                }
+                TokenKind::DoubleColon => {
+                    let func_def = self.parse_fn_with_implicits(&mut current_module)?;
+                    current_module.function_defs.push(func_def);
+                }
+                TokenKind::Newline => {
+                    self.advance();
+                }
+                TokenKind::Dollar => todo!(),
+                TokenKind::Indentation(indent) => {
+                    if indent < curr_indent {
+                        break;
                     }
-                    TokenKind::DoubleColon => {
-                        let func_def = self.parse_fn_with_implicits(&mut current_module)?;
-                        current_module.function_defs.push(func_def);
+                    if indent > curr_indent {
+                        return Err(format!("Code block has inconsistent indentation"));
                     }
-                    TokenKind::Newline => {
-                        self.advance();
+                    self.advance();
+                }
+                TokenKind::Literal(_) => {
+                    let expr = self.parse_expression(curr_indent)?;
+                    current_module.toplevel_scope.expressions.push(expr);
+                }
+                TokenKind::JS => {
+                    let expr = self.parse_js(curr_indent)?;
+                    current_module.toplevel_scope.expressions.push(expr);
+                }
+                TokenKind::Identifier(iden) => match iden {
+                    Identifier::Type => {
+                        let type_def = self.parse_type_def()?;
+                        current_module.type_defs.push(type_def);
                     }
-                    TokenKind::Dollar => todo!(),
-                    TokenKind::Indentation(_) => {
-                        self.advance();
-                    }
-                    TokenKind::Literal(_) => {
-                        let expr = self.parse_expression(0)?;
-                        current_module.toplevel_scope.expressions.push(expr);
-                    }
-                    TokenKind::JS => {
-                        let expr = self.parse_js(0)?;
-                        current_module.toplevel_scope.expressions.push(expr);
-                    }
-                    TokenKind::Identifier(iden) => match iden {
-                        Identifier::Type => {
+                    Identifier::Export => match self.peek(1).kind {
+                        TokenKind::Identifier(Identifier::Type) => {
                             let type_def = self.parse_type_def()?;
                             current_module.type_defs.push(type_def);
                         }
-                        Identifier::Export => match self.peek(1).kind {
-                            TokenKind::Identifier(Identifier::Type) => {
-                                let type_def = self.parse_type_def()?;
-                                current_module.type_defs.push(type_def);
-                            }
-                            TokenKind::Identifier(Identifier::Fn) => {
-                                let func_def = self.parse_fn_no_implicits(Vec::new())?;
-                                current_module.function_defs.push(func_def);
-                            }
-                            TokenKind::Identifier(Identifier::Let) => {
-                                let var_decl = self.parse_variable_decl(0)?;
-                                current_module.toplevel_scope.expressions.push(var_decl);
-                            }
-                            _ => return Err(format!("Invalid token after export")),
-                        },
-                        Identifier::Use => {
-                            todo!("use statements dont work yet")
-                            // let import = self.parse_import()?;
-                            // module.imports.push(import);
-                        }
-                        Identifier::Fn => {
+                        TokenKind::Identifier(Identifier::Fn) => {
                             let func_def = self.parse_fn_no_implicits(Vec::new())?;
                             current_module.function_defs.push(func_def);
                         }
-                        Identifier::Let => {
-                            // TODO: dont allow function calls in top level let bindings
-                            let expr = self.parse_variable_decl(0)?;
-                            current_module.toplevel_scope.expressions.push(expr);
+                        TokenKind::Identifier(Identifier::Let) => {
+                            let var_decl = self.parse_variable_decl(curr_indent)?;
+                            current_module.toplevel_scope.expressions.push(var_decl);
                         }
-                        Identifier::Mut => {
-                            panic!("Mutable global variables are yuck i think");
-                            let expr = self.parse_variable_decl(0)?;
-                            current_module.toplevel_scope.expressions.push(expr);
-                        }
-
-                        Identifier::If | Identifier::For => {
-                            panic!("Top level statements are yuck");
-                            let expr = self.parse_expression(0)?;
-                            current_module.toplevel_scope.expressions.push(expr);
-                        }
-                        Identifier::Custom(iden) => {
-                            println!("{}:{} -> {iden:?}", t.start_line, t.start_char);
-                            panic!("Top level expressions are yuck");
-                            let expr = self.parse_assignment_or_call(0)?;
-
-                            current_module.toplevel_scope.expressions.push(expr);
-                        }
-                        _ => {
-                            self.advance();
-                        }
+                        _ => return Err(format!("Invalid token after export")),
                     },
-                    token => {
-                        eprintln!(
-                            "{:?}:{:?} - Unexpected {token:?}",
-                            t.start_line, t.start_char
-                        );
-                        todo!();
-                    }
-                };
-            }
+                    Identifier::Module => {
+                        //consume module iden
+                        self.advance();
+                        let module_name = match self.advance().kind {
+                            TokenKind::Identifier(Identifier::Custom(name)) => name,
+                            _ => {
+                                return Err(
+                                    "Unexpected identifier, expected module name".to_string()
+                                )
+                            }
+                        };
 
-            self.parsed_modules.push(current_module.module_name.clone());
-            modules.push(current_module);
+                        if !matches!(self.advance().kind, TokenKind::Equal) {
+                            return Err(
+                                "Unexpected token expected `=` after module name".to_string()
+                            );
+                        }
+
+                        if !matches!(self.advance().kind, TokenKind::Newline) {
+                            return Err(
+                                "Unexpected token expected `\n` after module statement".to_string()
+                            );
+                        }
+
+                        self.parse_module(
+                            curr_indent,
+                            &format!("{curr_module_name}::{module_name}"),
+                            modules,
+                        )?;
+                    }
+                    Identifier::Use => {
+                        todo!("use statements dont work yet")
+                        // let import = self.parse_import()?;
+                        // module.imports.push(import);
+                    }
+                    Identifier::Fn => {
+                        let func_def = self.parse_fn_no_implicits(Vec::new())?;
+                        current_module.function_defs.push(func_def);
+                    }
+                    Identifier::Let => {
+                        // TODO: dont allow function calls in top level let bindings
+                        let expr = self.parse_variable_decl(curr_indent)?;
+                        current_module.toplevel_scope.expressions.push(expr);
+                    }
+                    Identifier::Mut => {
+                        panic!("Mutable global variables are yuck i think");
+                        let expr = self.parse_variable_decl(curr_indent)?;
+                        current_module.toplevel_scope.expressions.push(expr);
+                    }
+
+                    Identifier::If | Identifier::For => {
+                        panic!("Top level statements are yuck");
+                        let expr = self.parse_expression(curr_indent)?;
+                        current_module.toplevel_scope.expressions.push(expr);
+                    }
+                    Identifier::Custom(iden) => {
+                        println!("{}:{} -> {iden:?}", t.start_line, t.start_char);
+                        panic!("Top level expressions are yuck");
+                        let expr = self.parse_assignment_or_call(curr_indent)?;
+
+                        current_module.toplevel_scope.expressions.push(expr);
+                    }
+                    _ => {
+                        self.advance();
+                    }
+                },
+                token => {
+                    eprintln!(
+                        "{:?}:{:?} - Unexpected {token:?}",
+                        t.start_line, t.start_char
+                    );
+                    todo!();
+                }
+            };
         }
 
-        // add a main() method invocation at the end of the compiled module
-        if modules
-            .first()
-            .unwrap()
-            .function_defs
-            .iter()
-            .any(|f| f.func_name == "main")
-        {
-            modules
-                .first_mut()
-                .unwrap()
-                .toplevel_scope
-                .expressions
-                .push(Expression::FunctionCall(FunctionCall {
-                    func_expr: Box::new(Expression::Variable(Variable {
-                        name: "main".to_string(),
-                    })),
-                    arguments: Vec::new(),
-                }));
+        modules.push(current_module);
+
+        Ok(())
+    }
+
+    pub fn parse_file(&mut self, pond_name: &str, file_path: &Path) -> Result<Vec<Module>, String> {
+        let mut lexer = Lexer::new(&file_path);
+        let tokens = lexer.parse()?;
+        self.tokens = tokens
+            .into_iter()
+            .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
+            .collect::<Vec<_>>();
+
+        self.current = 0;
+        self.expr_start = 0;
+
+        let mut modules = vec![];
+
+        while !self.is_at_end() {
+            self.parse_module(0, pond_name, &mut modules)?;
         }
 
         Ok(modules)
+    }
+
+    pub fn parse_pond(&mut self, pond: &Pond) -> Result<Vec<Module>, String> {
+        let files = pond.get_pond_files()?;
+
+        let mut modules: Vec<Module> = Vec::new();
+        for file in &files {
+            let mut file_modules = self.parse_file(&pond.name, file)?;
+            modules.append(&mut file_modules)
+        }
+
+        //merge modules
+        let mut merged_modules: Vec<Module> = Vec::new();
+        for mut module in modules {
+            let existing_mod = merged_modules
+                .iter_mut()
+                .find(|m| m.module_name == module.module_name);
+
+            match existing_mod {
+                Some(existing_mod) => {
+                    existing_mod.function_defs.append(&mut module.function_defs);
+                    existing_mod.type_defs.append(&mut module.type_defs);
+                    existing_mod
+                        .toplevel_scope
+                        .expressions
+                        .append(&mut module.toplevel_scope.expressions)
+                }
+                None => {
+                    merged_modules.push(module);
+                }
+            }
+        }
+
+        Ok(merged_modules)
     }
 }

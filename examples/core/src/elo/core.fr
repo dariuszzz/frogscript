@@ -1,0 +1,17 @@
+export fn deep_copy(x ()) -> () = @js("return structuredClone(" x ");")
+export fn print(x ()) = @js("console.log(" x ")")
+
+module io =
+  export fn nested_print(x ()) = @js("console.log(" x ")")
+
+  module elo =
+    fn super() = ...
+
+export fn range(start int, end int) =
+    return @js("
+        (function*() {
+            for(let i = " start "; i < " end "; i++) {
+                yield i;
+            }
+        })()
+    ")

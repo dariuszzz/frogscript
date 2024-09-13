@@ -1,0 +1,11 @@
+name "test"
+version "0.1"
+
+dependencies {
+    core path="../core/"
+}
+
+targets {
+    main "./src/main.fr"
+    another "./src/main.fr" func="another_func" outfile="./out/siema.js"
+}

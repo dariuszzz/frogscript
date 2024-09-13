@@ -1,2 +1,0 @@
-export fn deep_copy(x ()) -> () = @js("return structuredClone(" x ");")
-export fn print(x ()) = @js("console.log(" x ")")
