@@ -920,6 +920,9 @@ impl SemanticAnalyzer {
                 self.enforce_mutability_expr(mutable_vars, &expr.lhs)?;
             }
             Expression::Lambda(expr) => {
+                for arg in &expr.argument_list {
+                    mutable_vars.insert(arg.arg_name.clone());
+                }
                 self.enforce_mutability_codeblock(mutable_vars, &expr.function_body)?
             }
             Expression::If(expr) => {
@@ -969,6 +972,10 @@ impl SemanticAnalyzer {
         for module in &program.modules {
             for func in &module.function_defs {
                 let mut mutable_vars: HashSet<String> = HashSet::new();
+
+                for arg in &func.argument_list {
+                    mutable_vars.insert(arg.arg_name.clone());
+                }
                 self.enforce_mutability_codeblock(&mut mutable_vars, &func.function_body)?;
             }
         }

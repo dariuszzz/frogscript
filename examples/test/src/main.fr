@@ -1,7 +1,21 @@
 fn main =
     let text = "Siema"
 
-    core::print(text)
+    mut arr = []
+
+    for i in 0..4:
+        core::array::push(arr, i)
+        core::print(text)
+
+    for el in arr:
+        core::print(el)
+
+    core::array::map(arr, fn(x) return x * x)
+    core::print(arr)
+
+    let filtered = core::array::filter(arr, fn(x) return x > 4)
+    core::print(filtered)
+
     core::io::nested_print("elo")
     core::io::same_module_diff_file()
 

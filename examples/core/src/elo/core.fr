@@ -15,3 +15,27 @@ export fn range(start int, end int) =
             }
         })()
     ")
+
+
+module array =
+    export fn push(arr [x], el x) =
+        return @js(arr ".push(" el ")")
+
+    export fn pop(arr [x], el x) =
+        return @js(arr ".pop(" el ")")
+
+    export fn len(arr [x], el x) -> int =
+        return @js(arr ".length")
+
+    export fn map(arr [x], f fn(x -> x)) =
+        for i in 0..len(arr):
+            arr[i] = f(arr[i])
+
+    export fn filter(arr [x], f fn(x -> bool)) -> [x] =
+        mut new_arr = []
+
+        for el in arr:
+            if f(el) == true:
+                new_arr.push(el)
+
+        return new_arr
