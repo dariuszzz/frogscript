@@ -1,3 +1,7 @@
 /target
 Cargo.lock
 *.js
+.DS_Store
+._.DS_Store
+**/.DS_Store
+**/._.DS_Store
