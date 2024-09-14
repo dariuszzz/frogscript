@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
     f64::consts::PI,
     fmt::Debug,
@@ -7,8 +8,8 @@ use std::{
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
-    Arena, BinaryOperation, CustomType, FunctionType, Lambda, Module, NamedStruct, StructDef,
-    StructField, Type, TypeKind,
+    Arena, BinaryOperation, CustomType, FunctionType, Lambda, Literal, Module, NamedStruct,
+    StructDef, StructField, Type, TypeKind,
 };
 
 #[derive(Debug, Clone)]
@@ -49,358 +50,885 @@ pub struct SemanticAnalyzer {
 }
 
 impl SemanticAnalyzer {
-    /*
+    // pub fn typecheck(&mut self, expr: &mut Expression, module: &Module) -> Result<Type, String> {
+    //     match expr {
+    //         Expression::VariableDecl(var_decl) => {
+    //             let rhs_type = self.typecheck(&mut var_decl.var_value, module)?;
 
-    pub fn typecheck(&mut self, expr: &mut Expression, module: &Module) -> Result<Type, String> {
-        match expr {
-            Expression::VariableDecl(var_decl) => {
-                let rhs_type = self.typecheck(&mut var_decl.var_value, module)?;
+    //             if let TypeKind::Infer = var_decl.var_type.type_kind {
+    //                 var_decl.var_type = rhs_type.clone();
+    //             } else if var_decl.var_type != rhs_type {
+    //                 return Err(format!("Invalid rhs type in var decl"));
+    //             }
 
-                if let TypeKind::Infer = var_decl.var_type.type_kind {
-                    var_decl.var_type = rhs_type.clone();
-                } else if var_decl.var_type != rhs_type {
-                    return Err(format!("Invalid rhs type in var decl"));
+    //             Ok(rhs_type)
+    //         }
+    //         Expression::Literal(literal) => {
+    //             let type_kind = match literal {
+    //                 crate::Literal::String(_) => TypeKind::String,
+    //                 crate::Literal::Int(_) => TypeKind::Int,
+    //                 crate::Literal::Uint(_) => TypeKind::Uint,
+    //                 crate::Literal::Float(_) => TypeKind::Float,
+    //                 crate::Literal::Boolean(_) => TypeKind::Boolean,
+    //             };
+
+    //             Ok(Type {
+    //                 type_kind,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             })
+    //         }
+    //         Expression::BinaryOp(bin_op) => {
+    //             let lhs_type = self.typecheck(&mut bin_op.lhs, module)?;
+    //             let rhs_type = self.typecheck(&mut bin_op.rhs, module)?;
+
+    //             let int_type = Type {
+    //                 type_kind: TypeKind::Int,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+    //             let uint_type = Type {
+    //                 type_kind: TypeKind::Uint,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+    //             let float_type = Type {
+    //                 type_kind: TypeKind::Float,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+    //             let bool_type = Type {
+    //                 type_kind: TypeKind::Boolean,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+
+    //             match bin_op.op {
+    //                 BinaryOperation::Add
+    //                 | BinaryOperation::Subtract
+    //                 | BinaryOperation::Multiply
+    //                 | BinaryOperation::Divide
+    //                 | BinaryOperation::Less
+    //                 | BinaryOperation::LessEqual
+    //                 | BinaryOperation::Greater
+    //                 | BinaryOperation::GreaterEqual
+    //                 | BinaryOperation::Power => {
+    //                     if lhs_type != int_type && lhs_type != uint_type && lhs_type != float_type {
+    //                         return Err(format!(
+    //                             "Operands to this binary operation must be int/float/uint"
+    //                         ));
+    //                     }
+    //                 }
+    //                 BinaryOperation::Equal
+    //                 | BinaryOperation::And
+    //                 | BinaryOperation::Or
+    //                 | BinaryOperation::NotEqual => {
+    //                     if lhs_type != bool_type {
+    //                         return Err(format!("Operands to this binary operation must be bool"));
+    //                     }
+    //                 }
+    //             }
+
+    //             if lhs_type != rhs_type {
+    //                 return Err(format!("Binary op operands are of different types"));
+    //             }
+
+    //             Ok(lhs_type.clone())
+    //         }
+    //         Expression::UnaryOp(unary) => self.typecheck(&mut unary.operand, module),
+    //         Expression::FunctionCall(func_call) => {
+    //             let FunctionCall {
+    //                 func_expr,
+    //                 arguments,
+    //             } = func_call;
+
+    //             let function_symbol = self.typecheck(func_expr, module)?;
+
+    //             let func_arg_types =
+    //                 if let TypeKind::Function(func_type) = function_symbol.type_kind.clone() {
+    //                     func_type.args.clone()
+    //                 } else {
+    //                     unreachable!()
+    //                 };
+
+    //             for (i, arg) in arguments.iter_mut().enumerate() {
+    //                 let arg_type = self.typecheck(arg, module)?;
+
+    //                 if arg_type != func_arg_types[i] {
+    //                     return Err(format!("Invalid arg type in function call"));
+    //                 }
+    //             }
+
+    //             Ok(function_symbol)
+    //         }
+    //         Expression::Variable(variable) => {
+    //             println!("{:?}", variable.name);
+    //             println!("{:?}", self.symbol_table);
+    //             let var_type = self.find_external_symbol(SymbolType::Identifier, &variable.name)[0]
+    //                 .value_type
+    //                 .clone();
+
+    //             Ok(var_type)
+    //         }
+    //         Expression::Return(ret) => self.typecheck(ret, module),
+    //         Expression::Assignment(assignment) => {
+    //             let lhs_type = self.typecheck(&mut assignment.lhs, module)?;
+    //             let rhs_type = self.typecheck(&mut assignment.rhs, module)?;
+
+    //             if lhs_type != rhs_type {
+    //                 return Err(format!("Assignment operands are of different types"));
+    //             }
+
+    //             Ok(lhs_type.clone())
+    //         }
+    //         Expression::AnonStruct(anon) => {
+    //             let mut struct_type = StructDef { fields: Vec::new() };
+
+    //             for (name, field) in &mut anon.fields {
+    //                 struct_type.fields.push(StructField {
+    //                     field_name: name.clone(),
+    //                     field_type: self.typecheck(field, module)?,
+    //                     is_final: false,
+    //                 });
+    //             }
+
+    //             Ok(Type {
+    //                 type_kind: TypeKind::Struct(struct_type),
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             })
+    //         }
+    //         Expression::ArrayLiteral(arr) => {
+    //             if arr.elements.len() > 0 {
+    //                 let arr_type = self.typecheck(&mut arr.elements[0], module)?;
+
+    //                 for elem in &mut arr.elements {
+    //                     let elem_type = self.typecheck(elem, module)?;
+
+    //                     if arr_type != elem_type {
+    //                         return Err(format!("Elements in array arent all of the same type"));
+    //                     }
+    //                 }
+
+    //                 Ok(arr_type)
+    //             } else {
+    //                 return Err(format!("Cannot infer type of array"));
+    //                 // Ok(Type {
+    //                 //     type_kind: TypeKind::Infer,
+    //                 //     is_reference: false,
+    //                 //     is_structural: false,
+    //                 // })
+    //             }
+    //         }
+    //         Expression::ArrayAccess(arr_access) => {
+    //             if let TypeKind::Array(inner) =
+    //                 self.typecheck(&mut arr_access.expr, module)?.type_kind
+    //             {
+    //                 let valid_index_type = Type {
+    //                     type_kind: TypeKind::Uint,
+    //                     is_reference: false,
+    //                     is_structural: false,
+    //                 };
+    //                 if self.typecheck(&mut arr_access.index, module)? != valid_index_type {
+    //                     return Err(format!("Array access index must be a uint"));
+    //                 }
+
+    //                 Ok(inner.as_ref().clone())
+    //             } else {
+    //                 return Err(format!("Array access operator is used on non-array type"));
+    //             }
+    //         }
+    //         Expression::FieldAccess(field_access) => {
+    //             if let TypeKind::Struct(struct_type) =
+    //                 self.typecheck(&mut field_access.expr, module)?.type_kind
+    //             {
+    //                 let mut field_type = None;
+    //                 for field in &struct_type.fields {
+    //                     if field.field_name == field_access.field {
+    //                         field_type = Some(field.field_type.clone());
+    //                         break;
+    //                     }
+    //                 }
+
+    //                 if field_type.is_none() {
+    //                     return Err(format!("Field {} doesn't exist", field_access.field));
+    //                 }
+
+    //                 Ok(field_type.unwrap())
+    //             } else {
+    //                 return Err(format!("Field access is only possible on structs"));
+    //             }
+    //         }
+    //         Expression::NamedStruct(named_struct) => {
+    //             let precast_type = self.typecheck(
+    //                 &mut Expression::AnonStruct(named_struct.struct_literal.clone()),
+    //                 module,
+    //             )?;
+
+    //             let casted_type = self
+    //                 .find_external_symbol(SymbolType::Type, &named_struct.casted_to)[0]
+    //                 .value_type
+    //                 .clone();
+
+    //             match (precast_type.type_kind, casted_type.type_kind.clone()) {
+    //                 (TypeKind::Struct(precast), TypeKind::Struct(casted)) => {
+    //                     for field in &precast.fields {
+    //                         if !casted.fields.contains(field) {
+    //                             return Err(format!(
+    //                                 "Field {} does not exist on {}",
+    //                                 field.field_name, named_struct.casted_to
+    //                             ));
+    //                         }
+    //                     }
+
+    //                     for field in &casted.fields {
+    //                         if !precast.fields.contains(field) {
+    //                             return Err(format!(
+    //                                 "Field {} is missing from struct literal",
+    //                                 field.field_name
+    //                             ));
+    //                         }
+    //                     }
+    //                 }
+    //                 _ => {
+    //                     return Err(format!(
+    //                         "Named struct doesn't consist of a struct type and a struct literal"
+    //                     ))
+    //                 }
+    //             }
+
+    //             Ok(casted_type)
+    //         }
+    //         Expression::Lambda(lambda) => {
+    //             let mut lambda_type = FunctionType {
+    //                 env_args: Vec::new(),
+    //                 args: Vec::new(),
+    //                 ret: Box::new(lambda.return_type.clone()),
+    //             };
+
+    //             for arg in &lambda.argument_list {
+    //                 let arg_type = arg.arg_type.clone();
+    //                 if arg.is_env {
+    //                     lambda_type.env_args.push(arg_type);
+    //                 } else {
+    //                     lambda_type.args.push(arg_type);
+    //                 }
+    //             }
+
+    //             Ok(Type {
+    //                 type_kind: TypeKind::Function(lambda_type),
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             })
+    //         }
+    //         Expression::Range(range) => {
+    //             let lhs_type = self.typecheck(&mut range.start, module)?;
+    //             let rhs_type = self.typecheck(&mut range.end, module)?;
+
+    //             let int_type = Type {
+    //                 type_kind: TypeKind::Int,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+
+    //             let uint_type = Type {
+    //                 type_kind: TypeKind::Uint,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+
+    //             if lhs_type != int_type && lhs_type != uint_type {
+    //                 return Err(format!("Range start and end must be ints or uints"));
+    //             }
+
+    //             if lhs_type != rhs_type {
+    //                 return Err(format!("Assignment operands are of different types"));
+    //             }
+
+    //             Ok(lhs_type.clone())
+    //         }
+    //         Expression::If(if_expr) => {
+    //             let bool_type = Type {
+    //                 type_kind: TypeKind::Boolean,
+    //                 is_reference: false,
+    //                 is_structural: false,
+    //             };
+
+    //             if self.typecheck(&mut if_expr.cond, module)? != bool_type {
+    //                 return Err(format!("If condition must be a boolean"));
+    //             }
+
+    //             let true_type = self.typecheck_codeblock(&mut if_expr.true_branch, module)?;
+    //             if let Some(else_branch) = &mut if_expr.else_branch {
+    //                 let false_type = self.typecheck_codeblock(else_branch, module)?;
+
+    //                 if true_type != false_type {
+    //                     return Err(format!("True and else branches must have the same type"));
+    //                 }
+    //             }
+
+    //             Ok(true_type)
+    //         }
+    //         Expression::For(for_expr) => {
+    //             let iterator_type = if let TypeKind::Array(inner) =
+    //                 self.typecheck(&mut for_expr.iterator, module)?.type_kind
+    //             {
+    //                 inner.as_ref().clone()
+    //             } else {
+    //                 return Err(format!("For expression iterator must be an array"));
+    //             };
+
+    //             if let TypeKind::Infer = for_expr.binding_type.type_kind {
+    //                 for_expr.binding_type = iterator_type.clone();
+    //             } else if iterator_type != for_expr.binding_type {
+    //                 return Err(format!(
+    //                     "For expression iterator must be the same type as binding"
+    //                 ));
+    //             }
+
+    //             let body_type = self.typecheck_codeblock(&mut for_expr.body, module)?;
+
+    //             Ok(body_type)
+    //         }
+    //         Expression::JS(_) => todo!(),
+    //         Expression::Placeholder => todo!(),
+    //         Expression::Break => todo!(),
+    //         Expression::Continue => todo!(),
+    //     }
+    // }
+
+    fn figure_out_unified_type(
+        &mut self,
+        scope: &usize,
+        rhs: &Type,
+        lhs: &Type,
+    ) -> Result<Type, String> {
+        match lhs {
+            lhs if lhs == rhs => return Ok(lhs.clone()),
+            lhs @ Type {
+                type_kind: TypeKind::Infer,
+                ..
+            } if lhs == rhs => return Err(format!("Cant infer type")),
+            lhs @ Type {
+                type_kind: TypeKind::Infer,
+                ..
+            } => return Ok(rhs.clone()),
+            lhs if lhs != rhs => {
+                if matches!(rhs.type_kind, TypeKind::Infer) {
+                    return Ok(lhs.clone());
                 }
 
-                Ok(rhs_type)
+                return Err(format!("Lhs type doesnt equal rhs: {lhs:?} != {rhs:?}"));
             }
-            Expression::Literal(literal) => {
-                let type_kind = match literal {
-                    crate::Literal::String(_) => TypeKind::String,
-                    crate::Literal::Int(_) => TypeKind::Int,
-                    crate::Literal::Uint(_) => TypeKind::Uint,
-                    crate::Literal::Float(_) => TypeKind::Float,
-                    crate::Literal::Boolean(_) => TypeKind::Boolean,
-                };
+            _ => return Err(format!("Lhs type doesnt equal rhs: {lhs:?} != {rhs:?}")),
+        }
+    }
 
-                Ok(Type {
-                    type_kind,
-                    is_reference: false,
-                    is_structural: false,
-                })
+    fn typecheck_expr(&mut self, scope: &mut usize, expr: &mut Expression) -> Result<Type, String> {
+        match expr {
+            Expression::VariableDecl(expr) => {
+                let rhs = self.typecheck_expr(scope, &mut expr.var_value)?;
+                let unified = self.figure_out_unified_type(scope, &rhs, &expr.var_type)?;
+                expr.var_type = unified.clone();
+                self.set_symbol_type(
+                    *scope,
+                    &expr.var_name,
+                    SymbolType::Identifier,
+                    unified.clone(),
+                )?;
+                return Ok(unified);
             }
-            Expression::BinaryOp(bin_op) => {
-                let lhs_type = self.typecheck(&mut bin_op.lhs, module)?;
-                let rhs_type = self.typecheck(&mut bin_op.rhs, module)?;
+            Expression::Variable(expr) => {
+                let name_parts = expr.name.split("::").collect::<Vec<_>>();
+                let module_parts = name_parts
+                    .clone()
+                    .into_iter()
+                    .take(name_parts.len() - 1)
+                    .collect::<Vec<_>>();
+                let module_name = module_parts.join("::");
 
-                let int_type = Type {
-                    type_kind: TypeKind::Int,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let uint_type = Type {
-                    type_kind: TypeKind::Uint,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let float_type = Type {
-                    type_kind: TypeKind::Float,
-                    is_reference: false,
-                    is_structural: false,
-                };
-                let bool_type = Type {
-                    type_kind: TypeKind::Boolean,
-                    is_reference: false,
-                    is_structural: false,
+                let scope_idx = if name_parts.len() == 1 {
+                    scope.clone()
+                } else {
+                    let scope = self
+                        .module_to_scope
+                        .get(&module_name)
+                        .expect("Symbol table not built");
+
+                    scope.clone()
                 };
 
-                match bin_op.op {
-                    BinaryOperation::Add
-                    | BinaryOperation::Subtract
-                    | BinaryOperation::Multiply
-                    | BinaryOperation::Divide
-                    | BinaryOperation::Less
-                    | BinaryOperation::LessEqual
+                match self.find_symbol_recursive(
+                    scope_idx,
+                    &name_parts.last().unwrap(),
+                    SymbolType::Identifier,
+                ) {
+                    Some(symbol) => return Ok(symbol.value_type),
+                    None => return Err(format!("Couldnt find symbol `{}`", expr.name)),
+                }
+            }
+            Expression::Literal(lit) => {
+                let kind = match lit {
+                    Literal::String(_) => TypeKind::String,
+                    Literal::Int(_) => TypeKind::Int,
+                    Literal::Uint(_) => TypeKind::Uint,
+                    Literal::Float(_) => TypeKind::Float,
+                    Literal::Boolean(_) => TypeKind::Boolean,
+                };
+
+                return Ok(Type {
+                    type_kind: kind,
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::BinaryOp(expr) => {
+                let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
+                let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
+
+                if lhs == rhs {
+                    return Ok(lhs.clone());
+                }
+
+                let expected_types = match expr.op {
+                    BinaryOperation::And | BinaryOperation::Or => vec![TypeKind::Boolean],
+                    BinaryOperation::Equal | BinaryOperation::NotEqual => vec![
+                        TypeKind::Boolean,
+                        TypeKind::String,
+                        TypeKind::Uint,
+                        TypeKind::Int,
+                        TypeKind::Float,
+                    ],
+                    BinaryOperation::GreaterEqual
                     | BinaryOperation::Greater
-                    | BinaryOperation::GreaterEqual
+                    | BinaryOperation::LessEqual
+                    | BinaryOperation::Less
+                    | BinaryOperation::Add
+                    | BinaryOperation::Subtract
+                    | BinaryOperation::Divide
+                    | BinaryOperation::Multiply
                     | BinaryOperation::Power => {
-                        if lhs_type != int_type && lhs_type != uint_type && lhs_type != float_type {
+                        vec![TypeKind::Int, TypeKind::Uint, TypeKind::Float]
+                    }
+                };
+
+                let unified_ty = match (lhs.type_kind.clone(), rhs.type_kind.clone()) {
+                    (TypeKind::Infer, rhs_k) if expected_types.contains(&rhs_k) => {
+                        if let Expression::Variable(var) = expr.lhs.as_mut() {
+                            self.set_symbol_type(
+                                *scope,
+                                &var.name,
+                                SymbolType::Identifier,
+                                rhs.clone(),
+                            )?;
+
+                            rhs.clone()
+                        } else {
                             return Err(format!(
-                                "Operands to this binary operation must be int/float/uint"
-                            ));
+                                "Binary operation couldnt infer from: {rhs_k:?}, lhs is {:?}", expr.lhs
+                            ))
                         }
                     }
-                    BinaryOperation::Equal
+                    (lhs_k, TypeKind::Infer) if expected_types.contains(&lhs_k) => {
+                        if let Expression::Variable(var) = expr.rhs.as_mut() {
+                            self.set_symbol_type(
+                                *scope,
+                                &var.name,
+                                SymbolType::Identifier,
+                                lhs.clone(),
+                            )?;
+
+                            lhs.clone()
+                        } else {
+                            return Err(format!(
+                                "Binary operation couldnt infer from: {lhs_k:?}, rhs is {:?}", expr.rhs
+                            ))
+                        }
+                    }
+                    (lhs_k, rhs_k) if expected_types.contains(&lhs_k) && lhs_k == rhs_k => lhs.clone(),
+                    (lhs_k, rhs_k) if lhs_k != rhs_k => {
+                        return Err(format!(
+                            "Binary operation lhs != rhs: {lhs_k:?} != {rhs_k:?}"
+                        ))
+                    }
+                    (lhs_k, rhs_k) => return Err(format!("Binary operation invalid types, found lhs: {lhs_k:?}, rhs: {rhs_k:?} expected both to be any of {expected_types:?}")),
+                };
+
+                let expr_ty = match expr.op {
+                    BinaryOperation::GreaterEqual
+                    | BinaryOperation::Greater
+                    | BinaryOperation::LessEqual
+                    | BinaryOperation::Less
                     | BinaryOperation::And
                     | BinaryOperation::Or
-                    | BinaryOperation::NotEqual => {
-                        if lhs_type != bool_type {
-                            return Err(format!("Operands to this binary operation must be bool"));
+                    | BinaryOperation::Equal
+                    | BinaryOperation::NotEqual => Type {
+                        type_kind: TypeKind::Boolean,
+                        is_reference: false,
+                        is_structural: false,
+                    },
+                    BinaryOperation::Add
+                    | BinaryOperation::Subtract
+                    | BinaryOperation::Divide
+                    | BinaryOperation::Multiply
+                    | BinaryOperation::Power => unified_ty.clone(),
+                };
+
+                return Ok(expr_ty);
+            }
+            Expression::UnaryOp(expr) => {
+                let ty = self.typecheck_expr(scope, &mut expr.operand)?;
+                return Ok(ty);
+            }
+            Expression::FunctionCall(func) => {
+                let call_ty = self.typecheck_expr(scope, &mut func.func_expr)?;
+
+                let mut arg_types = Vec::new();
+                for arg in &mut func.arguments {
+                    let arg_ty = self.typecheck_expr(scope, arg)?;
+                    arg_types.push(arg_ty);
+                }
+
+                match call_ty {
+                    Type {
+                        type_kind: TypeKind::Function(FunctionType { args, ret, .. }),
+                        ..
+                    } => {
+                        for (expected, given) in args.iter().zip(arg_types.iter_mut()) {
+                            if let TypeKind::Infer = given.type_kind {
+                                *given = expected.clone();
+                            }
+                        }
+
+                        if args == arg_types {
+                            return Ok(*ret);
+                        }
+                        return Err(format!(
+                            "Invalid function args {:?}, {:?} != {:?}",
+                            func.func_expr, arg_types, args
+                        ));
+                    }
+                    _ => return Err(format!("Invalid function args {:?}", func.func_expr)),
+                }
+            }
+            Expression::Return(expr) => {
+                let ty = self.typecheck_expr(scope, expr)?;
+                return Ok(ty);
+            }
+            Expression::Assignment(expr) => {
+                let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
+                let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
+                if lhs == rhs {
+                    return Ok(lhs.clone());
+                }
+
+                let unified = self.figure_out_unified_type(scope, &rhs, &lhs)?;
+
+                match (lhs.type_kind.clone(), rhs.type_kind.clone()) {
+                    (TypeKind::Infer, _) => {
+                        if let Expression::Variable(var) = expr.lhs.as_mut() {
+                            self.set_symbol_type(
+                                *scope,
+                                &var.name,
+                                SymbolType::Identifier,
+                                unified.clone(),
+                            )?;
                         }
                     }
-                }
-
-                if lhs_type != rhs_type {
-                    return Err(format!("Binary op operands are of different types"));
-                }
-
-                Ok(lhs_type.clone())
-            }
-            Expression::UnaryOp(unary) => self.typecheck(&mut unary.operand, module),
-            Expression::FunctionCall(func_call) => {
-                let FunctionCall {
-                    func_expr,
-                    arguments,
-                } = func_call;
-
-                let function_symbol = self.typecheck(func_expr, module)?;
-
-                let func_arg_types =
-                    if let TypeKind::Function(func_type) = function_symbol.type_kind.clone() {
-                        func_type.args.clone()
-                    } else {
-                        unreachable!()
-                    };
-
-                for (i, arg) in arguments.iter_mut().enumerate() {
-                    let arg_type = self.typecheck(arg, module)?;
-
-                    if arg_type != func_arg_types[i] {
-                        return Err(format!("Invalid arg type in function call"));
+                    (_, TypeKind::Infer) => {
+                        if let Expression::Variable(var) = expr.rhs.as_mut() {
+                            self.set_symbol_type(
+                                *scope,
+                                &var.name,
+                                SymbolType::Identifier,
+                                unified.clone(),
+                            )?;
+                        }
                     }
+                    (t1, t2) => unreachable!("Assignment lhs != rhs, shouldnt be reachable"),
                 }
-
-                Ok(function_symbol)
             }
-            Expression::Variable(variable) => {
-                println!("{:?}", variable.name);
-                println!("{:?}", self.symbol_table);
-                let var_type = self.find_external_symbol(SymbolType::Identifier, &variable.name)[0]
-                    .value_type
-                    .clone();
+            Expression::AnonStruct(expr) => {
+                let mut fields = Vec::new();
 
-                Ok(var_type)
-            }
-            Expression::Return(ret) => self.typecheck(ret, module),
-            Expression::Assignment(assignment) => {
-                let lhs_type = self.typecheck(&mut assignment.lhs, module)?;
-                let rhs_type = self.typecheck(&mut assignment.rhs, module)?;
-
-                if lhs_type != rhs_type {
-                    return Err(format!("Assignment operands are of different types"));
-                }
-
-                Ok(lhs_type.clone())
-            }
-            Expression::AnonStruct(anon) => {
-                let mut struct_type = StructDef { fields: Vec::new() };
-
-                for (name, field) in &mut anon.fields {
-                    struct_type.fields.push(StructField {
-                        field_name: name.clone(),
-                        field_type: self.typecheck(field, module)?,
+                // TODO this will fail because this isnt guaranteed to create the same field order
+                for field in &mut expr.fields {
+                    fields.push(StructField {
+                        field_name: field.0.clone(),
+                        field_type: self.typecheck_expr(scope, field.1)?,
                         is_final: false,
                     });
                 }
 
-                Ok(Type {
-                    type_kind: TypeKind::Struct(struct_type),
+                let ty = Type {
+                    type_kind: TypeKind::Struct(StructDef { fields }),
                     is_reference: false,
                     is_structural: false,
-                })
+                };
+
+                return Ok(ty);
             }
-            Expression::ArrayLiteral(arr) => {
-                if arr.elements.len() > 0 {
-                    let arr_type = self.typecheck(&mut arr.elements[0], module)?;
-
-                    for elem in &mut arr.elements {
-                        let elem_type = self.typecheck(elem, module)?;
-
-                        if arr_type != elem_type {
-                            return Err(format!("Elements in array arent all of the same type"));
+            Expression::ArrayLiteral(expr) => {
+                let mut last_type = None;
+                for el in &mut expr.elements {
+                    let el_ty = self.typecheck_expr(scope, el)?;
+                    match last_type {
+                        None => last_type = Some(el_ty),
+                        Some(last) if last != el_ty => {
+                            return Err(format!("Incosistent array literal types"))
                         }
+                        _ => {}
                     }
-
-                    Ok(arr_type)
-                } else {
-                    return Err(format!("Cannot infer type of array"));
-                    // Ok(Type {
-                    //     type_kind: TypeKind::Infer,
-                    //     is_reference: false,
-                    //     is_structural: false,
-                    // })
                 }
-            }
-            Expression::ArrayAccess(arr_access) => {
-                if let TypeKind::Array(inner) =
-                    self.typecheck(&mut arr_access.expr, module)?.type_kind
-                {
-                    let valid_index_type = Type {
-                        type_kind: TypeKind::Uint,
+
+                let arr_ty = match last_type {
+                    None => Type {
+                        type_kind: TypeKind::Infer,
                         is_reference: false,
                         is_structural: false,
-                    };
-                    if self.typecheck(&mut arr_access.index, module)? != valid_index_type {
-                        return Err(format!("Array access index must be a uint"));
-                    }
+                    },
+                    Some(ty) => ty,
+                };
 
-                    Ok(inner.as_ref().clone())
-                } else {
-                    return Err(format!("Array access operator is used on non-array type"));
-                }
+                return Ok(Type {
+                    type_kind: TypeKind::Array(Box::new(arr_ty)),
+                    is_reference: false,
+                    is_structural: false,
+                });
             }
-            Expression::FieldAccess(field_access) => {
-                if let TypeKind::Struct(struct_type) =
-                    self.typecheck(&mut field_access.expr, module)?.type_kind
-                {
-                    let mut field_type = None;
-                    for field in &struct_type.fields {
-                        if field.field_name == field_access.field {
-                            field_type = Some(field.field_type.clone());
-                            break;
+            Expression::ArrayAccess(expr) => {
+                let arr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
+                let index_ty = self.typecheck_expr(scope, &mut expr.index)?;
+
+                let inner_ty = match arr_ty {
+                    Type {
+                        type_kind: TypeKind::Array(inner),
+                        ..
+                    } => *inner,
+                    _ => return Err(format!("Tried to index non array")),
+                };
+
+                // check for negative idx
+                match index_ty.type_kind {
+                    TypeKind::Int => {}
+                    TypeKind::Uint => {}
+                    TypeKind::Any => {}
+                    TypeKind::Infer => {
+                        if let Expression::Variable(var) = expr.index.as_ref() {
+                            self.set_symbol_type(
+                                *scope,
+                                &var.name,
+                                SymbolType::Identifier,
+                                Type {
+                                    type_kind: TypeKind::Uint,
+                                    is_reference: false,
+                                    is_structural: false,
+                                },
+                            )?;
                         }
                     }
-
-                    if field_type.is_none() {
-                        return Err(format!("Field {} doesn't exist", field_access.field));
-                    }
-
-                    Ok(field_type.unwrap())
-                } else {
-                    return Err(format!("Field access is only possible on structs"));
-                }
-            }
-            Expression::NamedStruct(named_struct) => {
-                let precast_type = self.typecheck(
-                    &mut Expression::AnonStruct(named_struct.struct_literal.clone()),
-                    module,
-                )?;
-
-                let casted_type = self
-                    .find_external_symbol(SymbolType::Type, &named_struct.casted_to)[0]
-                    .value_type
-                    .clone();
-
-                match (precast_type.type_kind, casted_type.type_kind.clone()) {
-                    (TypeKind::Struct(precast), TypeKind::Struct(casted)) => {
-                        for field in &precast.fields {
-                            if !casted.fields.contains(field) {
-                                return Err(format!(
-                                    "Field {} does not exist on {}",
-                                    field.field_name, named_struct.casted_to
-                                ));
-                            }
-                        }
-
-                        for field in &casted.fields {
-                            if !precast.fields.contains(field) {
-                                return Err(format!(
-                                    "Field {} is missing from struct literal",
-                                    field.field_name
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
+                    ty => {
                         return Err(format!(
-                            "Named struct doesn't consist of a struct type and a struct literal"
+                            "Invalid index type, must be uint/int, found {ty:?} from {:?}",
+                            expr.index
                         ))
                     }
                 }
 
-                Ok(casted_type)
+                return Ok(inner_ty);
             }
-            Expression::Lambda(lambda) => {
-                let mut lambda_type = FunctionType {
-                    env_args: Vec::new(),
-                    args: Vec::new(),
-                    ret: Box::new(lambda.return_type.clone()),
+            Expression::FieldAccess(expr) => {
+                let expr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
+
+                let ty = if let TypeKind::Custom(CustomType { name }) = expr_ty.type_kind {
+                    let symbol = self
+                        .find_symbol_recursive(*scope, &name, SymbolType::Type)
+                        .unwrap();
+                    symbol.value_type
+                } else {
+                    expr_ty
                 };
 
-                for arg in &lambda.argument_list {
-                    let arg_type = arg.arg_type.clone();
-                    if arg.is_env {
-                        lambda_type.env_args.push(arg_type);
+                if let TypeKind::Struct(StructDef { fields }) = &ty.type_kind {
+                    match fields.iter().filter(|f| f.field_name == expr.field).next() {
+                        None => {
+                            return Err(format!(
+                                "Field `{}` doesnt exist on type `{:?}`",
+                                expr.field, ty.type_kind
+                            ))
+                        }
+                        Some(field) => return Ok(field.field_type.clone()),
+                    }
+                }
+            }
+            Expression::NamedStruct(expr) => {
+                let casted_ty = self
+                    .find_symbol_recursive(*scope, &expr.casted_to, SymbolType::Type)
+                    .expect(&format!("Type `{}` doesnt exist", expr.casted_to))
+                    .value_type;
+                let named_fields =
+                    if let TypeKind::Struct(StructDef { fields }) = &casted_ty.type_kind {
+                        fields
                     } else {
-                        lambda_type.args.push(arg_type);
+                        return Err(format!("Type `{}` does not have fields", expr.casted_to));
+                    };
+
+                let mut fields = Vec::new();
+
+                // TODO this will fail because this isnt guaranteed to create the same field order
+                for field in &mut expr.struct_literal.fields {
+                    fields.push(StructField {
+                        field_name: field.0.clone(),
+                        field_type: self.typecheck_expr(scope, field.1)?,
+                        is_final: false,
+                    });
+                }
+
+                if named_fields.len() == fields.len() {
+                    for field in &fields {
+                        if !named_fields.iter().any(|f| f == field) {
+                            return Err(format!("Invalid named struct cast, fields dont match"));
+                        }
                     }
                 }
 
-                Ok(Type {
-                    type_kind: TypeKind::Function(lambda_type),
+                return Ok(Type {
+                    type_kind: TypeKind::Custom(CustomType {
+                        name: expr.casted_to.clone(),
+                    }),
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::Range(expr) => {
+                let start_ty = self.typecheck_expr(scope, &mut expr.start)?;
+                let end_ty = self.typecheck_expr(scope, &mut expr.end)?;
+
+                if matches!(start_ty.type_kind, TypeKind::Int | TypeKind::Uint)
+                    && start_ty == end_ty
+                {
+                    return Ok(Type {
+                        type_kind: TypeKind::Array(Box::new(start_ty.clone())),
+                        is_reference: false,
+                        is_structural: false,
+                    });
+                } else {
+                    return Err(format!("Range start and end must be uint/int"));
+                }
+            }
+            Expression::Lambda(expr) => {
+                *scope += 1;
+                let body_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
+                if body_ty != expr.return_type {
+                    if let TypeKind::Infer = expr.return_type.type_kind {
+                        expr.return_type = body_ty.clone();
+                    } else {
+                        return Err(format!(
+                            "Lambda body return type does not match specified return type {:?} expected {:?}", body_ty, expr.return_type
+                        ));
+                    }
+                }
+
+                let mut arg_types = Vec::new();
+                for arg in &expr.argument_list {
+                    let arg_ty = arg.arg_type.clone();
+                    arg_types.push(arg_ty);
+                }
+
+                return Ok(Type {
+                    type_kind: TypeKind::Function(FunctionType {
+                        env_args: Vec::new(),
+                        args: arg_types,
+                        ret: Box::new(body_ty),
+                    }),
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::JS(expr) => {
+                for expr in expr {
+                    self.typecheck_expr(scope, expr)?;
+                }
+
+                return Ok(Type {
+                    type_kind: TypeKind::Any,
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::If(expr) => {
+                let cond_ty = self.typecheck_expr(scope, &mut expr.cond)?;
+                if !matches!(cond_ty.type_kind, TypeKind::Boolean) {
+                    return Err(format!("If condition must evaluate to boolean"));
+                }
+
+                *scope += 1;
+                let true_ty = self.typecheck_codeblock(scope, &mut expr.true_branch)?;
+                if let Some(else_branch) = &mut expr.else_branch {
+                    *scope += 1;
+                    let else_ty = self.typecheck_codeblock(scope, else_branch)?;
+
+                    if else_ty == true_ty {
+                        return Ok(true_ty);
+                    }
+                }
+
+                return Ok(Type {
+                    type_kind: TypeKind::Void,
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::For(expr) => {
+                let iter_ty = self.typecheck_expr(scope, &mut expr.iterator)?;
+                match iter_ty.type_kind {
+                    TypeKind::Array(inner) => {
+                        self.set_symbol_type(
+                            *scope + 1,
+                            &expr.binding,
+                            SymbolType::Identifier,
+                            *inner,
+                        )?;
+                    }
+                    _ => {
+                        return Err(format!(
+                            "For iterator must be an array, found {:?}",
+                            iter_ty.type_kind
+                        ))
+                    }
+                }
+
+                *scope += 1;
+                let body_ty = self.typecheck_codeblock(scope, &mut expr.body)?;
+
+                return Ok(Type {
+                    type_kind: TypeKind::Void,
+                    is_reference: false,
+                    is_structural: false,
+                });
+            }
+            Expression::Placeholder => {
+                return Ok(Type {
+                    type_kind: TypeKind::Any,
                     is_reference: false,
                     is_structural: false,
                 })
             }
-            Expression::Range(range) => {
-                let lhs_type = self.typecheck(&mut range.start, module)?;
-                let rhs_type = self.typecheck(&mut range.end, module)?;
-
-                let int_type = Type {
-                    type_kind: TypeKind::Int,
-                    is_reference: false,
-                    is_structural: false,
-                };
-
-                let uint_type = Type {
-                    type_kind: TypeKind::Uint,
-                    is_reference: false,
-                    is_structural: false,
-                };
-
-                if lhs_type != int_type && lhs_type != uint_type {
-                    return Err(format!("Range start and end must be ints or uints"));
-                }
-
-                if lhs_type != rhs_type {
-                    return Err(format!("Assignment operands are of different types"));
-                }
-
-                Ok(lhs_type.clone())
-            }
-            Expression::If(if_expr) => {
-                let bool_type = Type {
-                    type_kind: TypeKind::Boolean,
-                    is_reference: false,
-                    is_structural: false,
-                };
-
-                if self.typecheck(&mut if_expr.cond, module)? != bool_type {
-                    return Err(format!("If condition must be a boolean"));
-                }
-
-                let true_type = self.typecheck_codeblock(&mut if_expr.true_branch, module)?;
-                if let Some(else_branch) = &mut if_expr.else_branch {
-                    let false_type = self.typecheck_codeblock(else_branch, module)?;
-
-                    if true_type != false_type {
-                        return Err(format!("True and else branches must have the same type"));
-                    }
-                }
-
-                Ok(true_type)
-            }
-            Expression::For(for_expr) => {
-                let iterator_type = if let TypeKind::Array(inner) =
-                    self.typecheck(&mut for_expr.iterator, module)?.type_kind
-                {
-                    inner.as_ref().clone()
-                } else {
-                    return Err(format!("For expression iterator must be an array"));
-                };
-
-                if let TypeKind::Infer = for_expr.binding_type.type_kind {
-                    for_expr.binding_type = iterator_type.clone();
-                } else if iterator_type != for_expr.binding_type {
-                    return Err(format!(
-                        "For expression iterator must be the same type as binding"
-                    ));
-                }
-
-                let body_type = self.typecheck_codeblock(&mut for_expr.body, module)?;
-
-                Ok(body_type)
-            }
-            Expression::JS(_) => todo!(),
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            Expression::Break => {}
+            Expression::Continue => {}
         }
+
+        Ok(Type {
+            type_kind: TypeKind::Void,
+            is_reference: false,
+            is_structural: false,
+        })
     }
+
     fn typecheck_codeblock(
         &mut self,
+        scope: &mut usize,
         codeblock: &mut CodeBlock,
-        module: &Module,
     ) -> Result<Type, String> {
         let mut last_type = Type {
             type_kind: TypeKind::Void,
@@ -409,506 +937,159 @@ impl SemanticAnalyzer {
         };
 
         for expr in &mut codeblock.expressions {
-            last_type = self.typecheck(expr, module)?;
+            last_type = self.typecheck_expr(scope, expr)?;
         }
 
         Ok(last_type)
     }
 
-    */
-    // pub fn resolve_type_name(
-    //     &mut self,
-    //     module_name: &String,
-    //     local_symbols: &HashMap<String, Symbol>,
-    //     kind: &mut TypeKind,
-    // ) -> Result<(), String> {
-    //     match kind {
-    //         TypeKind::Infer => {}
-    //         TypeKind::Void
-    //         | TypeKind::Int
-    //         | TypeKind::Uint
-    //         | TypeKind::Float
-    //         | TypeKind::String
-    //         | TypeKind::Boolean => {}
-    //         TypeKind::Custom(custom) => {
-    //             let CustomType { name } = custom;
+    pub fn typecheck(&mut self, program: &mut Program) -> Result<(), String> {
+        let mut scope = 0;
+        for module in &mut program.modules {
+            println!("Typechecking {:?}", module.module_name);
+            self.typecheck_codeblock(&mut scope, &mut module.toplevel_scope)?;
 
-    //             let split_name = name.split("::").collect::<Vec<_>>();
-    //             if split_name.len() == 1 {
-    //                 let local_type = local_symbols.get(name);
-    //                 if let Some(symbol) = local_type {
-    //                     if symbol.symbol_type != SymbolType::Type {
-    //                         return Err(format!("Identifier '{name}' exists, but is not a type"));
-    //                     }
-    //                 } else {
-    //                     return Err(format!("Type '{name}' is not defined"));
-    //                 }
-    //             } else {
-    //                 let type_symbol = self.find_external_symbol(SymbolType::Type, &name);
-    //                 if type_symbol.len() == 1 {
-    //                     if !type_symbol[0].exported {
-    //                         return Err(format!("Type '{name}' is defined but not exported"));
-    //                     }
-    //                 } else if type_symbol.len() == 0 {
-    //                     return Err(format!("Type '{name}' is not defined"));
-    //                 } else {
-    //                     return Err(format!("Type '{name}' is ambiguous"));
-    //                 }
-    //             }
-    //         }
-    //         TypeKind::Array(inner) => {
-    //             self.resolve_type_name(module_name, local_symbols, &mut inner.type_kind)?;
-    //         }
-    //         TypeKind::Function(func) => {
-    //             let FunctionType {
-    //                 env_args,
-    //                 args,
-    //                 ret,
-    //             } = func;
+            for func in &mut module.function_defs {
+                scope += 1;
 
-    //             for env_arg in env_args {
-    //                 self.resolve_type_name(module_name, local_symbols, &mut env_arg.type_kind)?;
-    //             }
-    //             for arg in args {
-    //                 self.resolve_type_name(module_name, local_symbols, &mut arg.type_kind)?;
-    //             }
+                let body_ty = self.typecheck_codeblock(&mut scope, &mut func.function_body)?;
 
-    //             self.resolve_type_name(module_name, local_symbols, &mut ret.type_kind)?;
-    //         }
-    //         TypeKind::Struct(struct_type) => {
-    //             let StructDef { fields } = struct_type;
+                if body_ty != func.return_type {
+                    if matches!(func.return_type.type_kind, TypeKind::Infer) {
+                        func.return_type = body_ty.clone();
+                        let old_ret_ty = self
+                            .find_symbol_recursive(
+                                scope - 1,
+                                &func.func_name,
+                                SymbolType::Identifier,
+                            )
+                            .unwrap()
+                            .value_type;
 
-    //             for field in fields {
-    //                 self.resolve_type_name(
-    //                     module_name,
-    //                     local_symbols,
-    //                     &mut field.field_type.type_kind,
-    //                 )?;
-    //             }
-    //         }
-    //     }
+                        if let TypeKind::Function(old_ty) = old_ret_ty.type_kind {
+                            let mut new_ret_type = old_ty;
+                            new_ret_type.ret = Box::new(body_ty.clone());
 
-    //     Ok(())
-    // }
+                            self.set_symbol_type(
+                                scope - 1,
+                                &func.func_name,
+                                SymbolType::Identifier,
+                                Type {
+                                    type_kind: TypeKind::Function(new_ret_type),
+                                    is_reference: false,
+                                    is_structural: false,
+                                },
+                            )?;
+                        }
+                    } else {
+                        return Err(format!(
+                            "Function `{}` body doesnt match return type, ret: {:?} != body: {:?}",
+                            func.func_name, func.return_type, body_ty
+                        ));
+                    }
+                }
+            }
 
-    // pub fn resolve_name_expr(
-    //     &mut self,
-    //     module_name: &String,
-    //     local_symbols: &HashMap<String, Symbol>,
-    //     expr: &mut Expression,
-    // ) -> Result<(), String> {
-    //     match expr {
-    //         Expression::Lambda(lambda) => {
-    //             let Lambda {
-    //                 argument_list,
-    //                 return_type,
-    //                 function_body,
-    //             } = lambda;
+            scope += 1;
+        }
 
-    //             let mut local_symbols = local_symbols.clone();
+        Ok(())
+    }
 
-    //             for arg in argument_list {
-    //                 self.resolve_type_name(
-    //                     module_name,
-    //                     &local_symbols,
-    //                     &mut arg.arg_type.type_kind,
-    //                 )?;
+    fn resolve_type_name(&mut self, scope: &usize, kind: &mut TypeKind) -> Result<(), String> {
+        match kind {
+            TypeKind::Infer => {}
+            TypeKind::Void
+            | TypeKind::Int
+            | TypeKind::Any
+            | TypeKind::Uint
+            | TypeKind::Float
+            | TypeKind::String
+            | TypeKind::Boolean => {}
+            TypeKind::Custom(custom) => {
+                let CustomType { name } = custom;
 
-    //                 local_symbols.insert(
-    //                     arg.arg_name.clone(),
-    //                     Symbol {
-    //                         original_name: arg.arg_name.clone(),
-    //                         symbol_type: SymbolType::Identifier,
-    //                         value_type: arg.arg_type.clone(),
-    //                         exported: false,
-    //                     },
-    //                 );
-    //             }
-    //             self.resolve_type_name(module_name, &local_symbols, &mut return_type.type_kind)?;
-    //             self.resolve_names_codeblock(module_name, &local_symbols, function_body)?;
-    //         }
-    //         Expression::VariableDecl(var_decl) => {
-    //             self.resolve_type_name(
-    //                 module_name,
-    //                 local_symbols,
-    //                 &mut var_decl.var_type.type_kind,
-    //             )?;
-    //             self.resolve_name_expr(module_name, local_symbols, &mut var_decl.var_value)?;
-    //         }
-    //         Expression::Literal(_) => {}
-    //         Expression::BinaryOp(op) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut op.lhs)?;
-    //             self.resolve_name_expr(module_name, local_symbols, &mut op.rhs)?;
-    //         }
-    //         Expression::UnaryOp(op) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut op.operand)?;
-    //         }
-    //         Expression::FunctionCall(func_call) => {
-    //             let FunctionCall {
-    //                 func_expr,
-    //                 arguments,
-    //             } = func_call;
+                let name_parts = name.split("::").collect::<Vec<_>>();
+                let module_parts = name_parts
+                    .clone()
+                    .into_iter()
+                    .take(name_parts.len() - 1)
+                    .collect::<Vec<_>>();
+                let module_name = module_parts.join("::");
 
-    //             //if function comes from another module
-    //             match func_expr.as_mut() {
-    //                 Expression::Variable(Variable { name: func_name }) => {
-    //                     if func_name.split("::").count() > 1 {
-    //                         let identifiers_with_the_same_name =
-    //                             self.find_external_symbol(SymbolType::Identifier, &func_name);
+                let scope_idx = if name_parts.len() == 1 {
+                    scope.clone()
+                } else {
+                    let scope = self
+                        .module_to_scope
+                        .get(&module_name)
+                        .expect("Symbol table not built");
 
-    //                         if identifiers_with_the_same_name.len() == 1 {
-    //                             let iden = identifiers_with_the_same_name[0];
-    //                             if !iden.exported {
-    //                                 return Err(format!("External function '{func_name}' found, but it is not marked as `export`"));
-    //                             }
-    //                             // symbol exists
-    //                         } else if identifiers_with_the_same_name.len() > 1 {
-    //                             return Err(format!("Ambiguous function call '{func_name}'"));
-    //                         } else {
-    //                             return Err(format!(
-    //                                 "External function '{func_name}' is not defined"
-    //                             ));
-    //                         }
-    //                     } else {
-    //                         let local_func = local_symbols.get(func_name);
-    //                         if let Some(symbol) = local_func {
-    //                             if symbol.symbol_type == SymbolType::Type {
-    //                                 return Err(format!("Function '{func_name}' is not defined"));
-    //                             }
-    //                         } else {
-    //                             return Err(format!("Function '{func_name}' is not defined"));
-    //                         }
-    //                     }
-    //                 }
-    //                 expr => self.resolve_name_expr(module_name, local_symbols, expr)?,
-    //             }
+                    scope.clone()
+                };
 
-    //             for arg in arguments {
-    //                 self.resolve_name_expr(module_name, local_symbols, arg)?;
-    //             }
-    //         }
-    //         Expression::Variable(var) => {
-    //             let Variable { name } = var;
+                match self.find_symbol_recursive(
+                    scope_idx,
+                    &name_parts.last().unwrap(),
+                    SymbolType::Type,
+                ) {
+                    Some(_) => return Ok(()),
+                    None => return Err(format!("Type not found `{}`", name)),
+                };
 
-    //             if name.split("::").count() > 1 {
-    //                 let identifiers_with_the_same_name =
-    //                     self.find_external_symbol(SymbolType::Identifier, &name);
+                // let split_name = name.split("::").collect::<Vec<_>>();
+                // if split_name.len() == 1 {
+                //     let local_type = local_symbols.get(name);
+                //     if let Some(symbol) = local_type {
+                //         if symbol.symbol_type != SymbolType::Type {
+                //             return Err(format!("Identifier '{name}' exists, but is not a type"));
+                //         }
+                //     } else {
+                //         return Err(format!("Type '{name}' is not defined"));
+                //     }
+                // } else {
+                //     let type_symbol = self.find_external_symbol(SymbolType::Type, &name);
+                //     if type_symbol.len() == 1 {
+                //         if !type_symbol[0].exported {
+                //             return Err(format!("Type '{name}' is defined but not exported"));
+                //         }
+                //     } else if type_symbol.len() == 0 {
+                //         return Err(format!("Type '{name}' is not defined"));
+                //     } else {
+                //         return Err(format!("Type '{name}' is ambiguous"));
+                //     }
+                // }
+            }
+            TypeKind::Array(inner) => {
+                self.resolve_type_name(scope, &mut inner.type_kind)?;
+            }
+            TypeKind::Function(func) => {
+                let FunctionType {
+                    env_args,
+                    args,
+                    ret,
+                } = func;
 
-    //                 if identifiers_with_the_same_name.len() == 1 {
-    //                     let iden = identifiers_with_the_same_name[0];
-    //                     if !iden.exported {
-    //                         return Err(format!("External variable '{name}' found, but it is not marked as `export`"));
-    //                     }
-    //                     // symbol exists
-    //                 } else if identifiers_with_the_same_name.len() > 1 {
-    //                     return Err(format!("Ambiguous identifier '{name}'"));
-    //                 } else {
-    //                     return Err(format!("External identifier '{name}' is not defined"));
-    //                 }
-    //             } else {
-    //                 let local_func = local_symbols.get(name);
-    //                 if let Some(symbol) = local_func {
-    //                     if symbol.symbol_type != SymbolType::Identifier {
-    //                         return Err(format!("Identifier '{name}' exists, but does not refer to a variable or function"));
-    //                     }
-    //                 } else {
-    //                     return Err(format!("Identifier '{name}' is not defined"));
-    //                 }
-    //             }
-    //         }
-    //         Expression::Return(ret) => self.resolve_name_expr(module_name, local_symbols, ret)?,
-    //         Expression::Assignment(assignment) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut assignment.rhs)?;
-    //         }
-    //         Expression::AnonStruct(anon_struct) => {
-    //             for (_, expr) in &mut anon_struct.fields {
-    //                 self.resolve_name_expr(module_name, local_symbols, expr)?
-    //             }
-    //         }
-    //         Expression::ArrayLiteral(arr) => {
-    //             for expr in &mut arr.elements {
-    //                 self.resolve_name_expr(module_name, local_symbols, expr)?;
-    //             }
-    //         }
-    //         Expression::ArrayAccess(arr_access) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut arr_access.expr)?;
-    //             self.resolve_name_expr(module_name, local_symbols, &mut arr_access.index)?;
-    //         }
-    //         Expression::FieldAccess(field_access) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut field_access.expr)?;
-    //         }
-    //         Expression::NamedStruct(named_struct) => {
-    //             for (_, expr) in &mut named_struct.struct_literal.fields {
-    //                 self.resolve_name_expr(module_name, local_symbols, expr)?;
-    //             }
-    //         }
-    //         Expression::Range(range) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut range.start)?;
-    //             self.resolve_name_expr(module_name, local_symbols, &mut range.end)?;
-    //         }
-    //         Expression::JS(expr) => {
-    //             for expr in expr {
-    //                 self.resolve_name_expr(module_name, local_symbols, expr)?;
-    //             }
-    //         }
-    //         Expression::If(if_expr) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut if_expr.cond)?;
-    //             self.resolve_names_codeblock(module_name, local_symbols, &mut if_expr.true_branch)?;
+                for env_arg in env_args {
+                    self.resolve_type_name(scope, &mut env_arg.type_kind)?;
+                }
+                for arg in args {
+                    self.resolve_type_name(scope, &mut arg.type_kind)?;
+                }
 
-    //             if let Some(else_branch) = &mut if_expr.else_branch {
-    //                 self.resolve_names_codeblock(module_name, local_symbols, else_branch)?;
-    //             }
-    //         }
-    //         Expression::For(for_expr) => {
-    //             self.resolve_name_expr(module_name, local_symbols, &mut for_expr.iterator)?;
+                self.resolve_type_name(scope, &mut ret.type_kind)?;
+            }
+            TypeKind::Struct(struct_type) => {
+                let StructDef { fields } = struct_type;
 
-    //             self.resolve_type_name(
-    //                 module_name,
-    //                 &local_symbols,
-    //                 &mut for_expr.binding_type.type_kind,
-    //             )?;
+                for field in fields {
+                    self.resolve_type_name(scope, &mut field.field_type.type_kind)?;
+                }
+            }
+        }
 
-    //             let mut local_symbols = local_symbols.clone();
-    //             local_symbols.insert(
-    //                 for_expr.binding.clone(),
-    //                 Symbol {
-    //                     original_name: for_expr.binding.clone(),
-    //                     symbol_type: SymbolType::Identifier,
-    //                     value_type: for_expr.binding_type.clone(),
-    //                     exported: false,
-    //                 },
-    //             );
-
-    //             self.resolve_names_codeblock(module_name, &local_symbols, &mut for_expr.body)?;
-    //         }
-    //         Expression::Placeholder => {}
-    //         Expression::Break => {}
-    //         Expression::Continue => {}
-    //     }
-
-    //     Ok(())
-    // }
-
-    // pub fn resolve_names_codeblock(
-    //     &mut self,
-    //     module_name: &String,
-    //     local_symbols: &HashMap<String, Symbol>,
-    //     codeblock: &mut CodeBlock,
-    // ) -> Result<(), String> {
-    //     let mut local_symbols = local_symbols.clone();
-
-    //     for expr in &mut codeblock.expressions {
-    //         self.resolve_name_expr(module_name, &local_symbols, expr)?;
-
-    //         if let Expression::VariableDecl(var_decl) = expr {
-    //             local_symbols.insert(
-    //                 var_decl.var_name.clone(),
-    //                 Symbol {
-    //                     original_name: var_decl.var_name.clone(),
-    //                     symbol_type: SymbolType::Identifier,
-    //                     value_type: var_decl.var_type.clone(),
-    //                     exported: false,
-    //                 },
-    //             );
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
-
-    // pub fn resolve_names(&mut self, program: &mut Program) -> Result<(), String> {
-    //     let mut local_symbols_by_module: HashMap<String, HashMap<String, Symbol>> = HashMap::new();
-    //     for module in &mut program.modules {
-    //         println!("resolving names in {:?}", module.module_name);
-    //         local_symbols_by_module.insert(module.module_name.clone(), HashMap::new());
-
-    //         let local_symbols = local_symbols_by_module
-    //             .get_mut(&module.module_name)
-    //             .unwrap();
-
-    //         for custom_type in &module.type_defs {
-    //             if self
-    //                 .find_external_symbol(SymbolType::Type, &custom_type.name)
-    //                 .len()
-    //                 > 1
-    //             {
-    //                 return Err(format!("Type '{}' is already defined", custom_type.name));
-    //             }
-
-    //             self.symbol_table.push(Symbol {
-    //                 original_name: format!("{}::{}", module.module_name, custom_type.name),
-    //                 symbol_type: SymbolType::Type,
-    //                 value_type: custom_type.value.clone(),
-    //                 exported: custom_type.export,
-    //             });
-
-    //             local_symbols.insert(
-    //                 custom_type.name.clone(),
-    //                 Symbol {
-    //                     original_name: custom_type.name.clone(),
-    //                     symbol_type: SymbolType::Type,
-    //                     value_type: custom_type.value.clone(),
-    //                     exported: custom_type.export,
-    //                 },
-    //             );
-    //         }
-
-    //         for func in &mut module.function_defs {
-    //             if self
-    //                 .find_external_symbol(SymbolType::Identifier, &func.func_name)
-    //                 .len()
-    //                 > 1
-    //             {
-    //                 return Err(format!(
-    //                     "Identifier '{}' is already defined",
-    //                     func.func_name
-    //                 ));
-    //             }
-
-    //             let mut func_type = FunctionType {
-    //                 env_args: Vec::new(),
-    //                 args: Vec::new(),
-    //                 ret: Box::new(func.return_type.clone()),
-    //             };
-
-    //             for arg in &func.argument_list {
-    //                 let arg_type = arg.arg_type.clone();
-    //                 if arg.is_env {
-    //                     func_type.env_args.push(arg_type);
-    //                 } else {
-    //                     func_type.args.push(arg_type);
-    //                 }
-    //             }
-
-    //             self.symbol_table.push(Symbol {
-    //                 original_name: format!("{}::{}", module.module_name, func.func_name),
-    //                 symbol_type: SymbolType::Identifier,
-    //                 value_type: Type {
-    //                     type_kind: TypeKind::Function(func_type.clone()),
-    //                     is_reference: false,
-    //                     is_structural: false,
-    //                 },
-    //                 exported: func.export,
-    //             });
-
-    //             local_symbols.insert(
-    //                 func.func_name.clone(),
-    //                 Symbol {
-    //                     original_name: func.func_name.clone(),
-    //                     symbol_type: SymbolType::Identifier,
-    //                     value_type: Type {
-    //                         type_kind: TypeKind::Function(func_type),
-    //                         is_reference: false,
-    //                         is_structural: false,
-    //                     },
-    //                     exported: func.export,
-    //                 },
-    //             );
-    //         }
-
-    //         for var in &module.toplevel_scope.expressions {
-    //             if let Expression::VariableDecl(var_decl) = var {
-    //                 if var_decl.var_name != "_"
-    //                     && self
-    //                         .find_external_symbol(SymbolType::Identifier, &var_decl.var_name)
-    //                         .len()
-    //                         > 1
-    //                 {
-    //                     return Err(format!(
-    //                         "Top-level variable '{}' is already defined",
-    //                         var_decl.var_name
-    //                     ));
-    //                 }
-
-    //                 self.symbol_table.push(Symbol {
-    //                     original_name: format!("{}::{}", module.module_name, var_decl.var_name),
-    //                     symbol_type: SymbolType::Identifier,
-    //                     value_type: var_decl.var_type.clone(),
-    //                     exported: false,
-    //                 });
-
-    //                 local_symbols.insert(
-    //                     var_decl.var_name.clone(),
-    //                     Symbol {
-    //                         original_name: var_decl.var_name.clone(),
-    //                         symbol_type: SymbolType::Identifier,
-    //                         value_type: var_decl.var_type.clone(),
-    //                         exported: false,
-    //                     },
-    //                 );
-    //             }
-    //         }
-    //     }
-
-    //     for module in &mut program.modules {
-    //         let local_symbols = local_symbols_by_module
-    //             .get(&module.module_name.clone())
-    //             .unwrap();
-
-    //         for func in &mut module.function_defs {
-    //             let mut local_symbols = local_symbols.clone();
-    //             let mut defined_arguments = Vec::new();
-
-    //             self.resolve_type_name(
-    //                 &module.module_name,
-    //                 &local_symbols,
-    //                 &mut func.return_type.type_kind,
-    //             )?;
-
-    //             for arg in &mut func.argument_list {
-    //                 self.resolve_type_name(
-    //                     &module.module_name,
-    //                     &local_symbols,
-    //                     &mut arg.arg_type.type_kind,
-    //                 )?;
-
-    //                 local_symbols.insert(
-    //                     arg.arg_name.clone(),
-    //                     Symbol {
-    //                         original_name: arg.arg_name.clone(),
-    //                         symbol_type: SymbolType::Identifier,
-    //                         value_type: arg.arg_type.clone(),
-    //                         exported: false,
-    //                     },
-    //                 );
-
-    //                 if defined_arguments.contains(&arg.arg_name) {
-    //                     return Err(format!("Duplicate argument '{}'", arg.arg_name));
-    //                 }
-
-    //                 defined_arguments.push(arg.arg_name.clone())
-    //             }
-
-    //             self.resolve_names_codeblock(
-    //                 &module.module_name,
-    //                 &local_symbols,
-    //                 &mut func.function_body,
-    //             )?;
-    //         }
-
-    //         for var in &mut module.toplevel_scope.expressions {
-    //             match var {
-    //                 Expression::VariableDecl(var_decl) => {
-    //                     let VariableDecl { var_value, .. } = var_decl;
-
-    //                     let local_symbols = local_symbols.clone();
-    //                     self.resolve_name_expr(&module.module_name, &local_symbols, var_value)?;
-    //                 }
-    //                 // This is always the main() function call inserted by the parser
-    //                 Expression::FunctionCall(func_call) => {
-    //                     if let Expression::Variable(Variable { name }) =
-    //                         func_call.func_expr.as_mut()
-    //                     {
-    //                         *name = format!("{}::{}", module.module_name, name.clone());
-    //                     }
-    //                 }
-    //                 _ => unreachable!("Invalid toplevel expression only let bindings allowed"),
-    //             }
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     fn enforce_mutability_expr(
         &self,
@@ -1140,13 +1321,7 @@ impl SemanticAnalyzer {
                     Symbol {
                         original_name: type_def.name.clone(),
                         symbol_type: SymbolType::Type,
-                        value_type: Type {
-                            type_kind: TypeKind::Custom(CustomType {
-                                name: type_def.name.clone(),
-                            }),
-                            is_reference: false,
-                            is_structural: false,
-                        },
+                        value_type: type_def.value.clone(),
                         exported: type_def.export,
                     },
                 )?;
@@ -1225,7 +1400,58 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn resolve_names_expr(&mut self, scope: &mut usize, expr: &Expression) -> Result<(), String> {
+    fn set_symbol_type(
+        &mut self,
+        scope: usize,
+        symbol_name: &str,
+        symbol_type: SymbolType,
+        ty: Type,
+    ) -> Result<(), String> {
+        let mut scope_idx = Some(scope);
+        while let Some(curr_scope_idx) = scope_idx {
+            let curr_scope = self.symbol_table.get_mut(curr_scope_idx).unwrap();
+
+            match curr_scope
+                .symbols
+                .iter_mut()
+                .filter(|s| s.original_name == symbol_name && s.symbol_type == symbol_type)
+                .next()
+            {
+                Some(symbol) => {
+                    symbol.value_type = ty;
+                    return Ok(());
+                }
+                None => scope_idx = curr_scope.parent_scope,
+            }
+        }
+
+        Err(format!("Symbol `{symbol_name}` doesnt exist in scope"))
+    }
+
+    fn find_symbol_recursive(
+        &self,
+        scope: usize,
+        symbol_name: &str,
+        symbol_type: SymbolType,
+    ) -> Option<Symbol> {
+        let mut scope_idx = Some(scope);
+        while let Some(curr_scope_idx) = scope_idx {
+            let curr_scope = self.symbol_table.get(curr_scope_idx).unwrap();
+
+            match SemanticAnalyzer::scope_get_symbol(&curr_scope, symbol_name, symbol_type) {
+                Some(symbol) => return Some(symbol),
+                None => scope_idx = curr_scope.parent_scope,
+            }
+        }
+
+        return None;
+    }
+
+    fn resolve_names_expr(
+        &mut self,
+        scope: &mut usize,
+        expr: &mut Expression,
+    ) -> Result<(), String> {
         match expr {
             Expression::Variable(expr) => {
                 let name_parts = expr.name.split("::").collect::<Vec<_>>();
@@ -1236,103 +1462,101 @@ impl SemanticAnalyzer {
                     .collect::<Vec<_>>();
                 let module_name = module_parts.join("::");
 
-                let mut scope_idx = if name_parts.len() == 1 {
-                    Some(scope.clone())
+                let scope_idx = if name_parts.len() == 1 {
+                    scope.clone()
                 } else {
                     let scope = self
                         .module_to_scope
                         .get(&module_name)
                         .expect("Symbol table not built");
 
-                    Some(scope.clone())
+                    scope.clone()
                 };
 
-                while let Some(curr_scope_idx) = scope_idx {
-                    let curr_scope = self.symbol_table.get(curr_scope_idx).unwrap();
-
-                    if SemanticAnalyzer::scope_get_symbol(
-                        &curr_scope,
-                        &name_parts.last().unwrap(),
-                        SymbolType::Identifier,
-                    )
-                    .is_none()
-                    {
-                        scope_idx = curr_scope.parent_scope
-                    } else {
-                        return Ok(());
-                    }
-                }
-
-                return Err(format!("Identifier not found `{}`", expr.name));
+                match self.find_symbol_recursive(
+                    scope_idx,
+                    &name_parts.last().unwrap(),
+                    SymbolType::Identifier,
+                ) {
+                    Some(_) => return Ok(()),
+                    None => return Err(format!("Identifier not found `{}`", expr.name)),
+                };
             }
             Expression::VariableDecl(expr) => {
-                self.resolve_names_expr(scope, &expr.var_value)?;
+                self.resolve_names_expr(scope, &mut expr.var_value)?;
+                self.resolve_type_name(scope, &mut expr.var_type.type_kind)?;
             }
             Expression::Literal(_) => {}
             Expression::BinaryOp(expr) => {
-                self.resolve_names_expr(scope, &expr.lhs)?;
-                self.resolve_names_expr(scope, &expr.rhs)?;
+                self.resolve_names_expr(scope, &mut expr.lhs)?;
+                self.resolve_names_expr(scope, &mut expr.rhs)?;
             }
             Expression::UnaryOp(expr) => {
-                self.resolve_names_expr(scope, &expr.operand)?;
+                self.resolve_names_expr(scope, &mut expr.operand)?;
             }
             Expression::FunctionCall(expr) => {
-                self.resolve_names_expr(scope, &expr.func_expr)?;
+                self.resolve_names_expr(scope, &mut expr.func_expr)?;
 
-                for arg in &expr.arguments {
-                    self.resolve_names_expr(scope, &arg)?;
+                for arg in &mut expr.arguments {
+                    self.resolve_names_expr(scope, arg)?;
                 }
             }
             Expression::Return(expr) => {
-                self.resolve_names_expr(scope, &expr)?;
+                self.resolve_names_expr(scope, expr)?;
             }
             Expression::Assignment(expr) => {
-                self.resolve_names_expr(scope, &expr.lhs)?;
-                self.resolve_names_expr(scope, &expr.rhs)?;
+                self.resolve_names_expr(scope, &mut expr.lhs)?;
+                self.resolve_names_expr(scope, &mut expr.rhs)?;
             }
             Expression::AnonStruct(expr) => {
-                for (_, expr) in &expr.fields {
-                    self.resolve_names_expr(scope, &expr)?;
+                for (_, expr) in &mut expr.fields {
+                    self.resolve_names_expr(scope, expr)?;
                 }
             }
             Expression::ArrayLiteral(expr) => {
-                for elem in &expr.elements {
-                    self.resolve_names_expr(scope, &elem)?;
+                for elem in &mut expr.elements {
+                    self.resolve_names_expr(scope, elem)?;
                 }
             }
             Expression::ArrayAccess(expr) => {
-                self.resolve_names_expr(scope, &expr.expr)?;
-                self.resolve_names_expr(scope, &expr.index)?;
+                self.resolve_names_expr(scope, &mut expr.expr)?;
+                self.resolve_names_expr(scope, &mut expr.index)?;
             }
             Expression::FieldAccess(expr) => {
-                self.resolve_names_expr(scope, &expr.expr)?;
+                self.resolve_names_expr(scope, &mut expr.expr)?;
             }
             Expression::NamedStruct(expr) => {
-                for (_, expr) in &expr.struct_literal.fields {
-                    self.resolve_names_expr(scope, &expr)?;
+                for (_, expr) in &mut expr.struct_literal.fields {
+                    self.resolve_names_expr(scope, expr)?;
                 }
             }
             Expression::Lambda(expr) => {
+                self.resolve_type_name(scope, &mut expr.return_type.type_kind)?;
+                for arg in &mut expr.argument_list {
+                    self.resolve_type_name(scope, &mut arg.arg_type.type_kind)?;
+                }
+
                 *scope += 1;
-                self.resolve_names_codeblock(scope, &expr.function_body)?;
+                self.resolve_names_codeblock(scope, &mut expr.function_body)?;
             }
             Expression::Range(expr) => {
-                self.resolve_names_expr(scope, &expr.start)?;
-                self.resolve_names_expr(scope, &expr.end)?;
+                self.resolve_names_expr(scope, &mut expr.start)?;
+                self.resolve_names_expr(scope, &mut expr.end)?;
             }
             Expression::If(expr) => {
-                self.resolve_names_expr(scope, &expr.cond)?;
+                self.resolve_names_expr(scope, &mut expr.cond)?;
                 *scope += 1;
-                self.resolve_names_codeblock(scope, &expr.true_branch)?;
-                if let Some(else_branch) = &expr.else_branch {
+                self.resolve_names_codeblock(scope, &mut expr.true_branch)?;
+                if let Some(else_branch) = &mut expr.else_branch {
                     *scope += 1;
-                    self.resolve_names_codeblock(scope, &else_branch)?;
+                    self.resolve_names_codeblock(scope, else_branch)?;
                 }
             }
             Expression::For(expr) => {
-                self.resolve_names_expr(scope, &expr.iterator)?;
+                self.resolve_type_name(scope, &mut expr.binding_type.type_kind)?;
+                self.resolve_names_expr(scope, &mut expr.iterator)?;
                 *scope += 1;
-                self.resolve_names_codeblock(scope, &expr.body)?;
+                self.resolve_names_codeblock(scope, &mut expr.body)?;
             }
             Expression::JS(expr) => {
                 for expr in expr {
@@ -1350,23 +1574,40 @@ impl SemanticAnalyzer {
     fn resolve_names_codeblock(
         &mut self,
         scope: &mut usize,
-        codeblock: &CodeBlock,
+        codeblock: &mut CodeBlock,
     ) -> Result<(), String> {
-        for expr in &codeblock.expressions {
+        for expr in &mut codeblock.expressions {
             self.resolve_names_expr(scope, expr)?;
         }
 
         Ok(())
     }
 
-    pub fn resolve_names(&mut self, program: &Program) -> Result<(), String> {
+    pub fn resolve_names(&mut self, program: &mut Program) -> Result<(), String> {
         let mut scope = 0;
-        for module in &program.modules {
-            self.resolve_names_codeblock(&mut scope, &module.toplevel_scope)?;
+        for module in &mut program.modules {
+            for type_def in &mut module.type_defs {
+                self.resolve_type_name(&scope, &mut type_def.value.type_kind)?;
+            }
 
-            for func_def in &module.function_defs {
+            self.resolve_names_codeblock(&mut scope, &mut module.toplevel_scope)?;
+
+            for func_def in &mut module.function_defs {
+                // should use module scope since you cant define types in other scopes
+                // but it doesnt really matter since symbols are searched for recursively
+                let module_scope = self
+                    .module_to_scope
+                    .get(&module.module_name)
+                    .unwrap()
+                    .clone();
+                self.resolve_type_name(&module_scope, &mut func_def.return_type.type_kind)?;
+                for arg in &mut func_def.argument_list {
+                    self.resolve_type_name(&module_scope, &mut arg.arg_type.type_kind)?;
+                }
+
                 scope += 1;
-                self.resolve_names_codeblock(&mut scope, &func_def.function_body)?;
+
+                self.resolve_names_codeblock(&mut scope, &mut func_def.function_body)?;
             }
 
             scope += 1;
@@ -1548,6 +1789,8 @@ impl SemanticAnalyzer {
         self.populate_symbol_table(program)?;
         self.resolve_names(program)?;
         self.enforce_mutability(program)?;
+        println!("Typechecking");
+        self.typecheck(program)?;
 
         Ok(())
     }

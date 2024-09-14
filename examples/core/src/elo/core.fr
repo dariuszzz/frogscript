@@ -1,13 +1,13 @@
-export fn deep_copy(x ()) -> () = @js("return structuredClone(" x ");")
-export fn print(x ()) = @js("console.log(" x ")")
+export fn deep_copy(x any) -> any = @js("return structuredClone(" x ");")
+export fn print(x any) = @js("console.log(" x ")")
 
 module io =
-  export fn nested_print(x ()) = @js("console.log(" x ")")
+    export fn nested_print(x any) = @js("console.log(" x ")")
 
-  module elo =
-    fn super() = ...
+    module elo =
+        fn super() = ...
 
-export fn range(start int, end int) =
+export fn range(start int, end int) -> [any] =
     return @js("
         (function*() {
             for(let i = " start "; i < " end "; i++) {
@@ -16,22 +16,28 @@ export fn range(start int, end int) =
         })()
     ")
 
+let a = 23
+
+export fn len(x any) -> int =
+    return @js(x ".length")
+
+module string =
+    export fn at(str string, idx int) -> string =
+        return @js(str "[" idx "]")
 
 module array =
-    export fn push(arr [x], el x) =
+    export fn push(arr [any], el any) =
         return @js(arr ".push(" el ")")
 
-    export fn pop(arr [x], el x) =
-        return @js(arr ".pop(" el ")")
+    export fn pop(arr [any]) -> any =
+        return @js(arr ".pop()")
 
-    export fn len(arr [x], el x) -> int =
-        return @js(arr ".length")
 
-    export fn map(arr [x], f fn(x -> x)) =
-        for i in 0..len(arr):
+    export fn map(arr [any], f fn(any -> any)) =
+        for i in 0..core::len(arr):
             arr[i] = f(arr[i])
 
-    export fn filter(arr [x], f fn(x -> bool)) -> [x] =
+    export fn filter(arr [any], f fn(any -> bool)) -> [any] =
         mut new_arr = []
 
         for el in arr:

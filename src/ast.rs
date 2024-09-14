@@ -36,9 +36,10 @@ pub struct CustomType {
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Eq)]
 pub enum TypeKind {
     Infer,
+    Any,
     Void,
     Int,
     Uint,
@@ -49,6 +50,46 @@ pub enum TypeKind {
     Array(Box<Type>),
     Function(FunctionType),
     Struct(StructDef),
+}
+
+impl PartialEq for TypeKind {
+    fn eq(&self, other: &Self) -> bool {
+        if matches!(self, TypeKind::Any) || matches!(other, TypeKind::Any) {
+            return true;
+        }
+
+        if let Self::Struct(StructDef {
+            fields: self_fields,
+        }) = self
+        {
+            if let Self::Struct(StructDef {
+                fields: other_fields,
+            }) = other
+            {
+                for field in self_fields {
+                    if !other_fields.contains(&field) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        match (self, other) {
+            (TypeKind::Infer, TypeKind::Infer)
+            | (TypeKind::Void, TypeKind::Void)
+            | (TypeKind::Int, TypeKind::Int)
+            | (TypeKind::Uint, TypeKind::Uint)
+            | (TypeKind::Float, TypeKind::Float)
+            | (TypeKind::String, TypeKind::String)
+            | (TypeKind::Boolean, TypeKind::Boolean) => return true,
+            (TypeKind::Custom(a), TypeKind::Custom(b)) => return a == b,
+            (TypeKind::Array(a), TypeKind::Array(b)) => return a == b,
+            (TypeKind::Function(a), TypeKind::Function(b)) => return a == b,
+            _ => return false,
+        };
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

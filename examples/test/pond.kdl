@@ -7,5 +7,5 @@ dependencies {
 
 targets {
     main "./src/main.fr"
-    another "./src/main.fr" func="another_func" outfile="./out/siema.js"
+    babies "./src/babies.fr" func="babies" //outfile="./out/siema.js"
 }

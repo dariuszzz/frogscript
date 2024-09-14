@@ -18,6 +18,3 @@ fn main =
 
     core::io::nested_print("elo")
     core::io::same_module_diff_file()
-
-fn another_func =
-    core::print("other func")

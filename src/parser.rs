@@ -202,7 +202,7 @@ impl Parser {
                             self.advance_skip_ws(0);
                             break;
                         }
-                        _ => unreachable!(),
+                        token => return Err(format!("Expected argument name or `)` got {token:?}")),
                     }
                 }
             }
@@ -327,7 +327,8 @@ impl Parser {
                         "float" => TypeKind::Float,
                         "int" => TypeKind::Int,
                         "uint" => TypeKind::Uint,
-                        _ => TypeKind::Custom(CustomType { name: name }),
+                        "any" => TypeKind::Any,
+                        _ => TypeKind::Custom(CustomType { name }),
                     }
                 }
             }
