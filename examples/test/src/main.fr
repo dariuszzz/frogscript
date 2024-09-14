@@ -1,3 +1,6 @@
+type Foo =
+    l fn(int -> int)
+
 fn main =
     let text = "Siema"
 
@@ -16,5 +19,9 @@ fn main =
     let filtered = core::array::filter(arr, fn(x) return x > 4)
     core::print(filtered)
 
-    core::io::nested_print("elo")
-    core::io::same_module_diff_file()
+    //let foo = Foo { l: fn(x) return x * 2 }
+    //let foo = Foo { l: fn(x int) return x * 2 }
+
+    //core::print((foo.l)(2))
+
+    let fn(int -> ()) lambda = fn(x int) -> () core::print(x)

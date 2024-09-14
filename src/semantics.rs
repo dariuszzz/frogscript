@@ -9,7 +9,7 @@ use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
     Arena, BinaryOperation, CustomType, FunctionType, Lambda, Literal, Module, NamedStruct,
-    StructDef, StructField, Type, TypeKind,
+    StructDef, StructField, Type,
 };
 
 #[derive(Debug, Clone)]
@@ -405,16 +405,10 @@ impl SemanticAnalyzer {
     ) -> Result<Type, String> {
         match lhs {
             lhs if lhs == rhs => return Ok(lhs.clone()),
-            lhs @ Type {
-                type_kind: TypeKind::Infer,
-                ..
-            } if lhs == rhs => return Err(format!("Cant infer type")),
-            lhs @ Type {
-                type_kind: TypeKind::Infer,
-                ..
-            } => return Ok(rhs.clone()),
+            lhs @ Type::Infer if lhs == rhs => return Err(format!("Cant infer type")),
+            lhs @ Type::Infer => return Ok(rhs.clone()),
             lhs if lhs != rhs => {
-                if matches!(rhs.type_kind, TypeKind::Infer) {
+                if matches!(rhs, Type::Infer) {
                     return Ok(lhs.clone());
                 }
 
@@ -453,7 +447,7 @@ impl SemanticAnalyzer {
                     let scope = self
                         .module_to_scope
                         .get(&module_name)
-                        .expect("Symbol table not built");
+                        .expect(&format!("Couldnt resolve module {module_name:?}"));
 
                     scope.clone()
                 };
@@ -468,19 +462,15 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Literal(lit) => {
-                let kind = match lit {
-                    Literal::String(_) => TypeKind::String,
-                    Literal::Int(_) => TypeKind::Int,
-                    Literal::Uint(_) => TypeKind::Uint,
-                    Literal::Float(_) => TypeKind::Float,
-                    Literal::Boolean(_) => TypeKind::Boolean,
+                let ty = match lit {
+                    Literal::String(_) => Type::String,
+                    Literal::Int(_) => Type::Int,
+                    Literal::Uint(_) => Type::Uint,
+                    Literal::Float(_) => Type::Float,
+                    Literal::Boolean(_) => Type::Boolean,
                 };
 
-                return Ok(Type {
-                    type_kind: kind,
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(ty);
             }
             Expression::BinaryOp(expr) => {
                 let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
@@ -491,13 +481,13 @@ impl SemanticAnalyzer {
                 }
 
                 let expected_types = match expr.op {
-                    BinaryOperation::And | BinaryOperation::Or => vec![TypeKind::Boolean],
+                    BinaryOperation::And | BinaryOperation::Or => vec![Type::Boolean],
                     BinaryOperation::Equal | BinaryOperation::NotEqual => vec![
-                        TypeKind::Boolean,
-                        TypeKind::String,
-                        TypeKind::Uint,
-                        TypeKind::Int,
-                        TypeKind::Float,
+                        Type::Boolean,
+                        Type::String,
+                        Type::Uint,
+                        Type::Int,
+                        Type::Float,
                     ],
                     BinaryOperation::GreaterEqual
                     | BinaryOperation::Greater
@@ -508,12 +498,12 @@ impl SemanticAnalyzer {
                     | BinaryOperation::Divide
                     | BinaryOperation::Multiply
                     | BinaryOperation::Power => {
-                        vec![TypeKind::Int, TypeKind::Uint, TypeKind::Float]
+                        vec![Type::Int, Type::Uint, Type::Float]
                     }
                 };
 
-                let unified_ty = match (lhs.type_kind.clone(), rhs.type_kind.clone()) {
-                    (TypeKind::Infer, rhs_k) if expected_types.contains(&rhs_k) => {
+                let unified_ty = match (lhs.clone(), rhs.clone()) {
+                    (Type::Infer, rhs_k) if expected_types.contains(&rhs_k) => {
                         if let Expression::Variable(var) = expr.lhs.as_mut() {
                             self.set_symbol_type(
                                 *scope,
@@ -529,7 +519,7 @@ impl SemanticAnalyzer {
                             ))
                         }
                     }
-                    (lhs_k, TypeKind::Infer) if expected_types.contains(&lhs_k) => {
+                    (lhs_k, Type::Infer) if expected_types.contains(&lhs_k) => {
                         if let Expression::Variable(var) = expr.rhs.as_mut() {
                             self.set_symbol_type(
                                 *scope,
@@ -562,11 +552,7 @@ impl SemanticAnalyzer {
                     | BinaryOperation::And
                     | BinaryOperation::Or
                     | BinaryOperation::Equal
-                    | BinaryOperation::NotEqual => Type {
-                        type_kind: TypeKind::Boolean,
-                        is_reference: false,
-                        is_structural: false,
-                    },
+                    | BinaryOperation::NotEqual => Type::Boolean,
                     BinaryOperation::Add
                     | BinaryOperation::Subtract
                     | BinaryOperation::Divide
@@ -590,12 +576,9 @@ impl SemanticAnalyzer {
                 }
 
                 match call_ty {
-                    Type {
-                        type_kind: TypeKind::Function(FunctionType { args, ret, .. }),
-                        ..
-                    } => {
+                    Type::Function(FunctionType { args, ret, .. }) => {
                         for (expected, given) in args.iter().zip(arg_types.iter_mut()) {
-                            if let TypeKind::Infer = given.type_kind {
+                            if let Type::Infer = given {
                                 *given = expected.clone();
                             }
                         }
@@ -624,8 +607,8 @@ impl SemanticAnalyzer {
 
                 let unified = self.figure_out_unified_type(scope, &rhs, &lhs)?;
 
-                match (lhs.type_kind.clone(), rhs.type_kind.clone()) {
-                    (TypeKind::Infer, _) => {
+                match (lhs.clone(), rhs.clone()) {
+                    (Type::Infer, _) => {
                         if let Expression::Variable(var) = expr.lhs.as_mut() {
                             self.set_symbol_type(
                                 *scope,
@@ -635,7 +618,7 @@ impl SemanticAnalyzer {
                             )?;
                         }
                     }
-                    (_, TypeKind::Infer) => {
+                    (_, Type::Infer) => {
                         if let Expression::Variable(var) = expr.rhs.as_mut() {
                             self.set_symbol_type(
                                 *scope,
@@ -660,11 +643,7 @@ impl SemanticAnalyzer {
                     });
                 }
 
-                let ty = Type {
-                    type_kind: TypeKind::Struct(StructDef { fields }),
-                    is_reference: false,
-                    is_structural: false,
-                };
+                let ty = Type::Struct(StructDef { fields });
 
                 return Ok(ty);
             }
@@ -682,48 +661,33 @@ impl SemanticAnalyzer {
                 }
 
                 let arr_ty = match last_type {
-                    None => Type {
-                        type_kind: TypeKind::Infer,
-                        is_reference: false,
-                        is_structural: false,
-                    },
+                    None => Type::Infer,
                     Some(ty) => ty,
                 };
 
-                return Ok(Type {
-                    type_kind: TypeKind::Array(Box::new(arr_ty)),
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Array(Box::new(arr_ty)));
             }
             Expression::ArrayAccess(expr) => {
                 let arr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
                 let index_ty = self.typecheck_expr(scope, &mut expr.index)?;
 
                 let inner_ty = match arr_ty {
-                    Type {
-                        type_kind: TypeKind::Array(inner),
-                        ..
-                    } => *inner,
+                    Type::Array(inner) => *inner,
                     _ => return Err(format!("Tried to index non array")),
                 };
 
                 // check for negative idx
-                match index_ty.type_kind {
-                    TypeKind::Int => {}
-                    TypeKind::Uint => {}
-                    TypeKind::Any => {}
-                    TypeKind::Infer => {
+                match index_ty {
+                    Type::Int => {}
+                    Type::Uint => {}
+                    Type::Any => {}
+                    Type::Infer => {
                         if let Expression::Variable(var) = expr.index.as_ref() {
                             self.set_symbol_type(
                                 *scope,
                                 &var.name,
                                 SymbolType::Identifier,
-                                Type {
-                                    type_kind: TypeKind::Uint,
-                                    is_reference: false,
-                                    is_structural: false,
-                                },
+                                Type::Uint,
                             )?;
                         }
                     }
@@ -740,7 +704,7 @@ impl SemanticAnalyzer {
             Expression::FieldAccess(expr) => {
                 let expr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
 
-                let ty = if let TypeKind::Custom(CustomType { name }) = expr_ty.type_kind {
+                let ty = if let Type::Custom(CustomType { name }) = expr_ty {
                     let symbol = self
                         .find_symbol_recursive(*scope, &name, SymbolType::Type)
                         .unwrap();
@@ -749,12 +713,12 @@ impl SemanticAnalyzer {
                     expr_ty
                 };
 
-                if let TypeKind::Struct(StructDef { fields }) = &ty.type_kind {
+                if let Type::Struct(StructDef { fields }) = &ty {
                     match fields.iter().filter(|f| f.field_name == expr.field).next() {
                         None => {
                             return Err(format!(
                                 "Field `{}` doesnt exist on type `{:?}`",
-                                expr.field, ty.type_kind
+                                expr.field, ty
                             ))
                         }
                         Some(field) => return Ok(field.field_type.clone()),
@@ -766,12 +730,11 @@ impl SemanticAnalyzer {
                     .find_symbol_recursive(*scope, &expr.casted_to, SymbolType::Type)
                     .expect(&format!("Type `{}` doesnt exist", expr.casted_to))
                     .value_type;
-                let named_fields =
-                    if let TypeKind::Struct(StructDef { fields }) = &casted_ty.type_kind {
-                        fields
-                    } else {
-                        return Err(format!("Type `{}` does not have fields", expr.casted_to));
-                    };
+                let named_fields = if let Type::Struct(StructDef { fields }) = &casted_ty {
+                    fields
+                } else {
+                    return Err(format!("Type `{}` does not have fields", expr.casted_to));
+                };
 
                 let mut fields = Vec::new();
 
@@ -792,26 +755,16 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                return Ok(Type {
-                    type_kind: TypeKind::Custom(CustomType {
-                        name: expr.casted_to.clone(),
-                    }),
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Custom(CustomType {
+                    name: expr.casted_to.clone(),
+                }));
             }
             Expression::Range(expr) => {
                 let start_ty = self.typecheck_expr(scope, &mut expr.start)?;
                 let end_ty = self.typecheck_expr(scope, &mut expr.end)?;
 
-                if matches!(start_ty.type_kind, TypeKind::Int | TypeKind::Uint)
-                    && start_ty == end_ty
-                {
-                    return Ok(Type {
-                        type_kind: TypeKind::Array(Box::new(start_ty.clone())),
-                        is_reference: false,
-                        is_structural: false,
-                    });
+                if matches!(start_ty, Type::Int | Type::Uint) && start_ty == end_ty {
+                    return Ok(Type::Array(Box::new(start_ty.clone())));
                 } else {
                     return Err(format!("Range start and end must be uint/int"));
                 }
@@ -820,7 +773,7 @@ impl SemanticAnalyzer {
                 *scope += 1;
                 let body_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
                 if body_ty != expr.return_type {
-                    if let TypeKind::Infer = expr.return_type.type_kind {
+                    if let Type::Infer = expr.return_type {
                         expr.return_type = body_ty.clone();
                     } else {
                         return Err(format!(
@@ -835,30 +788,22 @@ impl SemanticAnalyzer {
                     arg_types.push(arg_ty);
                 }
 
-                return Ok(Type {
-                    type_kind: TypeKind::Function(FunctionType {
-                        env_args: Vec::new(),
-                        args: arg_types,
-                        ret: Box::new(body_ty),
-                    }),
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Function(FunctionType {
+                    env_args: Vec::new(),
+                    args: arg_types,
+                    ret: Box::new(body_ty),
+                }));
             }
             Expression::JS(expr) => {
                 for expr in expr {
                     self.typecheck_expr(scope, expr)?;
                 }
 
-                return Ok(Type {
-                    type_kind: TypeKind::Any,
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Any);
             }
             Expression::If(expr) => {
                 let cond_ty = self.typecheck_expr(scope, &mut expr.cond)?;
-                if !matches!(cond_ty.type_kind, TypeKind::Boolean) {
+                if !matches!(cond_ty, Type::Boolean) {
                     return Err(format!("If condition must evaluate to boolean"));
                 }
 
@@ -873,16 +818,12 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                return Ok(Type {
-                    type_kind: TypeKind::Void,
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Void);
             }
             Expression::For(expr) => {
                 let iter_ty = self.typecheck_expr(scope, &mut expr.iterator)?;
-                match iter_ty.type_kind {
-                    TypeKind::Array(inner) => {
+                match iter_ty {
+                    Type::Array(inner) => {
                         self.set_symbol_type(
                             *scope + 1,
                             &expr.binding,
@@ -893,7 +834,7 @@ impl SemanticAnalyzer {
                     _ => {
                         return Err(format!(
                             "For iterator must be an array, found {:?}",
-                            iter_ty.type_kind
+                            iter_ty
                         ))
                     }
                 }
@@ -901,28 +842,14 @@ impl SemanticAnalyzer {
                 *scope += 1;
                 let body_ty = self.typecheck_codeblock(scope, &mut expr.body)?;
 
-                return Ok(Type {
-                    type_kind: TypeKind::Void,
-                    is_reference: false,
-                    is_structural: false,
-                });
+                return Ok(Type::Void);
             }
-            Expression::Placeholder => {
-                return Ok(Type {
-                    type_kind: TypeKind::Any,
-                    is_reference: false,
-                    is_structural: false,
-                })
-            }
+            Expression::Placeholder => return Ok(Type::Any),
             Expression::Break => {}
             Expression::Continue => {}
         }
 
-        Ok(Type {
-            type_kind: TypeKind::Void,
-            is_reference: false,
-            is_structural: false,
-        })
+        return Ok(Type::Void);
     }
 
     fn typecheck_codeblock(
@@ -930,11 +857,7 @@ impl SemanticAnalyzer {
         scope: &mut usize,
         codeblock: &mut CodeBlock,
     ) -> Result<Type, String> {
-        let mut last_type = Type {
-            type_kind: TypeKind::Void,
-            is_reference: false,
-            is_structural: false,
-        };
+        let mut last_type = Type::Void;
 
         for expr in &mut codeblock.expressions {
             last_type = self.typecheck_expr(scope, expr)?;
@@ -955,7 +878,7 @@ impl SemanticAnalyzer {
                 let body_ty = self.typecheck_codeblock(&mut scope, &mut func.function_body)?;
 
                 if body_ty != func.return_type {
-                    if matches!(func.return_type.type_kind, TypeKind::Infer) {
+                    if matches!(func.return_type, Type::Infer) {
                         func.return_type = body_ty.clone();
                         let old_ret_ty = self
                             .find_symbol_recursive(
@@ -966,7 +889,7 @@ impl SemanticAnalyzer {
                             .unwrap()
                             .value_type;
 
-                        if let TypeKind::Function(old_ty) = old_ret_ty.type_kind {
+                        if let Type::Function(old_ty) = old_ret_ty {
                             let mut new_ret_type = old_ty;
                             new_ret_type.ret = Box::new(body_ty.clone());
 
@@ -974,11 +897,7 @@ impl SemanticAnalyzer {
                                 scope - 1,
                                 &func.func_name,
                                 SymbolType::Identifier,
-                                Type {
-                                    type_kind: TypeKind::Function(new_ret_type),
-                                    is_reference: false,
-                                    is_structural: false,
-                                },
+                                Type::Function(new_ret_type),
                             )?;
                         }
                     } else {
@@ -996,17 +915,17 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn resolve_type_name(&mut self, scope: &usize, kind: &mut TypeKind) -> Result<(), String> {
+    fn resolve_type_name(&mut self, scope: &usize, kind: &mut Type) -> Result<(), String> {
         match kind {
-            TypeKind::Infer => {}
-            TypeKind::Void
-            | TypeKind::Int
-            | TypeKind::Any
-            | TypeKind::Uint
-            | TypeKind::Float
-            | TypeKind::String
-            | TypeKind::Boolean => {}
-            TypeKind::Custom(custom) => {
+            Type::Infer => {}
+            Type::Void
+            | Type::Int
+            | Type::Any
+            | Type::Uint
+            | Type::Float
+            | Type::String
+            | Type::Boolean => {}
+            Type::Custom(custom) => {
                 let CustomType { name } = custom;
 
                 let name_parts = name.split("::").collect::<Vec<_>>();
@@ -1023,7 +942,7 @@ impl SemanticAnalyzer {
                     let scope = self
                         .module_to_scope
                         .get(&module_name)
-                        .expect("Symbol table not built");
+                        .expect(&format!("Couldnt resolve module {module_name:?}"));
 
                     scope.clone()
                 };
@@ -1036,34 +955,11 @@ impl SemanticAnalyzer {
                     Some(_) => return Ok(()),
                     None => return Err(format!("Type not found `{}`", name)),
                 };
-
-                // let split_name = name.split("::").collect::<Vec<_>>();
-                // if split_name.len() == 1 {
-                //     let local_type = local_symbols.get(name);
-                //     if let Some(symbol) = local_type {
-                //         if symbol.symbol_type != SymbolType::Type {
-                //             return Err(format!("Identifier '{name}' exists, but is not a type"));
-                //         }
-                //     } else {
-                //         return Err(format!("Type '{name}' is not defined"));
-                //     }
-                // } else {
-                //     let type_symbol = self.find_external_symbol(SymbolType::Type, &name);
-                //     if type_symbol.len() == 1 {
-                //         if !type_symbol[0].exported {
-                //             return Err(format!("Type '{name}' is defined but not exported"));
-                //         }
-                //     } else if type_symbol.len() == 0 {
-                //         return Err(format!("Type '{name}' is not defined"));
-                //     } else {
-                //         return Err(format!("Type '{name}' is ambiguous"));
-                //     }
-                // }
             }
-            TypeKind::Array(inner) => {
-                self.resolve_type_name(scope, &mut inner.type_kind)?;
+            Type::Array(inner) => {
+                self.resolve_type_name(scope, inner)?;
             }
-            TypeKind::Function(func) => {
+            Type::Function(func) => {
                 let FunctionType {
                     env_args,
                     args,
@@ -1071,19 +967,19 @@ impl SemanticAnalyzer {
                 } = func;
 
                 for env_arg in env_args {
-                    self.resolve_type_name(scope, &mut env_arg.type_kind)?;
+                    self.resolve_type_name(scope, env_arg)?;
                 }
                 for arg in args {
-                    self.resolve_type_name(scope, &mut arg.type_kind)?;
+                    self.resolve_type_name(scope, arg)?;
                 }
 
-                self.resolve_type_name(scope, &mut ret.type_kind)?;
+                self.resolve_type_name(scope, ret)?;
             }
-            TypeKind::Struct(struct_type) => {
+            Type::Struct(struct_type) => {
                 let StructDef { fields } = struct_type;
 
                 for field in fields {
-                    self.resolve_type_name(scope, &mut field.field_type.type_kind)?;
+                    self.resolve_type_name(scope, &mut field.field_type)?;
                 }
             }
         }
@@ -1328,25 +1224,21 @@ impl SemanticAnalyzer {
             }
 
             for func_def in &module.function_defs {
-                let func_type = Type {
-                    type_kind: TypeKind::Function(FunctionType {
-                        env_args: func_def
-                            .argument_list
-                            .iter()
-                            .filter(|arg| arg.is_env)
-                            .map(|arg| arg.arg_type.clone())
-                            .collect(),
-                        args: func_def
-                            .argument_list
-                            .iter()
-                            .filter(|arg| !arg.is_env)
-                            .map(|arg| arg.arg_type.clone())
-                            .collect(),
-                        ret: Box::new(func_def.return_type.clone()),
-                    }),
-                    is_reference: false,
-                    is_structural: false,
-                };
+                let func_type = Type::Function(FunctionType {
+                    env_args: func_def
+                        .argument_list
+                        .iter()
+                        .filter(|arg| arg.is_env)
+                        .map(|arg| arg.arg_type.clone())
+                        .collect(),
+                    args: func_def
+                        .argument_list
+                        .iter()
+                        .filter(|arg| !arg.is_env)
+                        .map(|arg| arg.arg_type.clone())
+                        .collect(),
+                    ret: Box::new(func_def.return_type.clone()),
+                });
 
                 self.add_symbol_to_scope(
                     module_scope,
@@ -1468,7 +1360,7 @@ impl SemanticAnalyzer {
                     let scope = self
                         .module_to_scope
                         .get(&module_name)
-                        .expect("Symbol table not built");
+                        .expect(&format!("Couldnt resolve module {module_name:?}"));
 
                     scope.clone()
                 };
@@ -1484,7 +1376,7 @@ impl SemanticAnalyzer {
             }
             Expression::VariableDecl(expr) => {
                 self.resolve_names_expr(scope, &mut expr.var_value)?;
-                self.resolve_type_name(scope, &mut expr.var_type.type_kind)?;
+                self.resolve_type_name(scope, &mut expr.var_type)?;
             }
             Expression::Literal(_) => {}
             Expression::BinaryOp(expr) => {
@@ -1531,9 +1423,9 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Lambda(expr) => {
-                self.resolve_type_name(scope, &mut expr.return_type.type_kind)?;
+                self.resolve_type_name(scope, &mut expr.return_type)?;
                 for arg in &mut expr.argument_list {
-                    self.resolve_type_name(scope, &mut arg.arg_type.type_kind)?;
+                    self.resolve_type_name(scope, &mut arg.arg_type)?;
                 }
 
                 *scope += 1;
@@ -1553,7 +1445,7 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::For(expr) => {
-                self.resolve_type_name(scope, &mut expr.binding_type.type_kind)?;
+                self.resolve_type_name(scope, &mut expr.binding_type)?;
                 self.resolve_names_expr(scope, &mut expr.iterator)?;
                 *scope += 1;
                 self.resolve_names_codeblock(scope, &mut expr.body)?;
@@ -1587,7 +1479,7 @@ impl SemanticAnalyzer {
         let mut scope = 0;
         for module in &mut program.modules {
             for type_def in &mut module.type_defs {
-                self.resolve_type_name(&scope, &mut type_def.value.type_kind)?;
+                self.resolve_type_name(&scope, &mut type_def.value)?;
             }
 
             self.resolve_names_codeblock(&mut scope, &mut module.toplevel_scope)?;
@@ -1600,9 +1492,9 @@ impl SemanticAnalyzer {
                     .get(&module.module_name)
                     .unwrap()
                     .clone();
-                self.resolve_type_name(&module_scope, &mut func_def.return_type.type_kind)?;
+                self.resolve_type_name(&module_scope, &mut func_def.return_type)?;
                 for arg in &mut func_def.argument_list {
-                    self.resolve_type_name(&module_scope, &mut arg.arg_type.type_kind)?;
+                    self.resolve_type_name(&module_scope, &mut arg.arg_type)?;
                 }
 
                 scope += 1;

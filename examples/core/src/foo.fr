@@ -1,2 +1,0 @@
-module io =
-    fn same_module_diff_file() = core::print("boo hoo")

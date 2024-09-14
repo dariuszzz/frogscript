@@ -132,11 +132,7 @@ impl Parser {
             export: false,
             func_name: String::new(),
             argument_list: args,
-            return_type: Type {
-                type_kind: TypeKind::Infer,
-                is_reference: false,
-                is_structural: false,
-            },
+            return_type: Type::Infer,
             function_body: CodeBlock::default(),
         };
 
@@ -168,11 +164,7 @@ impl Parser {
                 loop {
                     let mut arg = FunctionArgument {
                         arg_name: String::new(),
-                        arg_type: Type {
-                            type_kind: TypeKind::Infer,
-                            is_reference: false,
-                            is_structural: false,
-                        },
+                        arg_type: Type::Infer,
                         is_env: false,
                     };
 
@@ -202,7 +194,9 @@ impl Parser {
                             self.advance_skip_ws(0);
                             break;
                         }
-                        token => return Err(format!("Expected argument name or `)` got {token:?}")),
+                        token => {
+                            return Err(format!("Expected argument name or `)` got {token:?}"))
+                        }
                     }
                 }
             }
@@ -258,11 +252,7 @@ impl Parser {
         ]) {
             let mut arg_def = FunctionArgument {
                 arg_name: String::new(),
-                arg_type: Type {
-                    type_kind: TypeKind::Uint,
-                    is_reference: false,
-                    is_structural: false,
-                },
+                arg_type: Type::Uint,
                 is_env: true,
             };
 
@@ -284,27 +274,21 @@ impl Parser {
     }
 
     pub fn parse_type(&mut self) -> Result<Type, String> {
-        let mut type_ = Type {
-            type_kind: TypeKind::Infer,
-            is_reference: false,
-            is_structural: false,
-        };
+        let mut type_ = Type::Infer;
 
-        type_.type_kind = match self.peek(0).kind {
+        type_ = match self.peek(0).kind {
             TokenKind::Ampersand => {
                 self.advance();
-                type_.is_reference = true;
-                self.parse_type()?.type_kind
+                self.parse_type()?
             }
             TokenKind::Tilde => {
                 self.advance();
-                type_.is_structural = true;
-                self.parse_type()?.type_kind
+                self.parse_type()?
             }
             TokenKind::Identifier(Identifier::Custom(type_name)) => {
                 self.advance();
                 if type_name == "_" {
-                    TypeKind::Infer
+                    Type::Infer
                 } else {
                     let mut path = vec![type_name];
 
@@ -322,13 +306,13 @@ impl Parser {
                     let name = path.join("::");
 
                     match name.as_str() {
-                        "bool" => TypeKind::Boolean,
-                        "string" => TypeKind::String,
-                        "float" => TypeKind::Float,
-                        "int" => TypeKind::Int,
-                        "uint" => TypeKind::Uint,
-                        "any" => TypeKind::Any,
-                        _ => TypeKind::Custom(CustomType { name }),
+                        "bool" => Type::Boolean,
+                        "string" => Type::String,
+                        "float" => Type::Float,
+                        "int" => Type::Int,
+                        "uint" => Type::Uint,
+                        "any" => Type::Any,
+                        _ => Type::Custom(CustomType { name }),
                     }
                 }
             }
@@ -345,7 +329,7 @@ impl Parser {
                     return Err(format!("Unclosed array type"));
                 }
 
-                TypeKind::Array(Box::new(arr_type))
+                Type::Array(Box::new(arr_type))
             }
             TokenKind::Identifier(Identifier::Fn) => {
                 self.advance();
@@ -384,25 +368,25 @@ impl Parser {
                     }
 
                     if args1.len() == 1 {
-                        if let TypeKind::Void = args1[0].type_kind {
+                        if let Type::Void = args1[0] {
                             args1 = Vec::new();
                         }
                     }
 
                     if args2.len() == 1 {
-                        if let TypeKind::Void = args2[0].type_kind {
+                        if let Type::Void = args2[0] {
                             args2 = Vec::new();
                         }
                     }
 
                     if were_there_2_arg_lists {
-                        TypeKind::Function(FunctionType {
+                        Type::Function(FunctionType {
                             env_args: args1,
                             args: args2,
                             ret: Box::new(return_type),
                         })
                     } else {
-                        TypeKind::Function(FunctionType {
+                        Type::Function(FunctionType {
                             env_args: Vec::new(),
                             args: args1,
                             ret: Box::new(return_type),
@@ -420,7 +404,7 @@ impl Parser {
                 if let TokenKind::ParenRight = token.kind {
                     // handle () type
                     self.advance();
-                    TypeKind::Void
+                    Type::Void
                 } else {
                     return Err(format!(
                         "{}:{} Unexpected token after '(' in type",
@@ -470,14 +454,7 @@ impl Parser {
             let is_env = variable_decl_tokens.get("env").is_some();
 
             let var_type = match self.peek(1).kind {
-                TokenKind::Equal => {
-                    // No type
-                    Type {
-                        type_kind: TypeKind::Infer,
-                        is_reference: false,
-                        is_structural: false,
-                    }
-                }
+                TokenKind::Equal => Type::Infer,
                 _ => {
                     // Type
                     self.parse_type()?
@@ -834,11 +811,7 @@ impl Parser {
     pub fn parse_lambda(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lambda = Lambda {
             argument_list: Vec::new(),
-            return_type: Type {
-                type_kind: TypeKind::Infer,
-                is_reference: false,
-                is_structural: false,
-            },
+            return_type: Type::Infer,
             function_body: CodeBlock::default(),
         };
 
@@ -850,11 +823,7 @@ impl Parser {
         loop {
             let mut arg = FunctionArgument {
                 arg_name: String::new(),
-                arg_type: Type {
-                    type_kind: TypeKind::Infer,
-                    is_reference: false,
-                    is_structural: false,
-                },
+                arg_type: Type::Infer,
                 is_env: false,
             };
 
@@ -1070,11 +1039,7 @@ impl Parser {
     pub fn parse_for(&mut self, indent: usize) -> Result<Expression, String> {
         if let TokenKind::Identifier(Identifier::For) = self.advance().kind {
             let binding_type = match self.peek(1).kind {
-                TokenKind::Identifier(Identifier::In) => Type {
-                    type_kind: TypeKind::Infer,
-                    is_reference: false,
-                    is_structural: false,
-                },
+                TokenKind::Identifier(Identifier::In) => Type::Infer,
                 _ => self.parse_type()?,
             };
 
@@ -1618,11 +1583,7 @@ impl Parser {
                     });
                 }
 
-                Type {
-                    type_kind: TypeKind::Struct(struct_def),
-                    is_reference: false,
-                    is_structural: false,
-                }
+                Type::Struct(struct_def)
             }
             _ => self.parse_type()?,
         };

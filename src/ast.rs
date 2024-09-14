@@ -37,7 +37,7 @@ pub struct CustomType {
 }
 
 #[derive(Debug, Clone, Eq)]
-pub enum TypeKind {
+pub enum Type {
     Infer,
     Any,
     Void,
@@ -52,9 +52,9 @@ pub enum TypeKind {
     Struct(StructDef),
 }
 
-impl PartialEq for TypeKind {
+impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
-        if matches!(self, TypeKind::Any) || matches!(other, TypeKind::Any) {
+        if matches!(self, Type::Any) || matches!(other, Type::Any) {
             return true;
         }
 
@@ -77,26 +77,19 @@ impl PartialEq for TypeKind {
         }
 
         match (self, other) {
-            (TypeKind::Infer, TypeKind::Infer)
-            | (TypeKind::Void, TypeKind::Void)
-            | (TypeKind::Int, TypeKind::Int)
-            | (TypeKind::Uint, TypeKind::Uint)
-            | (TypeKind::Float, TypeKind::Float)
-            | (TypeKind::String, TypeKind::String)
-            | (TypeKind::Boolean, TypeKind::Boolean) => return true,
-            (TypeKind::Custom(a), TypeKind::Custom(b)) => return a == b,
-            (TypeKind::Array(a), TypeKind::Array(b)) => return a == b,
-            (TypeKind::Function(a), TypeKind::Function(b)) => return a == b,
+            (Type::Infer, Type::Infer)
+            | (Type::Void, Type::Void)
+            | (Type::Int, Type::Int)
+            | (Type::Uint, Type::Uint)
+            | (Type::Float, Type::Float)
+            | (Type::String, Type::String)
+            | (Type::Boolean, Type::Boolean) => return true,
+            (Type::Custom(a), Type::Custom(b)) => return a == b,
+            (Type::Array(a), Type::Array(b)) => return a == b,
+            (Type::Function(a), Type::Function(b)) => return a == b,
             _ => return false,
         };
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Type {
-    pub type_kind: TypeKind,
-    pub is_reference: bool,
-    pub is_structural: bool,
 }
 
 #[derive(Debug, Clone)]
