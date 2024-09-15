@@ -13,15 +13,15 @@ fn main =
     for el in arr:
         core::print(el)
 
-    core::array::map(arr, fn(x) return x * x)
+    core::array::map(arr, fn(x int) return x * x)
     core::print(arr)
 
     let filtered = core::array::filter(arr, fn(x) return x > 4)
     core::print(filtered)
 
     let foo = Foo { l: fn(x) return x * 2 }
-    let bar = Foo { l: fn(x int) return x * 2 }
 
     let fn(int -> ()) lambda = fn(x) core::print(x)
 
     lambda(2)
+    lambda((foo.l)(2))

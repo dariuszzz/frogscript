@@ -252,7 +252,6 @@ impl SemanticAnalyzer {
                             let unified_arg_ty =
                                 self.figure_out_unified_type(expected_ty, &given_ty)?;
 
-
                             self.set_type_if_expr_is_var(scope, given, unified_arg_ty)?;
                         }
 
@@ -260,7 +259,7 @@ impl SemanticAnalyzer {
                     }
                     _ => {
                         return Err(format!(
-                            "Tried to call a non function? Not sure if this is allowed"
+                            "Tried to call a non function? {:?}", func.func_expr
                         ))
                     }
                 }
