@@ -8,7 +8,7 @@ fn make_babies(p1 Person, p2 Person) -> Person =
     return Person { name: p1_half + p2_half }
 
 fn chars(str string) =
-    mut arr = [""]
+    mut arr = []
 
     for i in 0..core::len(str):
         let char = core::string::at(str, i)
@@ -20,7 +20,7 @@ fn substr(str string, _from int, to int) -> string =
     let str_chars = chars(str)
     mut substr = ""
 
-    for i in _from..=to:
+    for i in _from..to:
         substr += str_chars[i]
 
     return substr

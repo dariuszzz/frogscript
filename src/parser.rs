@@ -279,11 +279,11 @@ impl Parser {
         type_ = match self.peek(0).kind {
             TokenKind::Ampersand => {
                 self.advance();
-                self.parse_type()?
+                Type::Reference(Box::new(self.parse_type()?))
             }
             TokenKind::Tilde => {
                 self.advance();
-                self.parse_type()?
+                Type::Structural(Box::new(self.parse_type()?))
             }
             TokenKind::Identifier(Identifier::Custom(type_name)) => {
                 self.advance();

@@ -163,7 +163,7 @@ fn main() -> Result<(), String> {
             let mut program = parse_project(&pond)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            semantic.perform_analysis(&mut program)?;
+            let symbol_table = semantic.perform_analysis(&mut program)?;
 
             if let Some(output) = opts.output {
                 println!(
@@ -190,7 +190,7 @@ fn main() -> Result<(), String> {
             let mut program = parse_project(&pond)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            semantic.perform_analysis(&mut program)?;
+            let symbol_table = semantic.perform_analysis(&mut program)?;
 
             transpile_project(program, target, None)?;
 

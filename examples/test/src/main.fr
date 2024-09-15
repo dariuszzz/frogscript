@@ -13,7 +13,7 @@ fn main =
     for el in arr:
         core::print(el)
 
-    core::array::map(arr, fn(x) return x * x)
+    core::array::map(arr, fn(x int) return x * x)
     core::print(arr)
 
     let filtered = core::array::filter(arr, fn(x) return x > 4)

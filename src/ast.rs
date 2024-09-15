@@ -50,6 +50,8 @@ pub enum Type {
     Array(Box<Type>),
     Function(FunctionType),
     Struct(StructDef),
+    Reference(Box<Type>),
+    Structural(Box<Type>),
 }
 
 impl PartialEq for Type {
@@ -87,6 +89,8 @@ impl PartialEq for Type {
             (Type::Custom(a), Type::Custom(b)) => return a == b,
             (Type::Array(a), Type::Array(b)) => return a == b,
             (Type::Function(a), Type::Function(b)) => return a == b,
+            (Type::Reference(a), Type::Reference(b)) => return a == b,
+            (Type::Structural(a), Type::Structural(b)) => return a == b,
             _ => return false,
         };
     }

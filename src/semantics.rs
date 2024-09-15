@@ -31,6 +31,7 @@ pub struct Scope {
     pub parent_scope: Option<usize>,
     pub children_scopes: Vec<usize>,
     pub symbols: Vec<Symbol>,
+    pub used_modules: Vec<String>,
 }
 
 impl Scope {
@@ -39,6 +40,7 @@ impl Scope {
             parent_scope: Some(parent),
             children_scopes: Vec::new(),
             symbols: Vec::new(),
+            used_modules: Vec::new(),
         }
     }
 }
@@ -50,379 +52,78 @@ pub struct SemanticAnalyzer {
 }
 
 impl SemanticAnalyzer {
-    // pub fn typecheck(&mut self, expr: &mut Expression, module: &Module) -> Result<Type, String> {
-    //     match expr {
-    //         Expression::VariableDecl(var_decl) => {
-    //             let rhs_type = self.typecheck(&mut var_decl.var_value, module)?;
-
-    //             if let TypeKind::Infer = var_decl.var_type.type_kind {
-    //                 var_decl.var_type = rhs_type.clone();
-    //             } else if var_decl.var_type != rhs_type {
-    //                 return Err(format!("Invalid rhs type in var decl"));
-    //             }
-
-    //             Ok(rhs_type)
-    //         }
-    //         Expression::Literal(literal) => {
-    //             let type_kind = match literal {
-    //                 crate::Literal::String(_) => TypeKind::String,
-    //                 crate::Literal::Int(_) => TypeKind::Int,
-    //                 crate::Literal::Uint(_) => TypeKind::Uint,
-    //                 crate::Literal::Float(_) => TypeKind::Float,
-    //                 crate::Literal::Boolean(_) => TypeKind::Boolean,
-    //             };
-
-    //             Ok(Type {
-    //                 type_kind,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             })
-    //         }
-    //         Expression::BinaryOp(bin_op) => {
-    //             let lhs_type = self.typecheck(&mut bin_op.lhs, module)?;
-    //             let rhs_type = self.typecheck(&mut bin_op.rhs, module)?;
-
-    //             let int_type = Type {
-    //                 type_kind: TypeKind::Int,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-    //             let uint_type = Type {
-    //                 type_kind: TypeKind::Uint,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-    //             let float_type = Type {
-    //                 type_kind: TypeKind::Float,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-    //             let bool_type = Type {
-    //                 type_kind: TypeKind::Boolean,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-
-    //             match bin_op.op {
-    //                 BinaryOperation::Add
-    //                 | BinaryOperation::Subtract
-    //                 | BinaryOperation::Multiply
-    //                 | BinaryOperation::Divide
-    //                 | BinaryOperation::Less
-    //                 | BinaryOperation::LessEqual
-    //                 | BinaryOperation::Greater
-    //                 | BinaryOperation::GreaterEqual
-    //                 | BinaryOperation::Power => {
-    //                     if lhs_type != int_type && lhs_type != uint_type && lhs_type != float_type {
-    //                         return Err(format!(
-    //                             "Operands to this binary operation must be int/float/uint"
-    //                         ));
-    //                     }
-    //                 }
-    //                 BinaryOperation::Equal
-    //                 | BinaryOperation::And
-    //                 | BinaryOperation::Or
-    //                 | BinaryOperation::NotEqual => {
-    //                     if lhs_type != bool_type {
-    //                         return Err(format!("Operands to this binary operation must be bool"));
-    //                     }
-    //                 }
-    //             }
-
-    //             if lhs_type != rhs_type {
-    //                 return Err(format!("Binary op operands are of different types"));
-    //             }
-
-    //             Ok(lhs_type.clone())
-    //         }
-    //         Expression::UnaryOp(unary) => self.typecheck(&mut unary.operand, module),
-    //         Expression::FunctionCall(func_call) => {
-    //             let FunctionCall {
-    //                 func_expr,
-    //                 arguments,
-    //             } = func_call;
-
-    //             let function_symbol = self.typecheck(func_expr, module)?;
-
-    //             let func_arg_types =
-    //                 if let TypeKind::Function(func_type) = function_symbol.type_kind.clone() {
-    //                     func_type.args.clone()
-    //                 } else {
-    //                     unreachable!()
-    //                 };
-
-    //             for (i, arg) in arguments.iter_mut().enumerate() {
-    //                 let arg_type = self.typecheck(arg, module)?;
-
-    //                 if arg_type != func_arg_types[i] {
-    //                     return Err(format!("Invalid arg type in function call"));
-    //                 }
-    //             }
-
-    //             Ok(function_symbol)
-    //         }
-    //         Expression::Variable(variable) => {
-    //             println!("{:?}", variable.name);
-    //             println!("{:?}", self.symbol_table);
-    //             let var_type = self.find_external_symbol(SymbolType::Identifier, &variable.name)[0]
-    //                 .value_type
-    //                 .clone();
-
-    //             Ok(var_type)
-    //         }
-    //         Expression::Return(ret) => self.typecheck(ret, module),
-    //         Expression::Assignment(assignment) => {
-    //             let lhs_type = self.typecheck(&mut assignment.lhs, module)?;
-    //             let rhs_type = self.typecheck(&mut assignment.rhs, module)?;
-
-    //             if lhs_type != rhs_type {
-    //                 return Err(format!("Assignment operands are of different types"));
-    //             }
-
-    //             Ok(lhs_type.clone())
-    //         }
-    //         Expression::AnonStruct(anon) => {
-    //             let mut struct_type = StructDef { fields: Vec::new() };
-
-    //             for (name, field) in &mut anon.fields {
-    //                 struct_type.fields.push(StructField {
-    //                     field_name: name.clone(),
-    //                     field_type: self.typecheck(field, module)?,
-    //                     is_final: false,
-    //                 });
-    //             }
-
-    //             Ok(Type {
-    //                 type_kind: TypeKind::Struct(struct_type),
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             })
-    //         }
-    //         Expression::ArrayLiteral(arr) => {
-    //             if arr.elements.len() > 0 {
-    //                 let arr_type = self.typecheck(&mut arr.elements[0], module)?;
-
-    //                 for elem in &mut arr.elements {
-    //                     let elem_type = self.typecheck(elem, module)?;
-
-    //                     if arr_type != elem_type {
-    //                         return Err(format!("Elements in array arent all of the same type"));
-    //                     }
-    //                 }
-
-    //                 Ok(arr_type)
-    //             } else {
-    //                 return Err(format!("Cannot infer type of array"));
-    //                 // Ok(Type {
-    //                 //     type_kind: TypeKind::Infer,
-    //                 //     is_reference: false,
-    //                 //     is_structural: false,
-    //                 // })
-    //             }
-    //         }
-    //         Expression::ArrayAccess(arr_access) => {
-    //             if let TypeKind::Array(inner) =
-    //                 self.typecheck(&mut arr_access.expr, module)?.type_kind
-    //             {
-    //                 let valid_index_type = Type {
-    //                     type_kind: TypeKind::Uint,
-    //                     is_reference: false,
-    //                     is_structural: false,
-    //                 };
-    //                 if self.typecheck(&mut arr_access.index, module)? != valid_index_type {
-    //                     return Err(format!("Array access index must be a uint"));
-    //                 }
-
-    //                 Ok(inner.as_ref().clone())
-    //             } else {
-    //                 return Err(format!("Array access operator is used on non-array type"));
-    //             }
-    //         }
-    //         Expression::FieldAccess(field_access) => {
-    //             if let TypeKind::Struct(struct_type) =
-    //                 self.typecheck(&mut field_access.expr, module)?.type_kind
-    //             {
-    //                 let mut field_type = None;
-    //                 for field in &struct_type.fields {
-    //                     if field.field_name == field_access.field {
-    //                         field_type = Some(field.field_type.clone());
-    //                         break;
-    //                     }
-    //                 }
-
-    //                 if field_type.is_none() {
-    //                     return Err(format!("Field {} doesn't exist", field_access.field));
-    //                 }
-
-    //                 Ok(field_type.unwrap())
-    //             } else {
-    //                 return Err(format!("Field access is only possible on structs"));
-    //             }
-    //         }
-    //         Expression::NamedStruct(named_struct) => {
-    //             let precast_type = self.typecheck(
-    //                 &mut Expression::AnonStruct(named_struct.struct_literal.clone()),
-    //                 module,
-    //             )?;
-
-    //             let casted_type = self
-    //                 .find_external_symbol(SymbolType::Type, &named_struct.casted_to)[0]
-    //                 .value_type
-    //                 .clone();
-
-    //             match (precast_type.type_kind, casted_type.type_kind.clone()) {
-    //                 (TypeKind::Struct(precast), TypeKind::Struct(casted)) => {
-    //                     for field in &precast.fields {
-    //                         if !casted.fields.contains(field) {
-    //                             return Err(format!(
-    //                                 "Field {} does not exist on {}",
-    //                                 field.field_name, named_struct.casted_to
-    //                             ));
-    //                         }
-    //                     }
-
-    //                     for field in &casted.fields {
-    //                         if !precast.fields.contains(field) {
-    //                             return Err(format!(
-    //                                 "Field {} is missing from struct literal",
-    //                                 field.field_name
-    //                             ));
-    //                         }
-    //                     }
-    //                 }
-    //                 _ => {
-    //                     return Err(format!(
-    //                         "Named struct doesn't consist of a struct type and a struct literal"
-    //                     ))
-    //                 }
-    //             }
-
-    //             Ok(casted_type)
-    //         }
-    //         Expression::Lambda(lambda) => {
-    //             let mut lambda_type = FunctionType {
-    //                 env_args: Vec::new(),
-    //                 args: Vec::new(),
-    //                 ret: Box::new(lambda.return_type.clone()),
-    //             };
-
-    //             for arg in &lambda.argument_list {
-    //                 let arg_type = arg.arg_type.clone();
-    //                 if arg.is_env {
-    //                     lambda_type.env_args.push(arg_type);
-    //                 } else {
-    //                     lambda_type.args.push(arg_type);
-    //                 }
-    //             }
-
-    //             Ok(Type {
-    //                 type_kind: TypeKind::Function(lambda_type),
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             })
-    //         }
-    //         Expression::Range(range) => {
-    //             let lhs_type = self.typecheck(&mut range.start, module)?;
-    //             let rhs_type = self.typecheck(&mut range.end, module)?;
-
-    //             let int_type = Type {
-    //                 type_kind: TypeKind::Int,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-
-    //             let uint_type = Type {
-    //                 type_kind: TypeKind::Uint,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-
-    //             if lhs_type != int_type && lhs_type != uint_type {
-    //                 return Err(format!("Range start and end must be ints or uints"));
-    //             }
-
-    //             if lhs_type != rhs_type {
-    //                 return Err(format!("Assignment operands are of different types"));
-    //             }
-
-    //             Ok(lhs_type.clone())
-    //         }
-    //         Expression::If(if_expr) => {
-    //             let bool_type = Type {
-    //                 type_kind: TypeKind::Boolean,
-    //                 is_reference: false,
-    //                 is_structural: false,
-    //             };
-
-    //             if self.typecheck(&mut if_expr.cond, module)? != bool_type {
-    //                 return Err(format!("If condition must be a boolean"));
-    //             }
-
-    //             let true_type = self.typecheck_codeblock(&mut if_expr.true_branch, module)?;
-    //             if let Some(else_branch) = &mut if_expr.else_branch {
-    //                 let false_type = self.typecheck_codeblock(else_branch, module)?;
-
-    //                 if true_type != false_type {
-    //                     return Err(format!("True and else branches must have the same type"));
-    //                 }
-    //             }
-
-    //             Ok(true_type)
-    //         }
-    //         Expression::For(for_expr) => {
-    //             let iterator_type = if let TypeKind::Array(inner) =
-    //                 self.typecheck(&mut for_expr.iterator, module)?.type_kind
-    //             {
-    //                 inner.as_ref().clone()
-    //             } else {
-    //                 return Err(format!("For expression iterator must be an array"));
-    //             };
-
-    //             if let TypeKind::Infer = for_expr.binding_type.type_kind {
-    //                 for_expr.binding_type = iterator_type.clone();
-    //             } else if iterator_type != for_expr.binding_type {
-    //                 return Err(format!(
-    //                     "For expression iterator must be the same type as binding"
-    //                 ));
-    //             }
-
-    //             let body_type = self.typecheck_codeblock(&mut for_expr.body, module)?;
-
-    //             Ok(body_type)
-    //         }
-    //         Expression::JS(_) => todo!(),
-    //         Expression::Placeholder => todo!(),
-    //         Expression::Break => todo!(),
-    //         Expression::Continue => todo!(),
-    //     }
-    // }
-
-    fn figure_out_unified_type(
-        &mut self,
-        scope: &usize,
-        rhs: &Type,
-        lhs: &Type,
-    ) -> Result<Type, String> {
-        match lhs {
-            lhs if lhs == rhs => return Ok(lhs.clone()),
-            lhs @ Type::Infer if lhs == rhs => return Err(format!("Cant infer type")),
-            lhs @ Type::Infer => return Ok(rhs.clone()),
-            lhs if lhs != rhs => {
-                if matches!(rhs, Type::Infer) {
-                    return Ok(lhs.clone());
+    fn figure_out_unified_type(&mut self, lhs: &Type, rhs: &Type) -> Result<Type, String> {
+        match (lhs, rhs) {
+            (Type::Infer, Type::Infer) => return Err(format!("Cant infer type")),
+            (lhs, rhs) if lhs == rhs => return Ok(lhs.clone()),
+            (Type::Infer, rhs) => return Ok(rhs.clone()),
+            (lhs, Type::Infer) => return Ok(lhs.clone()),
+            (Type::Array(lhs_inner), Type::Array(rhs_inner)) => {
+                return Ok(Type::Array(Box::new(
+                    self.figure_out_unified_type(lhs_inner, rhs_inner)?,
+                )));
+            }
+            (
+                Type::Function(FunctionType {
+                    env_args: lhs_env,
+                    args: lhs_args,
+                    ret: lhs_ret,
+                }),
+                Type::Function(FunctionType {
+                    env_args: rhs_env,
+                    args: rhs_args,
+                    ret: rhs_ret,
+                }),
+            ) => {
+                if lhs_env.len() != rhs_env.len() || lhs_args.len() != rhs_args.len() {
+                    return Err(format!("Lhs != rhs: {lhs:?} != {rhs:?}"));
                 }
 
-                return Err(format!("Lhs type doesnt equal rhs: {lhs:?} != {rhs:?}"));
+                let mut unified_type = FunctionType {
+                    env_args: Vec::new(),
+                    args: Vec::new(),
+                    ret: Box::new(Type::Infer),
+                };
+                unified_type.ret = Box::new(self.figure_out_unified_type(lhs_ret, rhs_ret)?);
+
+                for (lhs_env, rhs_env) in lhs_env.iter().zip(rhs_env) {
+                    let unified_env = self.figure_out_unified_type(lhs_env, rhs_env)?;
+                    unified_type.env_args.push(unified_env);
+                }
+
+                for (lhs_env, rhs_env) in lhs_env.iter().zip(rhs_env) {
+                    let unified_env = self.figure_out_unified_type(lhs_env, rhs_env)?;
+                    unified_type.args.push(unified_env);
+                }
+
+                return Ok(Type::Function(unified_type));
             }
-            _ => return Err(format!("Lhs type doesnt equal rhs: {lhs:?} != {rhs:?}")),
+            _ => return Err(format!("Lhs != rhs: {lhs:?} != {rhs:?}")),
         }
+    }
+
+    fn set_type_if_expr_is_var(
+        &mut self,
+        scope: &usize,
+        expr: &Expression,
+        ty: Type,
+    ) -> Result<(), String> {
+        if matches!(ty, Type::Any) {
+            return Ok(());
+        }
+
+        if let Expression::Variable(var) = expr {
+            self.set_symbol_type(*scope, &var.name, SymbolType::Identifier, ty.clone())?;
+        }
+
+        return Ok(());
     }
 
     fn typecheck_expr(&mut self, scope: &mut usize, expr: &mut Expression) -> Result<Type, String> {
         match expr {
             Expression::VariableDecl(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.var_value)?;
-                let unified = self.figure_out_unified_type(scope, &rhs, &expr.var_type)?;
+                let unified = self.figure_out_unified_type(&rhs, &expr.var_type)?;
                 expr.var_type = unified.clone();
                 self.set_symbol_type(
                     *scope,
@@ -457,7 +158,9 @@ impl SemanticAnalyzer {
                     &name_parts.last().unwrap(),
                     SymbolType::Identifier,
                 ) {
-                    Some(symbol) => return Ok(symbol.value_type),
+                    Some(symbol) => {
+                        return Ok(symbol.value_type);
+                    }
                     None => return Err(format!("Couldnt find symbol `{}`", expr.name)),
                 }
             }
@@ -476,9 +179,7 @@ impl SemanticAnalyzer {
                 let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
 
-                if lhs == rhs {
-                    return Ok(lhs.clone());
-                }
+                let unified_type = self.figure_out_unified_type(&lhs, &rhs)?;
 
                 let expected_types = match expr.op {
                     BinaryOperation::And | BinaryOperation::Or => vec![Type::Boolean],
@@ -489,11 +190,12 @@ impl SemanticAnalyzer {
                         Type::Int,
                         Type::Float,
                     ],
+                    BinaryOperation::Add =>
+                        vec![Type::Int, Type::Uint, Type::Float, Type::String],
                     BinaryOperation::GreaterEqual
                     | BinaryOperation::Greater
                     | BinaryOperation::LessEqual
                     | BinaryOperation::Less
-                    | BinaryOperation::Add
                     | BinaryOperation::Subtract
                     | BinaryOperation::Divide
                     | BinaryOperation::Multiply
@@ -502,47 +204,14 @@ impl SemanticAnalyzer {
                     }
                 };
 
-                let unified_ty = match (lhs.clone(), rhs.clone()) {
-                    (Type::Infer, rhs_k) if expected_types.contains(&rhs_k) => {
-                        if let Expression::Variable(var) = expr.lhs.as_mut() {
-                            self.set_symbol_type(
-                                *scope,
-                                &var.name,
-                                SymbolType::Identifier,
-                                rhs.clone(),
-                            )?;
+                if !expected_types.contains(&unified_type) {
+                    return Err(format!(
+                        "Invalid operand types in binary op expected any of {expected_types:?}"
+                    ));
+                }
 
-                            rhs.clone()
-                        } else {
-                            return Err(format!(
-                                "Binary operation couldnt infer from: {rhs_k:?}, lhs is {:?}", expr.lhs
-                            ))
-                        }
-                    }
-                    (lhs_k, Type::Infer) if expected_types.contains(&lhs_k) => {
-                        if let Expression::Variable(var) = expr.rhs.as_mut() {
-                            self.set_symbol_type(
-                                *scope,
-                                &var.name,
-                                SymbolType::Identifier,
-                                lhs.clone(),
-                            )?;
-
-                            lhs.clone()
-                        } else {
-                            return Err(format!(
-                                "Binary operation couldnt infer from: {lhs_k:?}, rhs is {:?}", expr.rhs
-                            ))
-                        }
-                    }
-                    (lhs_k, rhs_k) if expected_types.contains(&lhs_k) && lhs_k == rhs_k => lhs.clone(),
-                    (lhs_k, rhs_k) if lhs_k != rhs_k => {
-                        return Err(format!(
-                            "Binary operation lhs != rhs: {lhs_k:?} != {rhs_k:?}"
-                        ))
-                    }
-                    (lhs_k, rhs_k) => return Err(format!("Binary operation invalid types, found lhs: {lhs_k:?}, rhs: {rhs_k:?} expected both to be any of {expected_types:?}")),
-                };
+                self.set_type_if_expr_is_var(scope, &expr.lhs, unified_type.clone())?;
+                self.set_type_if_expr_is_var(scope, &expr.rhs, unified_type.clone())?;
 
                 let expr_ty = match expr.op {
                     BinaryOperation::GreaterEqual
@@ -557,7 +226,7 @@ impl SemanticAnalyzer {
                     | BinaryOperation::Subtract
                     | BinaryOperation::Divide
                     | BinaryOperation::Multiply
-                    | BinaryOperation::Power => unified_ty.clone(),
+                    | BinaryOperation::Power => unified_type.clone(),
                 };
 
                 return Ok(expr_ty);
@@ -569,29 +238,31 @@ impl SemanticAnalyzer {
             Expression::FunctionCall(func) => {
                 let call_ty = self.typecheck_expr(scope, &mut func.func_expr)?;
 
-                let mut arg_types = Vec::new();
-                for arg in &mut func.arguments {
-                    let arg_ty = self.typecheck_expr(scope, arg)?;
-                    arg_types.push(arg_ty);
-                }
-
                 match call_ty {
                     Type::Function(FunctionType { args, ret, .. }) => {
-                        for (expected, given) in args.iter().zip(arg_types.iter_mut()) {
-                            if let Type::Infer = given {
-                                *given = expected.clone();
-                            }
+                        if func.arguments.len() != args.len() {
+                            return Err(format!(
+                                "Invalid function args {:?}, {:?} != {:?}",
+                                func.func_expr, func.arguments, args
+                            ));
                         }
 
-                        if args == arg_types {
-                            return Ok(*ret);
+                        for (expected_ty, given) in args.iter().zip(func.arguments.iter_mut()) {
+                            let given_ty = self.typecheck_expr(scope, given)?;
+
+                            let unified_arg_ty =
+                                self.figure_out_unified_type(expected_ty, &given_ty)?;
+
+                            self.set_type_if_expr_is_var(scope, given, unified_arg_ty)?;
                         }
-                        return Err(format!(
-                            "Invalid function args {:?}, {:?} != {:?}",
-                            func.func_expr, arg_types, args
-                        ));
+
+                        return Ok(*ret);
                     }
-                    _ => return Err(format!("Invalid function args {:?}", func.func_expr)),
+                    _ => {
+                        return Err(format!(
+                            "Tried to call a non function? Not sure if this is allowed"
+                        ))
+                    }
                 }
             }
             Expression::Return(expr) => {
@@ -601,35 +272,12 @@ impl SemanticAnalyzer {
             Expression::Assignment(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
                 let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
-                if lhs == rhs {
-                    return Ok(lhs.clone());
-                }
 
-                let unified = self.figure_out_unified_type(scope, &rhs, &lhs)?;
+                let unified = self.figure_out_unified_type(&rhs, &lhs)?;
+                self.set_type_if_expr_is_var(scope, &expr.lhs, unified.clone())?;
+                self.set_type_if_expr_is_var(scope, &expr.rhs, unified.clone())?;
 
-                match (lhs.clone(), rhs.clone()) {
-                    (Type::Infer, _) => {
-                        if let Expression::Variable(var) = expr.lhs.as_mut() {
-                            self.set_symbol_type(
-                                *scope,
-                                &var.name,
-                                SymbolType::Identifier,
-                                unified.clone(),
-                            )?;
-                        }
-                    }
-                    (_, Type::Infer) => {
-                        if let Expression::Variable(var) = expr.rhs.as_mut() {
-                            self.set_symbol_type(
-                                *scope,
-                                &var.name,
-                                SymbolType::Identifier,
-                                unified.clone(),
-                            )?;
-                        }
-                    }
-                    (t1, t2) => unreachable!("Assignment lhs != rhs, shouldnt be reachable"),
-                }
+                return Ok(Type::Void);
             }
             Expression::AnonStruct(expr) => {
                 let mut fields = Vec::new();
@@ -673,23 +321,14 @@ impl SemanticAnalyzer {
 
                 let inner_ty = match arr_ty {
                     Type::Array(inner) => *inner,
-                    _ => return Err(format!("Tried to index non array")),
+                    _ => return Err(format!("Tried to index non array: {arr_ty:?}")),
                 };
 
                 // check for negative idx
                 match index_ty {
-                    Type::Int => {}
-                    Type::Uint => {}
-                    Type::Any => {}
+                    Type::Int | Type::Uint | Type::Any => {}
                     Type::Infer => {
-                        if let Expression::Variable(var) = expr.index.as_ref() {
-                            self.set_symbol_type(
-                                *scope,
-                                &var.name,
-                                SymbolType::Identifier,
-                                Type::Uint,
-                            )?;
-                        }
+                        self.set_type_if_expr_is_var(scope, &expr.index, Type::Uint)?;
                     }
                     ty => {
                         return Err(format!(
@@ -723,6 +362,11 @@ impl SemanticAnalyzer {
                         }
                         Some(field) => return Ok(field.field_type.clone()),
                     }
+                } else {
+                    return Err(format!(
+                        "Expression `{:?}` is not a struct, you cant access its fields",
+                        expr.field
+                    ));
                 }
             }
             Expression::NamedStruct(expr) => {
@@ -730,28 +374,31 @@ impl SemanticAnalyzer {
                     .find_symbol_recursive(*scope, &expr.casted_to, SymbolType::Type)
                     .expect(&format!("Type `{}` doesnt exist", expr.casted_to))
                     .value_type;
+
                 let named_fields = if let Type::Struct(StructDef { fields }) = &casted_ty {
                     fields
                 } else {
                     return Err(format!("Type `{}` does not have fields", expr.casted_to));
                 };
 
-                let mut fields = Vec::new();
+                if named_fields.len() == expr.struct_literal.fields.len() {
+                    for (field_name, field_expr) in &mut expr.struct_literal.fields {
+                        let expected_field = if let Some(expected) =
+                            named_fields.iter().find(|f| f.field_name == *field_name)
+                        {
+                            expected
+                        } else {
+                            return Err(format!(
+                                "Field `{field_name:?}` does not exist on type `{}`",
+                                expr.casted_to
+                            ));
+                        };
 
-                // TODO this will fail because this isnt guaranteed to create the same field order
-                for field in &mut expr.struct_literal.fields {
-                    fields.push(StructField {
-                        field_name: field.0.clone(),
-                        field_type: self.typecheck_expr(scope, field.1)?,
-                        is_final: false,
-                    });
-                }
+                        let field_ty = self.typecheck_expr(scope, field_expr)?;
+                        let unified_field_ty =
+                            self.figure_out_unified_type(&field_ty, &expected_field.field_type)?;
 
-                if named_fields.len() == fields.len() {
-                    for field in &fields {
-                        if !named_fields.iter().any(|f| f == field) {
-                            return Err(format!("Invalid named struct cast, fields dont match"));
-                        }
+                        self.set_type_if_expr_is_var(scope, field_expr, unified_field_ty)?;
                     }
                 }
 
@@ -771,16 +418,8 @@ impl SemanticAnalyzer {
             }
             Expression::Lambda(expr) => {
                 *scope += 1;
-                let body_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
-                if body_ty != expr.return_type {
-                    if let Type::Infer = expr.return_type {
-                        expr.return_type = body_ty.clone();
-                    } else {
-                        return Err(format!(
-                            "Lambda body return type does not match specified return type {:?} expected {:?}", body_ty, expr.return_type
-                        ));
-                    }
-                }
+                let ret_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
+                let unified_ret_ty = self.figure_out_unified_type(&ret_ty, &expr.return_type)?;
 
                 let mut arg_types = Vec::new();
                 for arg in &expr.argument_list {
@@ -791,7 +430,7 @@ impl SemanticAnalyzer {
                 return Ok(Type::Function(FunctionType {
                     env_args: Vec::new(),
                     args: arg_types,
-                    ret: Box::new(body_ty),
+                    ret: Box::new(unified_ret_ty),
                 }));
             }
             Expression::JS(expr) => {
@@ -833,8 +472,8 @@ impl SemanticAnalyzer {
                     }
                     _ => {
                         return Err(format!(
-                            "For iterator must be an array, found {:?}",
-                            iter_ty
+                            "For iterator must be an array, found {:?} at {:?}",
+                            iter_ty, expr.iterator
                         ))
                     }
                 }
@@ -877,34 +516,26 @@ impl SemanticAnalyzer {
 
                 let body_ty = self.typecheck_codeblock(&mut scope, &mut func.function_body)?;
 
-                if body_ty != func.return_type {
-                    if matches!(func.return_type, Type::Infer) {
-                        func.return_type = body_ty.clone();
-                        let old_ret_ty = self
-                            .find_symbol_recursive(
-                                scope - 1,
-                                &func.func_name,
-                                SymbolType::Identifier,
-                            )
-                            .unwrap()
-                            .value_type;
+                let unified_body_ty = self.figure_out_unified_type(&body_ty, &func.return_type)?;
 
-                        if let Type::Function(old_ty) = old_ret_ty {
-                            let mut new_ret_type = old_ty;
-                            new_ret_type.ret = Box::new(body_ty.clone());
+                if !matches!(unified_body_ty, Type::Any) {
+                    func.return_type = unified_body_ty.clone();
 
-                            self.set_symbol_type(
-                                scope - 1,
-                                &func.func_name,
-                                SymbolType::Identifier,
-                                Type::Function(new_ret_type),
-                            )?;
-                        }
-                    } else {
-                        return Err(format!(
-                            "Function `{}` body doesnt match return type, ret: {:?} != body: {:?}",
-                            func.func_name, func.return_type, body_ty
-                        ));
+                    let old_ret_ty = self
+                        .find_symbol_recursive(scope - 1, &func.func_name, SymbolType::Identifier)
+                        .unwrap()
+                        .value_type;
+
+                    if let Type::Function(old_ty) = old_ret_ty {
+                        let mut new_ret_type = old_ty;
+                        new_ret_type.ret = Box::new(body_ty.clone());
+
+                        self.set_symbol_type(
+                            scope - 1,
+                            &func.func_name,
+                            SymbolType::Identifier,
+                            Type::Function(new_ret_type),
+                        )?;
                     }
                 }
             }
@@ -956,7 +587,7 @@ impl SemanticAnalyzer {
                     None => return Err(format!("Type not found `{}`", name)),
                 };
             }
-            Type::Array(inner) => {
+            Type::Reference(inner) | Type::Structural(inner) | Type::Array(inner) => {
                 self.resolve_type_name(scope, inner)?;
             }
             Type::Function(func) => {
@@ -1676,14 +1307,13 @@ impl SemanticAnalyzer {
             .cloned()
     }
 
-    pub fn perform_analysis(&mut self, program: &mut Program) -> Result<(), String> {
+    pub fn perform_analysis(&mut self, program: &mut Program) -> Result<Arena<Scope>, String> {
         // self.enable_shadowing(program)?;
         self.populate_symbol_table(program)?;
         self.resolve_names(program)?;
         self.enforce_mutability(program)?;
-        println!("Typechecking");
         self.typecheck(program)?;
 
-        Ok(())
+        Ok(self.symbol_table.clone())
     }
 }
