@@ -91,9 +91,9 @@ impl SemanticAnalyzer {
                     unified_type.env_args.push(unified_env);
                 }
 
-                for (lhs_env, rhs_env) in lhs_env.iter().zip(rhs_env) {
-                    let unified_env = self.figure_out_unified_type(lhs_env, rhs_env)?;
-                    unified_type.args.push(unified_env);
+                for (lhs_arg, rhs_arg) in lhs_args.iter().zip(rhs_args) {
+                    let unified_arg = self.figure_out_unified_type(lhs_arg, rhs_arg)?;
+                    unified_type.args.push(unified_arg);
                 }
 
                 return Ok(Type::Function(unified_type));
@@ -190,8 +190,7 @@ impl SemanticAnalyzer {
                         Type::Int,
                         Type::Float,
                     ],
-                    BinaryOperation::Add =>
-                        vec![Type::Int, Type::Uint, Type::Float, Type::String],
+                    BinaryOperation::Add => vec![Type::Int, Type::Uint, Type::Float, Type::String],
                     BinaryOperation::GreaterEqual
                     | BinaryOperation::Greater
                     | BinaryOperation::LessEqual
@@ -252,6 +251,7 @@ impl SemanticAnalyzer {
 
                             let unified_arg_ty =
                                 self.figure_out_unified_type(expected_ty, &given_ty)?;
+
 
                             self.set_type_if_expr_is_var(scope, given, unified_arg_ty)?;
                         }
@@ -427,11 +427,13 @@ impl SemanticAnalyzer {
                     arg_types.push(arg_ty);
                 }
 
-                return Ok(Type::Function(FunctionType {
+                let new_type = Type::Function(FunctionType {
                     env_args: Vec::new(),
                     args: arg_types,
                     ret: Box::new(unified_ret_ty),
-                }));
+                });
+
+                return Ok(new_type);
             }
             Expression::JS(expr) => {
                 for expr in expr {
