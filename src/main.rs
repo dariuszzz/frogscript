@@ -18,7 +18,6 @@ mod transpiler;
 
 use arena::*;
 use ast::*;
-use kdl::KdlDocument;
 use lexer::*;
 use parser::*;
 use pond::{find_pond_path, Pond, Target};
@@ -97,6 +96,7 @@ fn parse_project(pond: &Pond) -> Result<Program, String> {
     ponds_to_parse.push(pond.clone());
 
     let mut modules = Vec::new();
+
     for pond in &ponds_to_parse {
         let mut parser = Parser::new();
         let mut pond_modules = parser.parse_pond(&pond)?;

@@ -104,10 +104,7 @@ impl Pond {
                         .map(|f| {
                             let mut path = PathBuf::from(f);
                             if path.is_relative() {
-                                path = pond_path
-                                    .parent()
-                                    .unwrap()
-                                    .join(path)
+                                path = pond_path.parent().unwrap().join(path)
                             }
 
                             path
@@ -125,10 +122,7 @@ impl Pond {
                             let mut path =
                                 PathBuf::from(f.value().as_string().unwrap().to_string());
                             if path.is_relative() {
-                                path = pond_path
-                                    .parent()
-                                    .unwrap()
-                                    .join(path)
+                                path = pond_path.parent().unwrap().join(path)
                             }
 
                             path
@@ -210,6 +204,9 @@ impl Pond {
                     let pond = Pond::try_from_path(&pond_path)?;
 
                     let mut dependencies = pond.dependency_ponds()?;
+                    for dep in &mut dependencies {
+                        dep.name = format!("{}::{}", pond.name, dep.name);
+                    }
 
                     ponds.append(&mut dependencies);
                     ponds.push(pond);

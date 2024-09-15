@@ -24,6 +24,7 @@ impl Transpiler {
         expr: &mut Expression,
     ) {
         match expr {
+            Expression::Import(_) => {}
             Expression::Lambda(lambda) => {
                 let Lambda {
                     argument_list,
@@ -347,10 +348,13 @@ impl Transpiler {
                     arguments: Vec::new(),
                 }));
         } else {
-            return Err("No main function".to_string());
+            return Err(format!(
+                "No main function in {:?}",
+                self.ast.modules.last().unwrap().module_name
+            ));
         }
 
-        std::fs::create_dir_all(path.parent().unwrap());
+        std::fs::create_dir_all(path.parent().unwrap()).expect("Failed to create out dir");
         let mut outfile =
             std::fs::File::create(path).map_err(|_| format!("Cannot open out file {:?}", path))?;
 

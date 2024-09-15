@@ -443,6 +443,7 @@ pub enum Expression {
     JS(Vec<Expression>),
     If(If),
     For(For),
+    Import(Import),
     Placeholder,
     Break,
     Continue,
@@ -487,6 +488,10 @@ impl ToJS for Expression {
                 Literal::Uint(val) => format!("{val}"),
                 Literal::String(val) => format!("{val:?}"),
             },
+            Self::Import(import) => format!(
+                "/* imported module {:?} as {:?} */",
+                import.module_name, import.alias
+            ),
             Self::JS(code) => {
                 let code = code
                     .iter()
@@ -537,17 +542,10 @@ pub struct FunctionArgument {
     pub is_env: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct Imported {
-    pub name: String,
-    pub alias: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportStmt {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Import {
     pub module_name: String,
-    pub imports: Vec<Imported>,
-    pub everything: bool,
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -612,8 +610,7 @@ pub struct StructDef {
 pub struct TypeDef {
     pub name: String,
     pub export: bool,
-    // TODO: come up with a better name
-    pub value: Type,
+    pub underlying_ty: Type,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -622,4 +619,5 @@ pub struct Module {
     pub type_defs: Vec<TypeDef>,
     pub function_defs: Vec<FunctionDef>,
     pub toplevel_scope: CodeBlock,
+    pub reachable_modules: Vec<String>,
 }

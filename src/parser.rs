@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
 use crate::ast::*;
@@ -1360,6 +1359,7 @@ impl Parser {
 
     pub fn parse_codeblock_expression(&mut self, indent: usize) -> Result<Expression, String> {
         match self.peek(0).kind {
+            TokenKind::Identifier(Identifier::Use) => self.parse_import(),
             TokenKind::Identifier(Identifier::Let) | TokenKind::Identifier(Identifier::Mut) => {
                 self.parse_variable_decl(indent)
             }
@@ -1427,77 +1427,103 @@ impl Parser {
         Ok(Expression::JS(expressions))
     }
 
-    pub fn parse_import(&mut self) -> Result<ImportStmt, String> {
+    pub fn parse_import(&mut self) -> Result<Expression, String> {
         // consume `use`
         self.advance();
 
-        let mut imports = Vec::new();
-
         let module_name = match self.advance().kind {
-            TokenKind::Identifier(Identifier::Custom(file)) => file,
-            _ => return Err(format!("Missing file in use statement")),
+            TokenKind::Identifier(Identifier::Custom(part)) => {
+                let mut module_path = vec![part];
+
+                while let TokenKind::DoubleColon = self.peek(0).kind {
+                    self.advance();
+                    match self.peek(0).kind {
+                        TokenKind::Identifier(Identifier::Custom(iden)) => {
+                            module_path.push(iden);
+                            self.advance();
+                        }
+                        _ => return Err(format!("Missing module name after ::")),
+                    }
+                }
+
+                module_path.join("::")
+            }
+            _ => return Err(format!("Missing module name in use statement")),
         };
 
         match self.peek(0).kind {
             TokenKind::Newline => {
                 self.advance();
 
-                return Ok(ImportStmt {
+                return Ok(Expression::Import(Import {
                     module_name,
-                    imports,
-                    everything: true,
-                });
+                    alias: None,
+                }));
             }
             _ => {}
         };
 
         match self.advance().kind {
-            TokenKind::CurlyLeft => {}
-            _ => return Err(format!("Missing '{{' in use statement")),
-        }
+            TokenKind::Identifier(Identifier::As) => {
+                let alias = match self.advance().kind {
+                    TokenKind::Identifier(Identifier::Custom(alias)) => alias,
+                    _ => return Err(format!("Missing use statement alias")),
+                };
 
-        loop {
-            let name = match self.advance_skip_ws(0).kind {
-                TokenKind::Identifier(Identifier::Custom(iden)) => iden,
-                token => return Err(format!("Invalid token in use statement body {token:?}")),
-            };
-
-            let alias = match self.peek(0).kind {
-                TokenKind::Identifier(Identifier::As) => {
-                    self.advance();
-                    match self.advance().kind {
-                        TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
-                        _ => return Err(format!("Invalid token used for import alias")),
-                    }
-                }
-                _ => None,
-            };
-
-            imports.push(Imported { name, alias });
-
-            let token = self.peek_skip_ws(0)?;
-            match token.kind {
-                TokenKind::CurlyRight => {
-                    self.advance_skip_ws(0);
-                    break;
-                }
-                TokenKind::Comma => {
-                    self.advance_skip_ws(0);
-                    // allow for trailing ,
-                    if let TokenKind::CurlyRight = self.peek_skip_ws(0)?.kind {
-                        self.advance_skip_ws(0);
-                        break;
-                    }
-                }
-                _ => return Err(format!("Invalid token in use statement body")),
+                return Ok(Expression::Import(Import {
+                    module_name,
+                    alias: Some(alias),
+                }));
+            }
+            kind => {
+                return Err(format!(
+                    "Invalid token after use statement, expected `as` got {kind:?}"
+                ))
             }
         }
 
-        Ok(ImportStmt {
-            module_name,
-            imports,
-            everything: false,
-        })
+        // loop {
+        //     let name = match self.advance_skip_ws(0).kind {
+        //         TokenKind::Identifier(Identifier::Custom(iden)) => iden,
+        //         token => return Err(format!("Invalid token in use statement body {token:?}")),
+        //     };
+
+        //     let alias = match self.peek(0).kind {
+        //         TokenKind::Identifier(Identifier::As) => {
+        //             self.advance();
+        //             match self.advance().kind {
+        //                 TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
+        //                 _ => return Err(format!("Invalid token used for import alias")),
+        //             }
+        //         }
+        //         _ => None,
+        //     };
+
+        //     imports.push(Imported { name, alias });
+
+        //     let token = self.peek_skip_ws(0)?;
+        //     match token.kind {
+        //         TokenKind::CurlyRight => {
+        //             self.advance_skip_ws(0);
+        //             break;
+        //         }
+        //         TokenKind::Comma => {
+        //             self.advance_skip_ws(0);
+        //             // allow for trailing ,
+        //             if let TokenKind::CurlyRight = self.peek_skip_ws(0)?.kind {
+        //                 self.advance_skip_ws(0);
+        //                 break;
+        //             }
+        //         }
+        //         _ => return Err(format!("Invalid token in use statement body")),
+        //     }
+        // }
+
+        // Ok(ImportStmt {
+        //     module_name,
+        //     imports,
+        //     everything: false,
+        // })
     }
 
     pub fn parse_type_def(&mut self) -> Result<TypeDef, String> {
@@ -1591,7 +1617,7 @@ impl Parser {
         Ok(TypeDef {
             name: type_name,
             export,
-            value,
+            underlying_ty: value,
         })
     }
 
@@ -1703,9 +1729,8 @@ impl Parser {
                         )?;
                     }
                     Identifier::Use => {
-                        todo!("use statements dont work yet")
-                        // let import = self.parse_import()?;
-                        // module.imports.push(import);
+                        let import = self.parse_import()?;
+                        current_module.toplevel_scope.expressions.push(import);
                     }
                     Identifier::Fn => {
                         let func_def = self.parse_fn_no_implicits(Vec::new())?;

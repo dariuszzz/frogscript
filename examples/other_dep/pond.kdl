@@ -1,0 +1,6 @@
+name "other_dep"
+version "0.1"
+
+dependencies {
+    core path="../core/"
+}

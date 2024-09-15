@@ -3,6 +3,7 @@ version "0.1"
 
 dependencies {
     core path="../core/"
+    other_dep path="../other_dep/"
 }
 
 targets {
