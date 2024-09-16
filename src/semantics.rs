@@ -6,46 +6,14 @@ use std::{
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
+    symbol_table::{Scope, Symbol, SymbolTable, SymbolType},
     Arena, BinaryOperation, CustomType, FunctionType, Import, Lambda, Literal, Module, NamedStruct,
     StructDef, StructField, Type,
 };
 
-#[derive(Debug, Clone)]
-pub struct Symbol {
-    pub original_name: String,
-    pub symbol_type: SymbolType,
-    pub value_type: Type,
-    pub exported: bool,
-}
-
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum SymbolType {
-    Identifier,
-    Type,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Scope {
-    pub parent_scope: Option<usize>,
-    pub children_scopes: Vec<usize>,
-    pub symbols: Vec<Symbol>,
-    pub used_modules: Vec<Import>,
-}
-
-impl Scope {
-    pub fn with_parent(parent: usize) -> Self {
-        Self {
-            parent_scope: Some(parent),
-            children_scopes: Vec::new(),
-            symbols: Vec::new(),
-            used_modules: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct SemanticAnalyzer {
-    pub symbol_table: Arena<Scope>,
+    pub symbol_table: SymbolTable,
     pub module_to_scope: HashMap<String, usize>,
 }
 
@@ -111,7 +79,10 @@ impl SemanticAnalyzer {
         }
 
         if let Expression::Variable(var) = expr {
-            self.set_symbol_type(*scope, &var.name, SymbolType::Identifier, ty.clone())?;
+            let symbol =
+                self.symbol_table
+                    .find_symbol_rec_mut(*scope, &var.name, SymbolType::Identifier)?;
+            symbol.value_type = ty;
         }
 
         return Ok(());
@@ -123,12 +94,12 @@ impl SemanticAnalyzer {
                 let rhs = self.typecheck_expr(scope, &mut expr.var_value)?;
                 let unified = self.figure_out_unified_type(&rhs, &expr.var_type)?;
                 expr.var_type = unified.clone();
-                self.set_symbol_type(
+                let symbol = self.symbol_table.find_symbol_rec_mut(
                     *scope,
                     &expr.var_name,
                     SymbolType::Identifier,
-                    unified.clone(),
                 )?;
+                symbol.value_type = unified.clone();
                 return Ok(unified);
             }
             Expression::Variable(expr) => {
@@ -151,15 +122,15 @@ impl SemanticAnalyzer {
                     scope.clone()
                 };
 
-                match self.find_symbol_recursive(
+                match self.symbol_table.find_symbol_rec(
                     scope_idx,
                     &name_parts.last().unwrap(),
                     SymbolType::Identifier,
                 ) {
-                    Some(symbol) => {
-                        return Ok(symbol.value_type);
+                    Ok(symbol) => {
+                        return Ok(symbol.value_type.clone());
                     }
-                    None => return Err(format!("Couldnt find symbol `{}`", expr.name)),
+                    Err(_) => return Err(format!("Couldnt find symbol `{}`", expr.name)),
                 }
             }
             Expression::Literal(lit) => {
@@ -343,9 +314,10 @@ impl SemanticAnalyzer {
 
                 let ty = if let Type::Custom(CustomType { name }) = expr_ty {
                     let symbol = self
-                        .find_symbol_recursive(*scope, &name, SymbolType::Type)
+                        .symbol_table
+                        .find_symbol_rec(*scope, &name, SymbolType::Type)
                         .unwrap();
-                    symbol.value_type
+                    symbol.value_type.clone()
                 } else {
                     expr_ty
                 };
@@ -369,9 +341,11 @@ impl SemanticAnalyzer {
             }
             Expression::NamedStruct(expr) => {
                 let casted_ty = self
-                    .find_symbol_recursive(*scope, &expr.casted_to, SymbolType::Type)
+                    .symbol_table
+                    .find_symbol_rec(*scope, &expr.casted_to, SymbolType::Type)
                     .expect(&format!("Type `{}` doesnt exist", expr.casted_to))
-                    .value_type;
+                    .value_type
+                    .clone();
 
                 let named_fields = if let Type::Struct(StructDef { fields }) = &casted_ty {
                     fields
@@ -463,12 +437,13 @@ impl SemanticAnalyzer {
                 let iter_ty = self.typecheck_expr(scope, &mut expr.iterator)?;
                 match iter_ty {
                     Type::Array(inner) => {
-                        self.set_symbol_type(
+                        let symbol = self.symbol_table.find_symbol_rec_mut(
                             *scope + 1,
                             &expr.binding,
                             SymbolType::Identifier,
-                            *inner,
                         )?;
+
+                        symbol.value_type = *inner;
                     }
                     _ => {
                         return Err(format!(
@@ -521,20 +496,23 @@ impl SemanticAnalyzer {
                     func.return_type = unified_body_ty.clone();
 
                     let old_ret_ty = self
-                        .find_symbol_recursive(scope - 1, &func.func_name, SymbolType::Identifier)
+                        .symbol_table
+                        .find_symbol_rec(scope - 1, &func.func_name, SymbolType::Identifier)
                         .unwrap()
-                        .value_type;
+                        .value_type
+                        .clone();
 
                     if let Type::Function(old_ty) = old_ret_ty {
                         let mut new_ret_type = old_ty;
                         new_ret_type.ret = Box::new(body_ty.clone());
 
-                        self.set_symbol_type(
+                        let symbol = self.symbol_table.find_symbol_rec_mut(
                             scope - 1,
                             &func.func_name,
                             SymbolType::Identifier,
-                            Type::Function(new_ret_type),
                         )?;
+
+                        symbol.value_type = Type::Function(new_ret_type);
                     }
                 }
             }
@@ -582,13 +560,13 @@ impl SemanticAnalyzer {
                     scope.clone()
                 };
 
-                match self.find_symbol_recursive(
+                match self.symbol_table.find_symbol_rec(
                     scope_idx,
                     &name_parts.last().unwrap(),
                     SymbolType::Type,
                 ) {
-                    Some(_) => return Ok(()),
-                    None => return Err(format!("Type not found `{}`", name)),
+                    Ok(_) => return Ok(()),
+                    Err(_) => return Err(format!("Type not found `{}`", name)),
                 };
             }
             Type::Reference(inner) | Type::Structural(inner) | Type::Array(inner) => {
@@ -760,7 +738,7 @@ impl SemanticAnalyzer {
             Expression::VariableDecl(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.var_value)?;
 
-                self.add_symbol_to_scope(
+                self.symbol_table.add_symbol_to_scope(
                     scope,
                     Symbol {
                         original_name: expr.var_name.to_string(),
@@ -815,9 +793,9 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Lambda(expr) => {
-                let lambda_scope = self.new_scope(scope)?;
+                let lambda_scope = self.symbol_table.new_scope(scope)?;
                 for arg in &expr.argument_list {
-                    self.add_symbol_to_scope(
+                    self.symbol_table.add_symbol_to_scope(
                         lambda_scope,
                         Symbol {
                             original_name: arg.arg_name.clone(),
@@ -839,14 +817,14 @@ impl SemanticAnalyzer {
             }
             Expression::If(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.cond)?;
-                let true_scope = self.new_scope(scope)?;
+                let true_scope = self.symbol_table.new_scope(scope)?;
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
                     true_scope,
                     &expr.true_branch,
                 )?;
                 if let Some(else_branch) = &expr.else_branch {
-                    let else_scope = self.new_scope(scope)?;
+                    let else_scope = self.symbol_table.new_scope(scope)?;
                     self.populate_symbol_table_codeblock(
                         curr_module_name,
                         else_scope,
@@ -856,8 +834,8 @@ impl SemanticAnalyzer {
             }
             Expression::For(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.iterator)?;
-                let for_scope = self.new_scope(scope)?;
-                self.add_symbol_to_scope(
+                let for_scope = self.symbol_table.new_scope(scope)?;
+                self.symbol_table.add_symbol_to_scope(
                     for_scope,
                     Symbol {
                         original_name: expr.binding.clone(),
@@ -895,7 +873,7 @@ impl SemanticAnalyzer {
 
     pub fn populate_symbol_table(&mut self, program: &Program) -> Result<(), String> {
         for module in &program.modules {
-            let module_scope = self.symbol_table.insert(Scope::default());
+            let module_scope = self.symbol_table.table.insert(Scope::default());
             let curr_module_name = &module.module_name;
 
             self.module_to_scope
@@ -908,7 +886,7 @@ impl SemanticAnalyzer {
             )?;
 
             for type_def in &module.type_defs {
-                self.add_symbol_to_scope(
+                self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
                         original_name: type_def.name.clone(),
@@ -936,7 +914,7 @@ impl SemanticAnalyzer {
                     ret: Box::new(func_def.return_type.clone()),
                 });
 
-                self.add_symbol_to_scope(
+                self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
                         original_name: func_def.func_name.to_string(),
@@ -946,10 +924,10 @@ impl SemanticAnalyzer {
                     },
                 )?;
 
-                let func_scope = self.new_scope(module_scope)?;
+                let func_scope = self.symbol_table.new_scope(module_scope)?;
 
                 for arg in &func_def.argument_list {
-                    self.add_symbol_to_scope(
+                    self.symbol_table.add_symbol_to_scope(
                         func_scope,
                         Symbol {
                             original_name: arg.arg_name.clone(),
@@ -969,74 +947,6 @@ impl SemanticAnalyzer {
         }
 
         Ok(())
-    }
-
-    fn add_symbol_to_scope(&mut self, scope: usize, symbol: Symbol) -> Result<(), String> {
-        let curr_scope = self
-            .symbol_table
-            .get_mut(scope)
-            .ok_or("Scope does not exist")?;
-
-        let exists = SemanticAnalyzer::scope_get_symbol(
-            &curr_scope,
-            &symbol.original_name,
-            symbol.symbol_type,
-        )
-        .is_some();
-
-        if exists {
-            return Err(format!("Duplicate symbol `{}`", symbol.original_name));
-        } else {
-            curr_scope.symbols.push(symbol);
-            Ok(())
-        }
-    }
-
-    fn set_symbol_type(
-        &mut self,
-        scope: usize,
-        symbol_name: &str,
-        symbol_type: SymbolType,
-        ty: Type,
-    ) -> Result<(), String> {
-        let mut scope_idx = Some(scope);
-        while let Some(curr_scope_idx) = scope_idx {
-            let curr_scope = self.symbol_table.get_mut(curr_scope_idx).unwrap();
-
-            match curr_scope
-                .symbols
-                .iter_mut()
-                .filter(|s| s.original_name == symbol_name && s.symbol_type == symbol_type)
-                .next()
-            {
-                Some(symbol) => {
-                    symbol.value_type = ty;
-                    return Ok(());
-                }
-                None => scope_idx = curr_scope.parent_scope,
-            }
-        }
-
-        Err(format!("Symbol `{symbol_name}` doesnt exist in scope"))
-    }
-
-    fn find_symbol_recursive(
-        &self,
-        scope: usize,
-        symbol_name: &str,
-        symbol_type: SymbolType,
-    ) -> Option<Symbol> {
-        let mut scope_idx = Some(scope);
-        while let Some(curr_scope_idx) = scope_idx {
-            let curr_scope = self.symbol_table.get(curr_scope_idx).unwrap();
-
-            match SemanticAnalyzer::scope_get_symbol(&curr_scope, symbol_name, symbol_type) {
-                Some(symbol) => return Some(symbol),
-                None => scope_idx = curr_scope.parent_scope,
-            }
-        }
-
-        return None;
     }
 
     fn resolve_names_expr(
@@ -1069,13 +979,13 @@ impl SemanticAnalyzer {
                     scope.clone()
                 };
 
-                match self.find_symbol_recursive(
+                match self.symbol_table.find_symbol_rec(
                     scope_idx,
                     &name_parts.last().unwrap(),
                     SymbolType::Identifier,
                 ) {
-                    Some(_) => return Ok(()),
-                    None => return Err(format!("Identifier not found `{}`", expr.name)),
+                    Ok(_) => return Ok(()),
+                    Err(_) => return Err(format!("Identifier not found `{}`", expr.name)),
                 };
             }
             Expression::VariableDecl(expr) => {
@@ -1360,39 +1270,12 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn add_child_scope(&mut self, parent: usize, child: usize) -> Result<(), String> {
-        let parent = self
-            .symbol_table
-            .get_mut(parent)
-            .ok_or("Parent scope not found".to_string())?;
-
-        parent.children_scopes.push(child);
-
-        Ok(())
-    }
-
-    fn new_scope(&mut self, parent: usize) -> Result<usize, String> {
-        let child = self.symbol_table.insert(Scope::with_parent(parent));
-        self.add_child_scope(parent, child)?;
-
-        Ok(child)
-    }
-
-    fn scope_get_symbol(scope: &Scope, name: &str, symbol_type: SymbolType) -> Option<Symbol> {
-        scope
-            .symbols
-            .iter()
-            .filter(|s| s.original_name == name && s.symbol_type == symbol_type)
-            .next()
-            .cloned()
-    }
-
     fn get_imports_recursive(&self, scope: usize) -> Result<Vec<Import>, String> {
         let mut imports = Vec::new();
 
         let mut scope_idx = Some(scope);
         while let Some(curr_scope_idx) = scope_idx {
-            let curr_scope = self.symbol_table.get(curr_scope_idx).unwrap();
+            let curr_scope = self.symbol_table.get_scope(curr_scope_idx).unwrap();
 
             let mut curr_scope_imports = curr_scope.used_modules.clone();
             curr_scope_imports.reverse();
@@ -1406,7 +1289,7 @@ impl SemanticAnalyzer {
         Ok(imports)
     }
 
-    pub fn perform_analysis(&mut self, program: &mut Program) -> Result<Arena<Scope>, String> {
+    pub fn perform_analysis(&mut self, program: &mut Program) -> Result<SymbolTable, String> {
         // self.enable_shadowing(program)?;
         self.populate_symbol_table(program)?;
         self.resolve_names(program)?;

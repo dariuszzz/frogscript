@@ -8,15 +8,9 @@ module foo =
         let val = 23
 
 
-use core
-
 fn main =
-    use array
-
-    // moge uzyc np push() zamiast core::array::push()
-
     let num = test::core::foo(23)
-    print(num)
+    core::print(num)
     other_dep::core::print(2)
     other_dep::other_foo()
 

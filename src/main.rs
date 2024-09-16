@@ -14,6 +14,7 @@ mod lexer;
 mod parser;
 mod pond;
 mod semantics;
+mod symbol_table;
 mod transpiler;
 
 use arena::*;
@@ -56,14 +57,14 @@ struct ParseOpts {
     #[options(help = "file to dump the parsed ast to")]
     output: Option<String>,
 
-    #[options(free, help = "path to parse")]
+    #[options(free, help = "path to parse (defaults to cwd)")]
     path: Vec<String>,
 }
 
 #[derive(Debug, Options)]
 struct TranspileOpts {
-    #[options(help = "target to transpile")]
-    target: String,
+    #[options(help = "target to transpile (defaults to target 'main')")]
+    target: Option<String>,
 
     #[options(help = "output")]
     output: Option<String>,
@@ -71,16 +72,16 @@ struct TranspileOpts {
     #[options(help = "create a dot graph of the ast")]
     graph: bool,
 
-    #[options(free, help = "path to project")]
+    #[options(free, help = "path to project (defaults to cwd)")]
     path: Vec<String>,
 }
 
 #[derive(Debug, Options)]
 struct RunOpts {
-    #[options(help = "target to run")]
-    target: String,
+    #[options(help = "target to run (defaults to target 'main')")]
+    target: Option<String>,
 
-    #[options(free, help = "path to project")]
+    #[options(free, help = "path to project (defaults to cwd)")]
     path: Vec<String>,
 }
 
@@ -152,11 +153,12 @@ fn main() -> Result<(), String> {
             }
         }
         Command::Parse(opts) => {
-            if opts.path.len() != 1 {
-                return Err("Invalid path".to_string());
-            }
-            let path = opts.path.get(0).unwrap();
-            let path = Path::new(&path);
+            let path = if opts.path.len() == 1 {
+                let path = opts.path.get(0).unwrap();
+                PathBuf::from(&path)
+            } else {
+                std::env::current_dir().expect("Invalid cwd")
+            };
 
             let pond = find_project(&path)?;
 
@@ -184,8 +186,9 @@ fn main() -> Result<(), String> {
                 std::env::current_dir().expect("Invalid cwd")
             };
 
+            let target_name = opts.target.unwrap_or("main".to_string());
             let pond = find_project(&path)?;
-            let target = pond.targets.get(&opts.target).expect("Invalid target");
+            let target = pond.targets.get(&target_name).expect("Invalid target");
 
             let mut program = parse_project(&pond)?;
 
@@ -194,7 +197,7 @@ fn main() -> Result<(), String> {
 
             transpile_project(program, target, None)?;
 
-            println!("-- Running `{}`, target `{}`", pond.name, opts.target);
+            println!("-- Running `{}`, target `{}`", pond.name, target_name);
 
             let mut handle = std::process::Command::new("node")
                 .args([target.outfile.to_str().unwrap()])
@@ -211,8 +214,9 @@ fn main() -> Result<(), String> {
                 std::env::current_dir().expect("Invalid cwd")
             };
 
+            let target_name = opts.target.unwrap_or("main".to_string());
             let pond = find_project(&path)?;
-            let target = pond.targets.get(&opts.target).expect("Invalid target");
+            let target = pond.targets.get(&target_name).expect("Invalid target");
 
             let mut program = parse_project(&pond)?;
 
