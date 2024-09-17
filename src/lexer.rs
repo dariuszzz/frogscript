@@ -1,8 +1,16 @@
 use std::{collections::HashMap, fs, path::Path};
 
+use crate::Expression;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FStringPart {
+    String(String),
+    Code(Box<Expression>),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
-    String(String),
+    String(Vec<FStringPart>),
     Int(isize),
     Uint(usize),
     Float(f32),
@@ -87,6 +95,10 @@ pub enum TokenKind {
     JS,
     Indentation(usize),
 
+    StartString,
+    StringPart(String),
+    StopString,
+
     Literal(Literal),
     Identifier(Identifier),
 }
@@ -108,15 +120,20 @@ pub enum NestedParsingCount {
 impl NestedParsingCount {
     pub fn increment(&mut self) {
         match self {
-            Self::None => {}
+            Self::None => *self = Self::Count(1),
             Self::Count(c) => *c = *c + 1,
         }
     }
 
     pub fn decrement(&mut self) {
         match self {
-            Self::None => {}
-            Self::Count(c) => *c = *c - 1,
+            Self::None => panic!("Unterminated string or comment"),
+            Self::Count(c) => {
+                *c = *c - 1;
+                if *c == 0 {
+                    *self = Self::None
+                }
+            }
         }
     }
 }
@@ -131,6 +148,7 @@ pub struct Lexer {
     pub lexeme_start_line: usize,
     pub lexeme_start_line_char: usize,
     pub parsing_multiline_comment: NestedParsingCount,
+    pub currently_in_string: NestedParsingCount,
 }
 
 impl Lexer {
@@ -148,6 +166,7 @@ impl Lexer {
             lexeme_start_line: 0,
             lexeme_start_line_char: 0,
             parsing_multiline_comment: NestedParsingCount::None,
+            currently_in_string: NestedParsingCount::None,
         }
     }
 
@@ -217,7 +236,7 @@ impl Lexer {
     }
 
     fn add_token(&mut self, kind: TokenKind) {
-        self.tokens.push(Token {
+        let token = Token {
             kind,
             start_line: self.lexeme_start_line,
             start_char: self.lexeme_start_line_char,
@@ -226,11 +245,13 @@ impl Lexer {
                 .get(self.lexeme_start..self.current)
                 .unwrap()
                 .to_owned(),
-        });
+        };
+
+        self.tokens.push(token);
     }
 
     fn parse_multiline_comment(&mut self) -> Result<(), String> {
-        self.parsing_multiline_comment = NestedParsingCount::Count(1);
+        self.parsing_multiline_comment.increment();
         while let (Some(c), Some(nc)) = (self.peek(), self.peek_next()) {
             if c == '/' && nc == '*' {
                 self.parsing_multiline_comment.increment();
@@ -239,9 +260,8 @@ impl Lexer {
                 self.parsing_multiline_comment.decrement();
 
                 match self.parsing_multiline_comment {
-                    NestedParsingCount::Count(count) if count == 0 => break,
-                    NestedParsingCount::Count(_) => {}
-                    NestedParsingCount::None => unreachable!(),
+                    NestedParsingCount::None => break,
+                    _ => {}
                 }
             }
             self.advance();
@@ -251,8 +271,7 @@ impl Lexer {
             NestedParsingCount::Count(count) if count != 0 => {
                 Err(format!("Unterminated multiline comment"))
             }
-            NestedParsingCount::Count(_) => {
-                self.parsing_multiline_comment = NestedParsingCount::None;
+            NestedParsingCount::None => {
                 self.advance();
                 self.advance();
 
@@ -260,30 +279,62 @@ impl Lexer {
 
                 Ok(())
             }
-            NestedParsingCount::None => unreachable!(),
+            _ => unreachable!(),
         }
     }
 
-    fn parse_string(&mut self) -> Result<(), String> {
-        let starting_line = self.line;
-        let starting_line_char = self.line_char;
-        if self.consume_until('"') {
-            let string = self
-                .source_file
-                .get((self.lexeme_start + 1)..(self.current - 1))
-                .unwrap()
-                .to_owned();
-            self.tokens.push(Token {
-                kind: TokenKind::Literal(Literal::String(string.clone())),
-                start_char: self.lexeme_start_line_char,
-                start_line: self.lexeme_start_line,
-                lexeme: string,
-            });
+    fn parse_fstring_string_part(&mut self) -> Result<(), String> {
+        let mut prev = self
+            .source_file
+            .chars()
+            .skip(self.current - 1)
+            .next()
+            .unwrap();
 
-            return Ok(());
-        } else {
-            return Err(format!("Unterminated string"));
+        while let Some(c) = self.peek() {
+            // TODO: Add escapes
+            if prev != '\\' {
+                if c == '{' {
+                    break;
+                }
+                if c == '"' {
+                    break;
+                }
+            }
+
+            prev = self.advance();
         }
+
+        if self.is_at_end() {
+            return Err(format!("Unterminated string (at EOF)"));
+        }
+
+        let string = self
+            .source_file
+            .get((self.lexeme_start + 1)..(self.current))
+            .unwrap()
+            .to_owned();
+
+        if !string.is_empty() {
+            self.add_token(TokenKind::StringPart(string));
+        }
+
+        let last = self.advance();
+        if '"' == last {
+            self.add_token(TokenKind::StopString);
+            self.currently_in_string.decrement();
+        }
+
+        Ok(())
+    }
+
+    fn parse_fstring(&mut self) -> Result<(), String> {
+        self.add_token(TokenKind::StartString);
+        self.currently_in_string.increment();
+
+        self.parse_fstring_string_part()?;
+
+        Ok(())
     }
 
     fn parse_number(&mut self) {
@@ -413,7 +464,6 @@ impl Lexer {
                 indentation_level += 4;
             } else {
                 break;
-            }
             self.advance();
         }
         self.add_token(TokenKind::Indentation(indentation_level));
@@ -429,7 +479,13 @@ impl Lexer {
                 '(' => self.add_token(TokenKind::ParenLeft),
                 ')' => self.add_token(TokenKind::ParenRight),
                 '{' => self.add_token(TokenKind::CurlyLeft),
-                '}' => self.add_token(TokenKind::CurlyRight),
+                '}' => {
+                    if let NestedParsingCount::Count(_) = self.currently_in_string {
+                        self.parse_fstring_string_part()?;
+                    } else {
+                        self.add_token(TokenKind::CurlyRight)
+                    }
+                }
                 '[' => self.add_token(TokenKind::SquareLeft),
                 ']' => self.add_token(TokenKind::SquareRight),
                 '<' => {
@@ -555,7 +611,7 @@ impl Lexer {
                         }
                     }
                 }
-                '"' => self.parse_string()?,
+                '"' => self.parse_fstring()?,
                 c if c.is_numeric() => self.parse_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => self.parse_identifier(),
                 c if c.is_ascii_whitespace() => {

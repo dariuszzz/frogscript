@@ -7,8 +7,8 @@ use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
     symbol_table::{Scope, Symbol, SymbolTable, SymbolType},
-    Arena, BinaryOperation, CustomType, FunctionType, Import, Lambda, Literal, Module, NamedStruct,
-    StructDef, StructField, Type,
+    Arena, BinaryOperation, CustomType, FStringPart, FunctionType, Import, Lambda, Literal, Module,
+    NamedStruct, StructDef, StructField, Type,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -135,7 +135,15 @@ impl SemanticAnalyzer {
             }
             Expression::Literal(lit) => {
                 let ty = match lit {
-                    Literal::String(_) => Type::String,
+                    Literal::String(parts) => {
+                        for part in parts {
+                            if let FStringPart::Code(expr) = part {
+                                self.typecheck_expr(scope, expr)?;
+                            }
+                        }
+
+                        Type::String
+                    }
                     Literal::Int(_) => Type::Int,
                     Literal::Uint(_) => Type::Uint,
                     Literal::Float(_) => Type::Float,
@@ -408,9 +416,7 @@ impl SemanticAnalyzer {
                 return Ok(new_type);
             }
             Expression::JS(expr) => {
-                for expr in expr {
-                    self.typecheck_expr(scope, expr)?;
-                }
+                self.typecheck_expr(scope, expr)?;
 
                 return Ok(Type::Any);
             }
@@ -606,6 +612,13 @@ impl SemanticAnalyzer {
         expr: &Expression,
     ) -> Result<(), String> {
         match expr {
+            Expression::Literal(Literal::String(parts)) => {
+                for part in parts {
+                    if let FStringPart::Code(expr) = part {
+                        self.enforce_mutability_expr(mutable_vars, &expr)?
+                    }
+                }
+            }
             Expression::Assignment(expr) => {
                 self.enforce_mutability_expr(mutable_vars, &expr.lhs)?;
             }
@@ -748,7 +761,16 @@ impl SemanticAnalyzer {
                     },
                 )?;
             }
-            Expression::Literal(_) => {}
+            Expression::Literal(lit) => match lit {
+                Literal::String(parts) => {
+                    for part in parts {
+                        if let FStringPart::Code(expr) = part {
+                            self.populate_symbol_table_expr(curr_module_name, scope, expr)?
+                        }
+                    }
+                }
+                _ => {}
+            },
             Expression::BinaryOp(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.lhs)?;
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.rhs)?;
@@ -847,9 +869,7 @@ impl SemanticAnalyzer {
                 self.populate_symbol_table_codeblock(curr_module_name, for_scope, &expr.body)?;
             }
             Expression::JS(expr) => {
-                for expr in expr {
-                    self.populate_symbol_table_expr(curr_module_name, scope, expr)?;
-                }
+                self.populate_symbol_table_expr(curr_module_name, scope, expr)?;
             }
             Expression::Placeholder => {}
             Expression::Break => {}
@@ -992,7 +1012,16 @@ impl SemanticAnalyzer {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.var_value)?;
                 self.resolve_type_name(curr_module_name, scope, &mut expr.var_type)?;
             }
-            Expression::Literal(_) => {}
+            Expression::Literal(literal) => match literal {
+                Literal::String(parts) => {
+                    for part in parts {
+                        if let FStringPart::Code(expr) = part {
+                            self.resolve_names_expr(curr_module_name, scope, expr)?;
+                        }
+                    }
+                }
+                _ => {}
+            },
             Expression::BinaryOp(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.lhs)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.rhs)?;
@@ -1065,9 +1094,7 @@ impl SemanticAnalyzer {
                 self.resolve_names_codeblock(curr_module_name, scope, &mut expr.body)?;
             }
             Expression::JS(expr) => {
-                for expr in expr {
-                    self.resolve_names_expr(curr_module_name, scope, expr)?;
-                }
+                self.resolve_names_expr(curr_module_name, scope, expr)?;
             }
             Expression::Placeholder => {}
             Expression::Break => {}
@@ -1159,7 +1186,16 @@ impl SemanticAnalyzer {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.var_value)?;
                 SemanticAnalyzer::map_to_unique_name(shadowed_vars, &mut expr.var_name);
             }
-            Expression::Literal(_) => {}
+            Expression::Literal(literal) => match literal {
+                Literal::String(parts) => {
+                    for part in parts {
+                        if let FStringPart::Code(expr) = part {
+                            self.enable_shadowing_expr(shadowed_vars, expr)?;
+                        }
+                    }
+                }
+                _ => {}
+            },
             Expression::BinaryOp(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.lhs)?;
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.rhs)?;
@@ -1226,9 +1262,7 @@ impl SemanticAnalyzer {
                 SemanticAnalyzer::map_to_unique_name(shadowed_vars, &mut expr.binding);
             }
             Expression::JS(expr) => {
-                for expr in expr {
-                    self.enable_shadowing_expr(shadowed_vars, expr)?;
-                }
+                self.enable_shadowing_expr(shadowed_vars, expr)?;
             }
             Expression::Placeholder => todo!(),
             Expression::Break => todo!(),

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::ast::*;
 use crate::lexer::{Identifier, Lexer, Literal, Token, TokenKind};
 use crate::pond::Pond;
+use crate::{ast::*, FStringPart};
 
 #[derive(Debug, Clone, Default)]
 pub struct Program {
@@ -771,7 +771,8 @@ impl Parser {
                         operand: Box::new(term),
                     })
                 }
-                TokenKind::Literal(literal) => self.parse_num(literal, indent)?,
+                TokenKind::StartString => self.parse_string(indent)?,
+                TokenKind::Literal(literal) => self.parse_literal(literal, indent)?,
                 TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent)?,
                 TokenKind::Identifier(Identifier::Custom(name)) => {
                     self.parse_custom_iden(name, indent)?
@@ -943,7 +944,31 @@ impl Parser {
         Ok(expr)
     }
 
-    pub fn parse_num(&mut self, literal: Literal, indent: usize) -> Result<Expression, String> {
+    pub fn parse_string(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut parts = Vec::new();
+        loop {
+            let token = self.peek(0);
+            match token.kind {
+                TokenKind::StopString => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::StringPart(string) => {
+                    self.advance();
+                    parts.push(FStringPart::String(string));
+                }
+                TokenKind::EOF => return Err(format!("Unterminated string (parsing)")),
+                kind => {
+                    let expr = self.parse_expression(indent)?;
+                    parts.push(FStringPart::Code(Box::new(expr)))
+                }
+            };
+        }
+
+        return Ok(Expression::Literal(Literal::String(parts)));
+    }
+
+    pub fn parse_literal(&mut self, literal: Literal, indent: usize) -> Result<Expression, String> {
         Ok(Expression::Literal(literal))
     }
 
@@ -1225,10 +1250,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Placeholder)
             }
-            TokenKind::Identifier(Identifier::Break) => {
-                self.advance();
-                Ok(Expression::Break)
-            }
+            TokenKind::Identifier(Identifier::Break) => Ok(Expression::Break),
             TokenKind::JS => self.parse_js(indent),
             TokenKind::CurlyLeft => self.parse_struct_literal(indent),
             TokenKind::Identifier(Identifier::Continue) => {
@@ -1380,51 +1402,22 @@ impl Parser {
 
         if let TokenKind::ParenLeft = self.advance_skip_ws(indent).kind {
         } else {
+            return Err(format!("Couldnt find lparen after @JS"));
+        }
+
+        if let TokenKind::StartString = self.advance_skip_ws(indent).kind {
+        } else {
             return Err(format!("Couldnt find js source code after @JS"));
         }
 
-        let mut expressions = Vec::new();
-        let expr = match self.peek_skip_ws(indent)?.kind {
-            TokenKind::Literal(Literal::String(code)) => {
-                self.advance_skip_ws(indent);
-                Expression::Literal(Literal::String(code))
-            }
-            TokenKind::Identifier(Identifier::Custom(iden)) => {
-                self.advance_skip_ws(indent);
-                Expression::Variable(Variable { name: iden })
-            }
-            _ => {
-                return Err(format!(
-                    "Source code after @js must have at least one element"
-                ));
-            }
-        };
+        let expr = self.parse_string(indent)?;
 
-        expressions.push(expr);
-
-        loop {
-            let expr = match self.peek_skip_ws(indent)?.kind {
-                TokenKind::ParenRight => {
-                    self.advance_skip_ws(indent);
-                    break;
-                }
-                TokenKind::Literal(Literal::String(code)) => {
-                    self.advance_skip_ws(indent);
-                    Expression::Literal(Literal::String(code))
-                }
-                TokenKind::Identifier(Identifier::Custom(iden)) => {
-                    self.advance_skip_ws(indent);
-                    Expression::Variable(Variable { name: iden })
-                }
-                _ => {
-                    return Err(format!("Source code after @js doesn't have a ')'"));
-                }
-            };
-
-            expressions.push(expr);
+        if let TokenKind::ParenRight = self.advance_skip_ws(indent).kind {
+        } else {
+            return Err(format!("Couldnt find end of js source code after @JS"));
         }
 
-        Ok(Expression::JS(expressions))
+        Ok(Expression::JS(Box::new(expr)))
     }
 
     pub fn parse_import(&mut self) -> Result<Expression, String> {

@@ -5,7 +5,7 @@ fn make_babies(p1 Person, p2 Person) -> Person =
     let p1_half = p1.name.substr(0, core::len(p1.name)/2)
     let p2_half = p2.name.substr(core::len(p2.name)/2, core::len(p2.name))
 
-    return Person { name: p1_half + p2_half }
+    return Person { name: "{p1_half}{p2_half}" }
 
 fn chars(str string) =
     mut arr = []
@@ -31,4 +31,4 @@ fn babies =
 
     let baby = make_babies(daddy, mommy)
 
-    core::print(baby)
+    core::print("imie bachora: {baby.name}")

@@ -1,13 +1,14 @@
 use std::{collections::HashMap, fmt::Binary};
 
-use crate::{lexer::Literal, transpiler::ToJS};
+use crate::{lexer::Literal, transpiler::ToJS, FStringPart};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOperation {
     Negative,
+    Negate,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOperation {
     Add,
     Subtract,
@@ -96,7 +97,7 @@ impl PartialEq for Type {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VariableDecl {
     pub var_name: String,
     pub var_type: Type,
@@ -122,7 +123,7 @@ impl ToJS for VariableDecl {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionCall {
     pub func_expr: Box<Expression>,
     pub arguments: Vec<Expression>,
@@ -150,7 +151,7 @@ impl ToJS for FunctionCall {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnaryOp {
     pub op: UnaryOperation,
     pub operand: Box<Expression>,
@@ -162,6 +163,7 @@ impl ToJS for UnaryOp {
 
         let op = match op {
             UnaryOperation::Negative => "-".to_owned(),
+            UnaryOperation::Negate => "!".to_owned(),
         };
 
         let expr = operand.to_js();
@@ -170,7 +172,7 @@ impl ToJS for UnaryOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinaryOp {
     pub op: BinaryOperation,
     pub lhs: Box<Expression>,
@@ -204,7 +206,7 @@ impl ToJS for BinaryOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub name: String,
 }
@@ -216,7 +218,7 @@ impl ToJS for Variable {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Assignment {
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
@@ -233,7 +235,7 @@ impl ToJS for Assignment {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct If {
     pub cond: Box<Expression>,
     pub true_branch: CodeBlock,
@@ -259,7 +261,7 @@ impl ToJS for If {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct For {
     pub binding: String,
     pub binding_type: Type,
@@ -284,7 +286,7 @@ impl ToJS for For {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayAccess {
     pub expr: Box<Expression>,
     pub index: Box<Expression>,
@@ -301,7 +303,7 @@ impl ToJS for ArrayAccess {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayLiteral {
     pub elements: Vec<Expression>,
 }
@@ -319,7 +321,7 @@ impl ToJS for ArrayLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NamedStruct {
     pub casted_to: String,
     pub struct_literal: AnonStruct,
@@ -337,7 +339,7 @@ impl ToJS for NamedStruct {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnonStruct {
     pub fields: HashMap<String, Expression>,
 }
@@ -359,7 +361,7 @@ impl ToJS for AnonStruct {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Range {
     pub start: Box<Expression>,
     pub end: Box<Expression>,
@@ -380,7 +382,7 @@ impl ToJS for Range {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
     pub expr: Box<Expression>,
     pub field: String,
@@ -396,7 +398,7 @@ impl ToJS for FieldAccess {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Lambda {
     pub argument_list: Vec<FunctionArgument>,
     pub return_type: Type,
@@ -423,7 +425,7 @@ impl ToJS for Lambda {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
@@ -440,7 +442,7 @@ pub enum Expression {
     NamedStruct(NamedStruct),
     Lambda(Lambda),
     Range(Range),
-    JS(Vec<Expression>),
+    JS(Box<Expression>),
     If(If),
     For(For),
     Import(Import),
@@ -486,23 +488,40 @@ impl ToJS for Expression {
                 Literal::Int(val) => format!("{val}"),
                 Literal::Float(val) => format!("{val}"),
                 Literal::Uint(val) => format!("{val}"),
-                Literal::String(val) => format!("{val:?}"),
+                Literal::String(parts) => {
+                    let mut str = "`".to_string();
+                    for part in parts {
+                        match part {
+                            FStringPart::String(string) => str += string,
+                            FStringPart::Code(expr) => str += &format!("${{{}}}", expr.to_js()),
+                        }
+                    }
+
+                    str += "`";
+
+                    str
+                }
             },
             Self::Import(import) => format!(
                 "/* imported module {:?} as {:?} */",
                 import.module_name, import.alias
             ),
             Self::JS(code) => {
-                let code = code
-                    .iter()
-                    .map(|e| match e {
-                        Expression::Literal(Literal::String(raw)) => raw.clone(),
-                        _ => e.to_js(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+                if let Expression::Literal(Literal::String(parts)) = code.as_ref() {
+                    let mut js = "".to_string();
+                    for part in parts {
+                        let text = match part {
+                            // TODO: this doesnt work if expr is an if or a for since js doesnt support that
+                            FStringPart::Code(expr) => format!("({})", expr.to_js()),
+                            FStringPart::String(string) => string.clone().replace("\\", ""),
+                        };
+                        js += &text;
+                    }
 
-                format!("{code}")
+                    return js;
+                }
+
+                unreachable!()
             } // kind => {
               //     dbg!(kind);
               //     unimplemented!("transpilation unimplemented")
@@ -511,7 +530,7 @@ impl ToJS for Expression {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CodeBlock {
     pub indentation: usize,
     pub expressions: Vec<Expression>,
@@ -535,7 +554,7 @@ impl ToJS for CodeBlock {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionArgument {
     pub arg_name: String,
     pub arg_type: Type,

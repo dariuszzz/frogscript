@@ -3,7 +3,7 @@ use std::{
     io::Write,
 };
 
-use crate::{ast::*, parser::Program};
+use crate::{ast::*, parser::Program, FStringPart, Literal};
 
 pub trait ToJS {
     fn to_js(&self) -> String;
@@ -175,13 +175,17 @@ impl Transpiler {
             Expression::Placeholder => {}
             Expression::Break => {}
             Expression::Continue => {}
-            Expression::Literal(_) => {}
-            Expression::JS(expressions) => {
-                for expr in expressions {
-                    if let Expression::Variable(var) = expr {
-                        var.name = format!("{}::{}", module_name, var.name);
+            Expression::Literal(lit) => {
+                if let Literal::String(parts) = lit {
+                    for part in parts {
+                        if let FStringPart::Code(expr) = part {
+                            Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
+                        }
                     }
                 }
+            }
+            Expression::JS(expr) => {
+                Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
             }
         }
     }
