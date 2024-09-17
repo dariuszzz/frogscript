@@ -771,6 +771,14 @@ impl Parser {
                         operand: Box::new(term),
                     })
                 }
+                TokenKind::Exclamation => {
+                    let term = self.parse_term(indent)?;
+
+                    Expression::UnaryOp(UnaryOp {
+                        op: UnaryOperation::Negate,
+                        operand: Box::new(term),
+                    })
+                }
                 TokenKind::StartString => self.parse_string(indent)?,
                 TokenKind::Literal(literal) => self.parse_literal(literal, indent)?,
                 TokenKind::ParenLeft => self.parse_expr_in_parentheses(indent)?,

@@ -90,6 +90,7 @@ pub enum TokenKind {
     TrianglePipe,
     Dollar,
     Hash,
+    Exclamation,
     MultEqual,
     DivEqual,
     JS,
@@ -464,6 +465,7 @@ impl Lexer {
                 indentation_level += 4;
             } else {
                 break;
+            }
             self.advance();
         }
         self.add_token(TokenKind::Indentation(indentation_level));
@@ -553,6 +555,8 @@ impl Lexer {
                 '!' => {
                     if self.match_char('=') {
                         self.add_token(TokenKind::NotEqual);
+                    } else {
+                        self.add_token(TokenKind::Exclamation);
                     }
                 }
                 '/' => {

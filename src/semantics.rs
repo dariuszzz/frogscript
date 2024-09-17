@@ -8,7 +8,7 @@ use crate::{
     parser::Program,
     symbol_table::{Scope, Symbol, SymbolTable, SymbolType},
     Arena, BinaryOperation, CustomType, FStringPart, FunctionType, Import, Lambda, Literal, Module,
-    NamedStruct, StructDef, StructField, Type,
+    NamedStruct, StructDef, StructField, Type, UnaryOp, UnaryOperation,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -208,7 +208,14 @@ impl SemanticAnalyzer {
                 return Ok(expr_ty);
             }
             Expression::UnaryOp(expr) => {
+                let expected = match expr.op {
+                    UnaryOperation::Negate => vec![Type::Boolean],
+                    UnaryOperation::Negative => vec![Type::Int, Type::Float],
+                };
                 let ty = self.typecheck_expr(scope, &mut expr.operand)?;
+                if !expected.contains(&ty) {
+                    return Err(format!("Unary op wrong type expected one of {expected:?}"));
+                }
                 return Ok(ty);
             }
             Expression::FunctionCall(func) => {

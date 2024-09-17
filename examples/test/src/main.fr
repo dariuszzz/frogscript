@@ -1,3 +1,18 @@
+/*
+enum Enum =
+    VariantOne Int
+    VariantTwo { val: string }
+    VariantThree OtherType
+
+
+let foo = VariantOne 34
+
+match foo:
+    VariantOne x => //x is 34
+    VariantTwo { val } =>
+    VariantThree OtherType { ... } =>
+*/
+
 module core =
     fn foo(x int) = return x * 2
 
@@ -6,7 +21,6 @@ module foo =
 
     module core =
         let val = 23
-
 
 fn main =
     let siema = 530
