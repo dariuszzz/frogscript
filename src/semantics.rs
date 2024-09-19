@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
+    time::Instant,
 };
 
 use crate::{
@@ -495,7 +496,6 @@ impl SemanticAnalyzer {
     pub fn typecheck(&mut self, program: &mut Program) -> Result<(), String> {
         let mut scope = 0;
         for module in &mut program.modules {
-            println!("Typechecking {:?}", module.module_name);
             self.typecheck_codeblock(&mut scope, &mut module.toplevel_scope)?;
 
             for func in &mut module.function_defs {
@@ -1330,12 +1330,24 @@ impl SemanticAnalyzer {
         Ok(imports)
     }
 
-    pub fn perform_analysis(&mut self, program: &mut Program) -> Result<SymbolTable, String> {
+    pub fn perform_analysis(
+        &mut self,
+        program: &mut Program,
+        perf: bool,
+    ) -> Result<SymbolTable, String> {
+        let start = Instant::now();
         // self.enable_shadowing(program)?;
         self.populate_symbol_table(program)?;
         self.resolve_names(program)?;
         self.enforce_mutability(program)?;
         self.typecheck(program)?;
+
+        if perf {
+            println!(
+                "Semantics: {}us",
+                Instant::now().duration_since(start).as_micros()
+            );
+        }
 
         Ok(self.symbol_table.clone())
     }

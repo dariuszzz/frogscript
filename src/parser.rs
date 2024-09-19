@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use crate::lexer::{Identifier, Lexer, Literal, Token, TokenKind};
 use crate::pond::Pond;
@@ -11,14 +13,16 @@ pub struct Program {
 }
 
 pub struct Parser {
+    pub perf: bool,
     pub tokens: Vec<Token>,
     pub current: usize,
     pub expr_start: usize,
 }
 
 impl Parser {
-    pub fn new() -> Self {
+    pub fn new(perf: bool) -> Self {
         Self {
+            perf,
             tokens: Vec::new(),
             current: 0,
             expr_start: 0,
@@ -1633,6 +1637,8 @@ impl Parser {
             ..Default::default()
         };
 
+        let start = Instant::now();
+
         if original_indent != 0 {
             self.advance_skip_ws(original_indent);
             self.current -= 2;
@@ -1774,13 +1780,23 @@ impl Parser {
             };
         }
 
+        if self.perf {
+            println!(
+                "\t\t{}us\t{:?}",
+                Instant::now().duration_since(start).as_micros(),
+                curr_module_name,
+            );
+        }
+
         modules.push(current_module);
 
         Ok(())
     }
 
     pub fn parse_file(&mut self, pond_name: &str, file_path: &Path) -> Result<Vec<Module>, String> {
-        let mut lexer = Lexer::new(&file_path);
+        let source_file = fs::read_to_string(file_path)
+            .expect(&format!("Module does not exist: {:?}", file_path.to_str()));
+        let mut lexer = Lexer::new(&source_file, &file_path, self.perf);
         let tokens = lexer.parse()?;
         self.tokens = tokens
             .into_iter()
@@ -1791,6 +1807,10 @@ impl Parser {
         self.expr_start = 0;
 
         let mut modules = vec![];
+
+        if self.perf {
+            println!("\tParsing:");
+        }
 
         while !self.is_at_end() {
             self.parse_module(0, pond_name, &mut modules)?;

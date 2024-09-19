@@ -4,6 +4,7 @@ use std::{
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use gumdrop::Options;
@@ -29,6 +30,9 @@ use transpiler::*;
 struct MyOptions {
     #[options(command)]
     command: Option<Command>,
+
+    #[options(help = "print perfomance stats")]
+    perf: bool,
 
     #[options(help = "print help message")]
     help: bool,
@@ -92,14 +96,17 @@ fn find_project(initial_path: &Path) -> Result<Pond, String> {
     Ok(pond)
 }
 
-fn parse_project(pond: &Pond) -> Result<Program, String> {
+fn parse_project(pond: &Pond, perf: bool) -> Result<Program, String> {
     let mut ponds_to_parse = pond.dependency_ponds()?;
     ponds_to_parse.push(pond.clone());
 
     let mut modules = Vec::new();
 
     for pond in &ponds_to_parse {
-        let mut parser = Parser::new();
+        if perf {
+            println!("{:?}", pond.name);
+        }
+        let mut parser = Parser::new(perf);
         let mut pond_modules = parser.parse_pond(&pond)?;
         modules.append(&mut pond_modules);
     }
@@ -115,6 +122,7 @@ fn transpile_project(
     program: Program,
     target: &Target,
     output: Option<String>,
+    perf: bool,
 ) -> Result<(), String> {
     let mut transpiler = Transpiler::new(program);
 
@@ -131,18 +139,28 @@ fn transpile_project(
         target.outfile.clone()
     };
 
+    let transp_start = Instant::now();
     transpiler.transpile(&out_path, &target.func)?;
+    if perf {
+        println!(
+            "Transpilation: {}us",
+            Instant::now().duration_since(transp_start).as_micros()
+        );
+    }
 
     Ok(())
 }
 
 fn main() -> Result<(), String> {
-    let opts = MyOptions::parse_args_default_or_exit();
+    let i_opts = MyOptions::parse_args_default_or_exit();
 
-    match opts.command.expect("No command given") {
+    let start = Instant::now();
+    match i_opts.command.expect("No command given") {
         Command::Lex(opts) => {
             let path = Path::new(&opts.file);
-            let mut lexer = Lexer::new(path);
+            let source_file = fs::read_to_string(path)
+                .expect(&format!("Module does not exist: {:?}", path.to_str()));
+            let mut lexer = Lexer::new(&source_file, &path, i_opts.perf);
             match lexer.parse() {
                 Ok(tokens) => {
                     for token in &tokens {
@@ -150,6 +168,12 @@ fn main() -> Result<(), String> {
                     }
                 }
                 Err(err) => return Err(err),
+            }
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
             }
         }
         Command::Parse(opts) => {
@@ -162,10 +186,10 @@ fn main() -> Result<(), String> {
 
             let pond = find_project(&path)?;
 
-            let mut program = parse_project(&pond)?;
+            let mut program = parse_project(&pond, i_opts.perf)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program)?;
+            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
 
             if let Some(output) = opts.output {
                 println!(
@@ -176,6 +200,12 @@ fn main() -> Result<(), String> {
                     std::fs::File::create(output).map_err(|_| format!("Cannot open out file"))?;
 
                 _ = outfile.write(format!("{:#?}", program.modules).as_bytes());
+            }
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
             }
         }
         Command::Run(opts) => {
@@ -190,13 +220,18 @@ fn main() -> Result<(), String> {
             let pond = find_project(&path)?;
             let target = pond.targets.get(&target_name).expect("Invalid target");
 
-            let mut program = parse_project(&pond)?;
+            let mut program = parse_project(&pond, i_opts.perf)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program)?;
+            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
 
-            transpile_project(program, target, None)?;
-
+            transpile_project(program, target, None, i_opts.perf)?;
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
+            }
             println!("-- Running `{}`, target `{}`", pond.name, target_name);
 
             let mut handle = std::process::Command::new("node")
@@ -218,12 +253,18 @@ fn main() -> Result<(), String> {
             let pond = find_project(&path)?;
             let target = pond.targets.get(&target_name).expect("Invalid target");
 
-            let mut program = parse_project(&pond)?;
+            let mut program = parse_project(&pond, i_opts.perf)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            semantic.perform_analysis(&mut program)?;
+            semantic.perform_analysis(&mut program, i_opts.perf)?;
 
-            transpile_project(program, target, opts.output)?;
+            transpile_project(program, target, opts.output, i_opts.perf)?;
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
+            }
         }
     }
 

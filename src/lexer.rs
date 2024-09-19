@@ -1,6 +1,13 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{
+    collections::HashMap,
+    fs,
+    ops::RangeBounds,
+    path::{Path, PathBuf},
+    slice::SliceIndex,
+    time::Instant,
+};
 
-use crate::Expression;
+use crate::{Expression, Range};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FStringPart {
@@ -140,7 +147,8 @@ impl NestedParsingCount {
 }
 
 pub struct Lexer {
-    pub source_file: String,
+    pub source_path: PathBuf,
+    pub source_file: Vec<char>,
     pub tokens: Vec<Token>,
     pub current: usize,
     pub line: usize,
@@ -150,14 +158,42 @@ pub struct Lexer {
     pub lexeme_start_line_char: usize,
     pub parsing_multiline_comment: NestedParsingCount,
     pub currently_in_string: NestedParsingCount,
+    pub keyword_map: HashMap<&'static str, Identifier>,
+
+    pub perf: bool,
 }
 
 impl Lexer {
-    pub fn new(path: &Path) -> Self {
-        let source_file =
-            fs::read_to_string(path).expect(&format!("Module does not exist: {:?}", path.to_str()));
+    pub fn new(source_str: &str, path: &Path, perf: bool) -> Self {
+        let source_file = source_str.chars().collect::<Vec<_>>();
+
+        let keyword_map = HashMap::from([
+            ("let", Identifier::Let),
+            ("final", Identifier::Final),
+            ("mut", Identifier::Mut),
+            ("type", Identifier::Type),
+            ("enum", Identifier::Enum),
+            ("for", Identifier::For),
+            ("while", Identifier::While),
+            ("break", Identifier::Break),
+            ("continue", Identifier::Continue),
+            ("return", Identifier::Return),
+            ("if", Identifier::If),
+            ("else", Identifier::Else),
+            ("match", Identifier::Match),
+            ("use", Identifier::Use),
+            ("export", Identifier::Export),
+            ("from", Identifier::From),
+            ("env", Identifier::Env),
+            ("as", Identifier::As),
+            ("fn", Identifier::Fn),
+            ("in", Identifier::In),
+            ("inline", Identifier::Inline),
+            ("module", Identifier::Module),
+        ]);
 
         Self {
+            source_path: path.to_path_buf(),
             source_file,
             tokens: Vec::new(),
             current: 0,
@@ -168,6 +204,8 @@ impl Lexer {
             lexeme_start_line_char: 0,
             parsing_multiline_comment: NestedParsingCount::None,
             currently_in_string: NestedParsingCount::None,
+            keyword_map,
+            perf,
         }
     }
 
@@ -178,40 +216,35 @@ impl Lexer {
     fn advance(&mut self) -> char {
         self.current += 1;
         self.line_char += 1;
-        let current_char = self
-            .source_file
-            .chars()
-            .skip(self.current - 1)
-            .next()
-            .unwrap();
+        let current_char = self.source_file.get(self.current - 1).unwrap();
 
-        if current_char == '\n' {
+        if *current_char == '\n' {
             self.line += 1;
             self.line_char = 0
         }
 
-        return current_char;
+        return *current_char;
     }
 
     fn peek(&mut self) -> Option<char> {
         if self.is_at_end() {
             return None;
         }
-        return self.source_file.chars().skip(self.current).next();
+        return self.source_file.get(self.current).cloned();
     }
 
     fn peek_next(&mut self) -> Option<char> {
         if self.current + 1 >= self.source_file.len() {
             return None;
         }
-        return self.source_file.chars().skip(self.current + 1).next();
+        return self.source_file.get(self.current + 1).cloned();
     }
 
     fn match_char(&mut self, expected: char) -> bool {
         if self.is_at_end() {
             return false;
         }
-        if self.source_file.chars().skip(self.current).next().unwrap() != expected {
+        if self.source_file.get(self.current).unwrap() != &expected {
             return false;
         }
 
@@ -236,16 +269,18 @@ impl Lexer {
         return true;
     }
 
+    fn get_substring(&self, start: usize, end: usize) -> Option<String> {
+        let chars = self.source_file.get(start..end).unwrap();
+
+        return Some(chars.into_iter().collect());
+    }
+
     fn add_token(&mut self, kind: TokenKind) {
         let token = Token {
             kind,
             start_line: self.lexeme_start_line,
             start_char: self.lexeme_start_line_char,
-            lexeme: self
-                .source_file
-                .get(self.lexeme_start..self.current)
-                .unwrap()
-                .to_owned(),
+            lexeme: self.get_substring(self.lexeme_start, self.current).unwrap(),
         };
 
         self.tokens.push(token);
@@ -285,12 +320,7 @@ impl Lexer {
     }
 
     fn parse_fstring_string_part(&mut self) -> Result<(), String> {
-        let mut prev = self
-            .source_file
-            .chars()
-            .skip(self.current - 1)
-            .next()
-            .unwrap();
+        let mut prev = self.source_file.get(self.current - 1).unwrap().clone();
 
         while let Some(c) = self.peek() {
             // TODO: Add escapes
@@ -311,10 +341,8 @@ impl Lexer {
         }
 
         let string = self
-            .source_file
-            .get((self.lexeme_start + 1)..(self.current))
-            .unwrap()
-            .to_owned();
+            .get_substring(self.lexeme_start + 1, self.current)
+            .unwrap();
 
         if !string.is_empty() {
             self.add_token(TokenKind::StringPart(string));
@@ -361,11 +389,7 @@ impl Lexer {
             }
         }
 
-        let lexeme = self
-            .source_file
-            .get(self.lexeme_start..self.current)
-            .unwrap()
-            .to_owned();
+        let lexeme = self.get_substring(self.lexeme_start, self.current).unwrap();
 
         match &mut literal_type {
             Literal::Int(x) => *x = lexeme.parse::<isize>().unwrap(),
@@ -397,31 +421,6 @@ impl Lexer {
     fn parse_identifier(&mut self) {
         let is_alpha = |c: char| c.is_ascii_alphanumeric() || c == '_';
 
-        let keywords = HashMap::from([
-            ("let", Identifier::Let),
-            ("final", Identifier::Final),
-            ("mut", Identifier::Mut),
-            ("type", Identifier::Type),
-            ("enum", Identifier::Enum),
-            ("for", Identifier::For),
-            ("while", Identifier::While),
-            ("break", Identifier::Break),
-            ("continue", Identifier::Continue),
-            ("return", Identifier::Return),
-            ("if", Identifier::If),
-            ("else", Identifier::Else),
-            ("match", Identifier::Match),
-            ("use", Identifier::Use),
-            ("export", Identifier::Export),
-            ("from", Identifier::From),
-            ("env", Identifier::Env),
-            ("as", Identifier::As),
-            ("fn", Identifier::Fn),
-            ("in", Identifier::In),
-            ("inline", Identifier::Inline),
-            ("module", Identifier::Module),
-        ]);
-
         while let Some(c) = self.peek() {
             if !is_alpha(c) {
                 break;
@@ -429,11 +428,7 @@ impl Lexer {
             self.advance();
         }
 
-        let lexeme = self
-            .source_file
-            .get(self.lexeme_start..self.current)
-            .unwrap()
-            .to_owned();
+        let lexeme = self.get_substring(self.lexeme_start, self.current).unwrap();
 
         if lexeme == "true" {
             self.add_token(TokenKind::Literal(Literal::Boolean(true)));
@@ -443,7 +438,7 @@ impl Lexer {
             return;
         }
 
-        if let Some(kind) = keywords.get(lexeme.as_str()) {
+        if let Some(kind) = self.keyword_map.get(lexeme.as_str()) {
             self.add_token(TokenKind::Identifier(kind.clone()));
         } else {
             self.add_token(TokenKind::Identifier(Identifier::Custom(lexeme.to_owned())));
@@ -472,6 +467,8 @@ impl Lexer {
     }
 
     pub fn parse(&mut self) -> Result<Vec<Token>, String> {
+        let start = Instant::now();
+
         while !self.is_at_end() {
             self.lexeme_start = self.current;
             self.lexeme_start_line = self.line;
@@ -630,6 +627,14 @@ impl Lexer {
                     ))
                 }
             }
+        }
+
+        if self.perf {
+            println!(
+                "\tLexing:  {}us\t{:?}",
+                Instant::now().duration_since(start).as_micros(),
+                self.source_path.file_name().unwrap()
+            );
         }
 
         return Ok(self.tokens.clone());
