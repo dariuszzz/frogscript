@@ -24,6 +24,9 @@ impl Transpiler {
         expr: &mut Expression,
     ) {
         match expr {
+            Expression::BuiltinType(expr) => {
+                Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
+            }
             Expression::Import(_) => {}
             Expression::Lambda(lambda) => {
                 let Lambda {

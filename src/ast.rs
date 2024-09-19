@@ -443,6 +443,7 @@ pub enum Expression {
     Lambda(Lambda),
     Range(Range),
     JS(Box<Expression>),
+    BuiltinType(Box<Expression>),
     If(If),
     For(For),
     Import(Import),
@@ -502,10 +503,7 @@ impl ToJS for Expression {
                     str
                 }
             },
-            Self::Import(import) => format!(
-                "/* imported module {:?} as {:?} */",
-                import.module_name, import.alias
-            ),
+            Self::Import(import) => format!("/* imported module {import:#?} */",),
             Self::JS(code) => {
                 if let Expression::Literal(Literal::String(parts)) = code.as_ref() {
                     let mut js = "".to_string();
@@ -522,10 +520,11 @@ impl ToJS for Expression {
                 }
 
                 unreachable!()
-            } // kind => {
-              //     dbg!(kind);
-              //     unimplemented!("transpilation unimplemented")
-              // }
+            }
+            Self::BuiltinType(_) => unreachable!(), // kind => {
+                                                    //     dbg!(kind);
+                                                    //     unimplemented!("transpilation unimplemented")
+                                                    // }
         }
     }
 }
@@ -563,7 +562,8 @@ pub struct FunctionArgument {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import {
-    pub module_name: String,
+    pub name: String,
+    pub children: Vec<Import>,
     pub alias: Option<String>,
 }
 

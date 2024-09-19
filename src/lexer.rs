@@ -100,7 +100,8 @@ pub enum TokenKind {
     Exclamation,
     MultEqual,
     DivEqual,
-    JS,
+    BuiltinJS,
+    BuiltinType,
     Indentation(usize),
 
     StartString,
@@ -249,6 +250,22 @@ impl Lexer {
         }
 
         self.current += 1;
+        return true;
+    }
+
+    fn match_word(&mut self, expected: &str) -> bool {
+        let next_word = self
+            .get_substring(self.current, self.current + expected.len())
+            .unwrap();
+
+        if next_word != expected {
+            return false;
+        }
+
+        for i in 0..expected.len() {
+            self.advance();
+        }
+
         return true;
     }
 
@@ -606,10 +623,11 @@ impl Lexer {
                 '$' => self.add_token(TokenKind::Dollar),
                 '#' => self.add_token(TokenKind::Hash),
                 '@' => {
-                    if self.match_char('j') {
-                        if self.match_char('s') {
-                            self.add_token(TokenKind::JS)
-                        }
+                    if self.match_word("js") {
+                        self.add_token(TokenKind::BuiltinJS)
+                    }
+                    if self.match_word("type") {
+                        self.add_token(TokenKind::BuiltinJS)
                     }
                 }
                 '"' => self.parse_fstring()?,

@@ -23,14 +23,25 @@ module foo =
         let val = 23
 
 fn main =
+
+    if true:
+        use core::print
+        use test { foo::val, foo::core::val, core::foo }
+
+        print(foo(val))
+        print(test::foo::core::val)
+
+/*
     let siema = 530
     let fstring = "{siema}"
     core::print(fstring)
 
-    let num = test::core::foo(23)
+    let num = 53// test::core::foo(23)
     core::print(num)
     other_dep::core::print(2)
     other_dep::other_foo()
+
+*/
 
 /*
     let text = "Siema"

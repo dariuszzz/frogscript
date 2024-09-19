@@ -6,6 +6,7 @@ pub struct Symbol {
     pub symbol_type: SymbolType,
     pub value_type: Type,
     pub exported: bool,
+    pub mutable: bool,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -20,7 +21,7 @@ pub struct Scope {
     pub parent_scope: Option<usize>,
     pub children_scopes: Vec<usize>,
     pub symbols: Vec<Symbol>,
-    pub used_modules: Vec<Import>,
+    pub use_statements: Vec<Import>,
 }
 
 impl Scope {
@@ -29,7 +30,7 @@ impl Scope {
             parent_scope: Some(parent),
             children_scopes: Vec::new(),
             symbols: Vec::new(),
-            used_modules: Vec::new(),
+            use_statements: Vec::new(),
         }
     }
 }
@@ -112,7 +113,7 @@ impl SymbolTable {
             }
         }
 
-        Err(format!("Symbol {symbol_name:?} doesnt exist in scope"))
+        Err(format!("REF: Symbol {symbol_name:?} doesnt exist in scope"))
     }
 
     pub fn find_symbol_rec_mut(
@@ -122,26 +123,28 @@ impl SymbolTable {
         symbol_type: SymbolType,
     ) -> Result<&mut Symbol, String> {
         let mut curr_scope_opt = Some(scope);
+        let mut found_scope = None;
         while let Some(curr_scope_idx) = curr_scope_opt {
-            let curr_scope_parent = self
+            let curr_scope = self
                 .get_scope(curr_scope_idx)
-                .ok_or("Scope does not exist")?
-                .parent_scope;
+                .ok_or("Scope does not exist")?;
 
-            let symbol = self.scope_get_symbol_mut(curr_scope_idx, symbol_name, symbol_type);
-            if symbol.is_none() {
-                curr_scope_opt = curr_scope_parent;
-            } else {
+            let curr_scope_parent = curr_scope.parent_scope;
+
+            if let Some(_) = self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type) {
+                found_scope = Some(curr_scope_idx);
                 break;
+            } else {
+                curr_scope_opt = curr_scope_parent;
             }
         }
 
-        if curr_scope_opt.is_none() {
-            return Err(format!("Symbol {symbol_name:?} doesnt exist in scope"));
+        if found_scope.is_none() {
+            return Err(format!("MUT: Symbol {symbol_name:?} doesnt exist in scope"));
         }
 
         Ok(self
-            .scope_get_symbol_mut(curr_scope_opt.unwrap(), symbol_name, symbol_type)
+            .scope_get_symbol_mut(found_scope.unwrap(), symbol_name, symbol_type)
             .unwrap())
     }
 

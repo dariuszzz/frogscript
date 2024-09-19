@@ -1254,6 +1254,25 @@ impl Parser {
         Ok(Expression::AnonStruct(struct_literal))
     }
 
+    pub fn parse_builtin_type(&mut self, indent: usize) -> Result<Expression, String> {
+        //consume @type
+        self.advance();
+
+        if let TokenKind::ParenLeft = self.advance_skip_ws(indent).kind {
+        } else {
+            return Err(format!("Couldnt find lparen after @type"));
+        }
+
+        let expr = self.parse_expression(indent)?;
+
+        if let TokenKind::ParenRight = self.advance_skip_ws(indent).kind {
+        } else {
+            return Err(format!("Couldnt find rparen after @type"));
+        }
+
+        Ok(Expression::BuiltinType(Box::new(expr)))
+    }
+
     pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
         match self.peek_skip_ws(indent)?.kind {
             TokenKind::Identifier(Identifier::If) => self.parse_if(indent),
@@ -1263,7 +1282,8 @@ impl Parser {
                 Ok(Expression::Placeholder)
             }
             TokenKind::Identifier(Identifier::Break) => Ok(Expression::Break),
-            TokenKind::JS => self.parse_js(indent),
+            TokenKind::BuiltinJS => self.parse_js(indent),
+            TokenKind::BuiltinType => self.parse_builtin_type(indent),
             TokenKind::CurlyLeft => self.parse_struct_literal(indent),
             TokenKind::Identifier(Identifier::Continue) => {
                 self.advance();
@@ -1414,121 +1434,83 @@ impl Parser {
 
         if let TokenKind::ParenLeft = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find lparen after @JS"));
+            return Err(format!("Couldnt find lparen after @js"));
         }
 
         if let TokenKind::StartString = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find js source code after @JS"));
+            return Err(format!("Couldnt find js source code after @js"));
         }
 
         let expr = self.parse_string(indent)?;
 
         if let TokenKind::ParenRight = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find end of js source code after @JS"));
+            return Err(format!("Couldnt find rparen after @js"));
         }
 
         Ok(Expression::JS(Box::new(expr)))
+    }
+
+    pub fn parse_import_item(&mut self) -> Result<Import, String> {
+        let mut import = Import {
+            name: String::new(),
+            alias: None,
+            children: Vec::new(),
+        };
+
+        loop {
+            import.name = match self.advance().kind {
+                TokenKind::Identifier(Identifier::Custom(iden)) => {
+                    if import.name.is_empty() {
+                        iden
+                    } else {
+                        format!("{}::{iden}", import.name)
+                    }
+                }
+                token => return Err(format!("Invalid token in use statement body {token:?}")),
+            };
+
+            import.alias = match self.peek(0).kind {
+                TokenKind::Identifier(Identifier::As) => {
+                    self.advance();
+                    match self.advance().kind {
+                        TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
+                        _ => return Err(format!("Invalid token, expected alias name")),
+                    }
+                }
+                _ => None,
+            };
+
+            match self.peek(0).kind {
+                TokenKind::DoubleColon => self.advance(),
+                TokenKind::CurlyLeft => {
+                    self.advance();
+                    break;
+                }
+                _ => return Ok(import),
+            };
+        }
+
+        loop {
+            let child_import = self.parse_import_item()?;
+            import.children.push(child_import);
+
+            match self.advance().kind {
+                TokenKind::CurlyRight => return Ok(import),
+                TokenKind::Comma => {}
+                _ => return Err(format!("Invalid token, expected }}")),
+            }
+        }
     }
 
     pub fn parse_import(&mut self) -> Result<Expression, String> {
         // consume `use`
         self.advance();
 
-        let module_name = match self.advance().kind {
-            TokenKind::Identifier(Identifier::Custom(part)) => {
-                let mut module_path = vec![part];
+        let import = self.parse_import_item()?;
 
-                while let TokenKind::DoubleColon = self.peek(0).kind {
-                    self.advance();
-                    match self.peek(0).kind {
-                        TokenKind::Identifier(Identifier::Custom(iden)) => {
-                            module_path.push(iden);
-                            self.advance();
-                        }
-                        _ => return Err(format!("Missing module name after ::")),
-                    }
-                }
-
-                module_path.join("::")
-            }
-            _ => return Err(format!("Missing module name in use statement")),
-        };
-
-        match self.peek(0).kind {
-            TokenKind::Newline => {
-                self.advance();
-
-                return Ok(Expression::Import(Import {
-                    module_name,
-                    alias: None,
-                }));
-            }
-            _ => {}
-        };
-
-        match self.advance().kind {
-            TokenKind::Identifier(Identifier::As) => {
-                let alias = match self.advance().kind {
-                    TokenKind::Identifier(Identifier::Custom(alias)) => alias,
-                    _ => return Err(format!("Missing use statement alias")),
-                };
-
-                return Ok(Expression::Import(Import {
-                    module_name,
-                    alias: Some(alias),
-                }));
-            }
-            kind => {
-                return Err(format!(
-                    "Invalid token after use statement, expected `as` got {kind:?}"
-                ))
-            }
-        }
-
-        // loop {
-        //     let name = match self.advance_skip_ws(0).kind {
-        //         TokenKind::Identifier(Identifier::Custom(iden)) => iden,
-        //         token => return Err(format!("Invalid token in use statement body {token:?}")),
-        //     };
-
-        //     let alias = match self.peek(0).kind {
-        //         TokenKind::Identifier(Identifier::As) => {
-        //             self.advance();
-        //             match self.advance().kind {
-        //                 TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
-        //                 _ => return Err(format!("Invalid token used for import alias")),
-        //             }
-        //         }
-        //         _ => None,
-        //     };
-
-        //     imports.push(Imported { name, alias });
-
-        //     let token = self.peek_skip_ws(0)?;
-        //     match token.kind {
-        //         TokenKind::CurlyRight => {
-        //             self.advance_skip_ws(0);
-        //             break;
-        //         }
-        //         TokenKind::Comma => {
-        //             self.advance_skip_ws(0);
-        //             // allow for trailing ,
-        //             if let TokenKind::CurlyRight = self.peek_skip_ws(0)?.kind {
-        //                 self.advance_skip_ws(0);
-        //                 break;
-        //             }
-        //         }
-        //         _ => return Err(format!("Invalid token in use statement body")),
-        //     }
-        // }
-
-        // Ok(ImportStmt {
-        //     module_name,
-        //     imports,
-        //     everything: false,
-        // })
+        Ok(Expression::Import(import))
     }
 
     pub fn parse_type_def(&mut self) -> Result<TypeDef, String> {
@@ -1681,7 +1663,7 @@ impl Parser {
                     let expr = self.parse_expression(curr_indent)?;
                     current_module.toplevel_scope.expressions.push(expr);
                 }
-                TokenKind::JS => {
+                TokenKind::BuiltinJS => {
                     let expr = self.parse_js(curr_indent)?;
                     current_module.toplevel_scope.expressions.push(expr);
                 }
