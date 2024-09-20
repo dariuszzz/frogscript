@@ -1413,7 +1413,7 @@ impl Parser {
 
     pub fn parse_codeblock_expression(&mut self, indent: usize) -> Result<Expression, String> {
         match self.peek(0).kind {
-            TokenKind::Identifier(Identifier::Use) => self.parse_import(),
+            TokenKind::Identifier(Identifier::Use) => self.parse_import(indent),
             TokenKind::Identifier(Identifier::Let) | TokenKind::Identifier(Identifier::Mut) => {
                 self.parse_variable_decl(indent)
             }
@@ -1452,7 +1452,7 @@ impl Parser {
         Ok(Expression::JS(Box::new(expr)))
     }
 
-    pub fn parse_import_item(&mut self) -> Result<Import, String> {
+    pub fn parse_import_item(&mut self, indent: usize) -> Result<Import, String> {
         let mut import = Import {
             name: String::new(),
             alias: None,
@@ -1460,7 +1460,7 @@ impl Parser {
         };
 
         loop {
-            import.name = match self.advance().kind {
+            import.name = match self.advance_skip_ws(indent).kind {
                 TokenKind::Identifier(Identifier::Custom(iden)) => {
                     if import.name.is_empty() {
                         iden
@@ -1471,10 +1471,10 @@ impl Parser {
                 token => return Err(format!("Invalid token in use statement body {token:?}")),
             };
 
-            import.alias = match self.peek(0).kind {
+            import.alias = match self.peek_skip_ws(indent).expect("Got eof").kind {
                 TokenKind::Identifier(Identifier::As) => {
-                    self.advance();
-                    match self.advance().kind {
+                    self.advance_skip_ws(indent);
+                    match self.advance_skip_ws(indent).kind {
                         TokenKind::Identifier(Identifier::Custom(iden)) => Some(iden),
                         _ => return Err(format!("Invalid token, expected alias name")),
                     }
@@ -1482,10 +1482,10 @@ impl Parser {
                 _ => None,
             };
 
-            match self.peek(0).kind {
-                TokenKind::DoubleColon => self.advance(),
+            match self.peek_skip_ws(0).expect("Got eof").kind {
+                TokenKind::DoubleColon => self.advance_skip_ws(indent),
                 TokenKind::CurlyLeft => {
-                    self.advance();
+                    self.advance_skip_ws(indent);
                     break;
                 }
                 _ => return Ok(import),
@@ -1493,22 +1493,22 @@ impl Parser {
         }
 
         loop {
-            let child_import = self.parse_import_item()?;
+            let child_import = self.parse_import_item(indent)?;
             import.children.push(child_import);
 
-            match self.advance().kind {
+            match self.advance_skip_ws(indent).kind {
                 TokenKind::CurlyRight => return Ok(import),
                 TokenKind::Comma => {}
-                _ => return Err(format!("Invalid token, expected }}")),
+                _ => return Err(format!("Invalid token, expected }} or ,")),
             }
         }
     }
 
-    pub fn parse_import(&mut self) -> Result<Expression, String> {
+    pub fn parse_import(&mut self, indent: usize) -> Result<Expression, String> {
         // consume `use`
         self.advance();
 
-        let import = self.parse_import_item()?;
+        let import = self.parse_import_item(indent)?;
 
         Ok(Expression::Import(import))
     }
@@ -1718,7 +1718,7 @@ impl Parser {
                         )?;
                     }
                     Identifier::Use => {
-                        let import = self.parse_import()?;
+                        let import = self.parse_import(curr_indent)?;
                         current_module.toplevel_scope.expressions.push(import);
                     }
                     Identifier::Fn => {

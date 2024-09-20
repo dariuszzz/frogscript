@@ -973,15 +973,26 @@ impl SemanticAnalyzer {
 
                     let mut resolved = None;
                     for import in imported_symbols {
-                        let imported_item = import.name.split("::").last().unwrap();
-                        if expr.name == imported_item {
-                            if let Some(resolved) = resolved {
-                                return Err(format!(
-                                    "Ambiguous name: {:?}, found in {resolved:?} and {:?}",
-                                    expr.name, import.name
-                                ));
-                            } else {
-                                resolved = Some(import.name);
+                        if let Some(alias) = import.alias {
+                            if name_parts[0] == alias {
+                                if name_parts.len() == 1 {
+                                    resolved = Some(import.name);
+                                } else {
+                                    let new_name = name_parts.iter().skip(1).cloned().collect();
+                                    resolved = Some(new_name);
+                                }
+                            }
+                        } else {
+                            let imported_item = import.name.split("::").last().unwrap();
+                            if expr.name == imported_item {
+                                if let Some(resolved) = resolved {
+                                    return Err(format!(
+                                        "Ambiguous name: {:?}, found in {resolved:?} and {:?}",
+                                        expr.name, import.name
+                                    ));
+                                } else {
+                                    resolved = Some(import.name);
+                                }
                             }
                         }
                     }

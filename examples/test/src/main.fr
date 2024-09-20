@@ -14,7 +14,7 @@ match foo:
 */
 
 module core =
-    fn foo(x int) = return x * 2
+    fn foo1(x int) = return x * 2
 
 module foo =
     let val = 53
@@ -23,13 +23,23 @@ module foo =
         let val = 23
 
 fn main =
-
     if true:
         use core::print
-        use test { foo::val, foo::core::val, core::foo }
+        use test {
+            foo {
+                val as val2,
+                core::val
+            },
+            core::foo1
+        }
 
-        print(foo(val))
+        // what should happen with this? error?
+        // let val2 = 0
+
+        print(foo1(val))
         print(test::foo::core::val)
+        print(val2)
+
 
 /*
     let siema = 530
