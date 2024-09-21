@@ -3,7 +3,12 @@ use std::{
     io::Write,
 };
 
-use crate::{ast::*, parser::Program, FStringPart, Literal};
+use crate::{
+    ast::*,
+    parser::Program,
+    symbol_table::{SymbolTable, SymbolType},
+    FStringPart, Literal,
+};
 
 pub trait ToJS {
     fn to_js(&self) -> String;
@@ -256,80 +261,174 @@ impl Transpiler {
         Ok(())
     }
 
-    fn wrap_in_copy(expr: &mut Expression) {
+    fn wrap_in_copy(expr: &mut Expression, scope: &usize, symbol_table: &SymbolTable) {
         let curr_expr = expr.clone();
-
-        *expr = Expression::FunctionCall(FunctionCall {
-            func_expr: Box::new(Expression::Variable(Variable {
-                name: "core::deep_copy".to_string(),
-            })),
-            arguments: vec![curr_expr],
-        })
-    }
-
-    fn ensure_pass_by_value_expr(expr: &mut Expression) {
-        match expr {
-            Expression::FunctionCall(expr) => {
-                for expr in &mut expr.arguments {
-                    Transpiler::wrap_in_copy(expr);
+        if let Expression::Variable(var) = &curr_expr {
+            if let Ok(symbol) =
+                symbol_table.find_symbol_rec(*scope, &var.name, SymbolType::Identifier)
+            {
+                match symbol.value_type {
+                    Type::Function(_) => {}
+                    _ => {
+                        *expr = Expression::FunctionCall(FunctionCall {
+                            func_expr: Box::new(Expression::Variable(Variable {
+                                name: "core::deep_copy".to_string(),
+                            })),
+                            arguments: vec![curr_expr],
+                        })
+                    }
                 }
             }
-            Expression::Assignment(expr) => Transpiler::wrap_in_copy(&mut expr.rhs),
-            Expression::VariableDecl(expr) => Transpiler::wrap_in_copy(&mut expr.var_value),
+        }
+    }
+
+    fn ensure_pass_by_value_expr(
+        expr: &mut Expression,
+        symbol_table: &SymbolTable,
+        scope: &mut usize,
+    ) {
+        match expr {
+            Expression::BuiltinType(expr) => {
+                Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope)
+            }
+            Expression::Import(_) => {}
+            expr @ Expression::Variable(_) => Transpiler::wrap_in_copy(expr, scope, symbol_table),
+            Expression::VariableDecl(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.var_value, symbol_table, scope);
+            }
+            Expression::Literal(literal) => match literal {
+                Literal::String(parts) => {
+                    for part in parts {
+                        if let FStringPart::Code(expr) = part {
+                            Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Expression::BinaryOp(expr) => {
+                // Transpiler::ensure_pass_by_value_expr(&mut expr.lhs, symbol_table, scope);
+                // Transpiler::ensure_pass_by_value_expr(&mut expr.rhs, symbol_table, scope);
+            }
+            Expression::UnaryOp(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.operand, symbol_table, scope);
+            }
+            Expression::FunctionCall(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.func_expr, symbol_table, scope);
+                for arg in &mut expr.arguments {
+                    Transpiler::ensure_pass_by_value_expr(arg, symbol_table, scope);
+                }
+            }
+            Expression::Return(expr) => {
+                Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
+            }
+            Expression::Assignment(expr) => {
+                // Transpiler::ensure_pass_by_value_expr(&mut expr.lhs, symbol_table, scope);
+                Transpiler::ensure_pass_by_value_expr(&mut expr.rhs, symbol_table, scope);
+            }
             Expression::AnonStruct(expr) => {
                 for (_, expr) in &mut expr.fields {
-                    Transpiler::wrap_in_copy(expr)
+                    Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
                 }
             }
             Expression::ArrayLiteral(expr) => {
-                for expr in &mut expr.elements {
-                    Transpiler::wrap_in_copy(expr)
+                for elem in &mut expr.elements {
+                    Transpiler::ensure_pass_by_value_expr(elem, symbol_table, scope);
                 }
+            }
+            Expression::ArrayAccess(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.expr, symbol_table, scope);
+                Transpiler::ensure_pass_by_value_expr(&mut expr.index, symbol_table, scope);
+            }
+            Expression::FieldAccess(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.expr, symbol_table, scope);
             }
             Expression::NamedStruct(expr) => {
                 for (_, expr) in &mut expr.struct_literal.fields {
-                    Transpiler::wrap_in_copy(expr)
+                    Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
                 }
             }
             Expression::Lambda(expr) => {
-                Transpiler::ensure_pass_by_value_codeblock(&mut expr.function_body);
+                *scope += 1;
+                Transpiler::ensure_pass_by_value_codeblock(
+                    &mut expr.function_body,
+                    symbol_table,
+                    scope,
+                );
+            }
+            Expression::Range(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.start, symbol_table, scope);
+                Transpiler::ensure_pass_by_value_expr(&mut expr.end, symbol_table, scope);
             }
             Expression::If(expr) => {
-                Transpiler::ensure_pass_by_value_codeblock(&mut expr.true_branch);
+                Transpiler::ensure_pass_by_value_expr(&mut expr.cond, symbol_table, scope);
+                *scope += 1;
+                Transpiler::ensure_pass_by_value_codeblock(
+                    &mut expr.true_branch,
+                    symbol_table,
+                    scope,
+                );
                 if let Some(else_branch) = &mut expr.else_branch {
-                    Transpiler::ensure_pass_by_value_codeblock(else_branch);
+                    *scope += 1;
+                    Transpiler::ensure_pass_by_value_codeblock(else_branch, symbol_table, scope);
                 }
             }
-            Expression::For(expr) => Transpiler::ensure_pass_by_value_codeblock(&mut expr.body),
-
-            // TODO: Maybe return should copy?
-            Expression::Return(_) => {}
-
-            // TODO: get rid of copying primitive types
-            _ => {}
+            Expression::For(expr) => {
+                Transpiler::ensure_pass_by_value_expr(&mut expr.iterator, symbol_table, scope);
+                *scope += 1;
+                Transpiler::ensure_pass_by_value_codeblock(&mut expr.body, symbol_table, scope);
+            }
+            Expression::JS(expr) => {
+                // JS semantics in @js blocks
+                // Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
+            }
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
         }
     }
 
-    fn ensure_pass_by_value_codeblock(codeblock: &mut CodeBlock) {
+    fn ensure_pass_by_value_codeblock(
+        codeblock: &mut CodeBlock,
+        symbol_table: &SymbolTable,
+        scope: &mut usize,
+    ) {
         for expr in &mut codeblock.expressions {
-            Transpiler::ensure_pass_by_value_expr(expr);
+            Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
         }
     }
 
-    fn ensure_pass_by_value(&mut self) -> Result<(), String> {
+    fn ensure_pass_by_value(&mut self, symbol_table: &SymbolTable) -> Result<(), String> {
+        let mut scope = 0;
         for module in &mut self.ast.modules {
-            Transpiler::ensure_pass_by_value_codeblock(&mut module.toplevel_scope);
+            Transpiler::ensure_pass_by_value_codeblock(
+                &mut module.toplevel_scope,
+                symbol_table,
+                &mut scope,
+            );
 
             for func in &mut module.function_defs {
-                Transpiler::ensure_pass_by_value_codeblock(&mut func.function_body);
+                scope += 1;
+                Transpiler::ensure_pass_by_value_codeblock(
+                    &mut func.function_body,
+                    symbol_table,
+                    &mut scope,
+                );
             }
+
+            scope += 1;
         }
 
         Ok(())
     }
 
-    pub fn transpile(&mut self, path: &std::path::Path, entrypoint: &str) -> Result<(), String> {
-        // self.ensure_pass_by_value()?;
+    pub fn transpile(
+        &mut self,
+        path: &std::path::Path,
+        entrypoint: &str,
+        symbol_table: &SymbolTable,
+    ) -> Result<(), String> {
+        // self.ensure_pass_by_value(symbol_table)?;
         self.fix_scopes()?;
 
         if let Some(entrypoint) = self

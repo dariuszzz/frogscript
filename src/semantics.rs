@@ -23,6 +23,16 @@ impl SemanticAnalyzer {
     fn figure_out_unified_type(&mut self, lhs: &Type, rhs: &Type) -> Result<Type, String> {
         match (lhs, rhs) {
             (Type::Infer, Type::Infer) => return Err(format!("Cant infer type")),
+            (Type::Reference(lhs), Type::Pointer(rhs)) => {
+                return Ok(Type::Reference(Box::new(
+                    self.figure_out_unified_type(lhs, rhs)?,
+                )))
+            }
+            (Type::Pointer(lhs), Type::Reference(rhs)) => {
+                return Ok(Type::Reference(Box::new(
+                    self.figure_out_unified_type(lhs, rhs)?,
+                )))
+            }
             (lhs, rhs) if lhs == rhs => return Ok(lhs.clone()),
             (Type::Infer, rhs) => return Ok(rhs.clone()),
             (lhs, Type::Infer) => return Ok(lhs.clone()),
@@ -108,15 +118,27 @@ impl SemanticAnalyzer {
                 .symbol_table
                 .find_symbol_rec_mut(scope, &var_name, SymbolType::Identifier)
                 .unwrap();
+
             symbol.value_type = ty;
         }
 
         return Ok(());
     }
 
+    fn replace_builtin_type(&mut self, scope: &mut usize, expr: &mut Expression) {
+        if let Expression::BuiltinType(expr_copy) = expr {
+            if let Ok(inner_ty) = self.typecheck_expr(scope, expr_copy) {
+                *expr = Expression::Literal(Literal::String(vec![FStringPart::String(format!(
+                    "{inner_ty:?}"
+                ))]));
+            };
+        }
+    }
+
     fn typecheck_expr(&mut self, scope: &mut usize, expr: &mut Expression) -> Result<Type, String> {
         match expr {
-            Expression::BuiltinType(expr) => {
+            expr @ Expression::BuiltinType(_) => {
+                self.replace_builtin_type(scope, expr);
                 return Ok(Type::String);
             }
             //     let inner_ty = self.typecheck_expr(scope, inner.as_mut())?;
@@ -231,12 +253,34 @@ impl SemanticAnalyzer {
                 let expected = match expr.op {
                     UnaryOperation::Negate => vec![Type::Boolean],
                     UnaryOperation::Negative => vec![Type::Int, Type::Float],
+                    UnaryOperation::Dereference => vec![
+                        Type::Reference(Box::new(Type::Any)),
+                        Type::Pointer(Box::new(Type::Any)),
+                    ],
+                    UnaryOperation::Reference => vec![Type::Any],
+                    UnaryOperation::Pointer => vec![Type::Any],
                 };
                 let ty = self.typecheck_expr(scope, &mut expr.operand)?;
+
                 if !expected.contains(&ty) {
-                    return Err(format!("Unary op wrong type expected one of {expected:?}"));
+                    return Err(format!(
+                        "Unary op {:?} wrong type {ty:?} expected one of {expected:?}",
+                        expr.op
+                    ));
                 }
-                return Ok(ty);
+
+                let out_ty = match expr.op {
+                    UnaryOperation::Dereference => match ty {
+                        Type::Reference(inner) => *inner,
+                        Type::Pointer(inner) => *inner,
+                        _ => unreachable!(),
+                    },
+                    UnaryOperation::Reference => Type::Reference(Box::new(ty)),
+                    UnaryOperation::Pointer => Type::Pointer(Box::new(ty)),
+                    _ => ty,
+                };
+
+                return Ok(out_ty);
             }
             Expression::FunctionCall(func) => {
                 let call_ty = self.typecheck_expr(scope, &mut func.func_expr)?;
@@ -571,6 +615,12 @@ impl SemanticAnalyzer {
                     }
                 }
             }
+            Expression::UnaryOp(expr) => match expr.op {
+                UnaryOperation::Dereference => {
+                    self.enforce_mutability_expr(mutable_vars, &expr.operand)?;
+                }
+                _ => {}
+            },
             Expression::Assignment(expr) => {
                 self.enforce_mutability_expr(mutable_vars, &expr.lhs)?;
             }
@@ -623,13 +673,19 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    // TODO: probably use symbol table for this?
     pub fn enforce_mutability(&mut self, program: &mut Program) -> Result<(), String> {
         for module in &program.modules {
             for func in &module.function_defs {
                 let mut mutable_vars: HashSet<String> = HashSet::new();
 
                 for arg in &func.argument_list {
-                    mutable_vars.insert(arg.arg_name.clone());
+                    match arg.arg_type {
+                        Type::Reference(_) => {}
+                        _ => {
+                            mutable_vars.insert(arg.arg_name.clone());
+                        }
+                    };
                 }
                 self.enforce_mutability_codeblock(&mut mutable_vars, &func.function_body)?;
             }
@@ -657,7 +713,9 @@ impl SemanticAnalyzer {
         expr: &Expression,
     ) -> Result<(), String> {
         match expr {
-            Expression::BuiltinType(_) => {}
+            Expression::BuiltinType(expr) => {
+                self.populate_symbol_table_expr(curr_module_name, scope, expr)?;
+            }
             Expression::Import(import) => {
                 let imports = self.get_imports_rec(scope)?;
 
@@ -918,7 +976,10 @@ impl SemanticAnalyzer {
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
                             exported: false,
-                            mutable: true,
+                            mutable: match arg.arg_type {
+                                Type::Reference(_) => false,
+                                _ => true,
+                            },
                         },
                     )?;
                 }
@@ -956,6 +1017,9 @@ impl SemanticAnalyzer {
                     .collect::<Vec<_>>();
                 let module_name = module_parts.join("::");
 
+                let imported_symbols = self.get_imports_rec(scope.clone())?;
+                let mut resolved: Vec<String> = Vec::new();
+
                 if name_parts.len() == 1 {
                     match self.symbol_table.find_symbol_rec(
                         scope.clone(),
@@ -969,54 +1033,78 @@ impl SemanticAnalyzer {
                                      // )},
                     };
 
-                    let imported_symbols = self.get_imports_rec(scope.clone())?;
-
-                    let mut resolved = None;
-                    for import in imported_symbols {
-                        if let Some(alias) = import.alias {
-                            if name_parts[0] == alias {
-                                if name_parts.len() == 1 {
-                                    resolved = Some(import.name);
-                                } else {
-                                    let new_name = name_parts.iter().skip(1).cloned().collect();
-                                    resolved = Some(new_name);
-                                }
-                            }
+                    for import in &imported_symbols {
+                        if let Some(alias) = &import.alias {
+                            // if the name is not qualified and it matches the alias exactly
+                            if name_parts.len() == 1 && expr.name == *alias {
+                                // replace with the qualified name
+                                resolved.push(import.name.clone());
+                            } // if there is no alias
                         } else {
-                            let imported_item = import.name.split("::").last().unwrap();
-                            if expr.name == imported_item {
-                                if let Some(resolved) = resolved {
-                                    return Err(format!(
-                                        "Ambiguous name: {:?}, found in {resolved:?} and {:?}",
-                                        expr.name, import.name
-                                    ));
-                                } else {
-                                    resolved = Some(import.name);
-                                }
+                            // if the name matches exactly with the ending of an import
+                            // eg. name = `foo`, import = `...::foo`
+                            let last_part_of_import = import.name.split("::").last().unwrap();
+                            if expr.name == last_part_of_import {
+                                // replace the name with the full import name
+                                resolved.push(import.name.clone());
                             }
                         }
                     }
-
-                    if let Some(resolved) = resolved {
-                        expr.name = resolved;
-                    } else {
-                        return Err(format!("Identifier not found: {:?}", expr.name));
-                    }
                 } else {
-                    let scope = self
-                        .module_to_scope
-                        .get(&module_name)
-                        .expect(&format!("Couldnt resolve module {module_name:?}"));
+                    match self.module_to_scope.get(&module_name) {
+                        Some(scope) => match self.symbol_table.find_symbol_rec(
+                            scope.clone(),
+                            &name_parts.last().unwrap(),
+                            SymbolType::Identifier,
+                        ) {
+                            Ok(_) => return Ok(()),
+                            Err(_) => {
+                                println!("Couldnt find symbol {:?} looking elsewhere", expr.name)
+                            }
+                        },
+                        None => {}
+                    }
 
-                    match self.symbol_table.find_symbol_rec(
-                        scope.clone(),
-                        &name_parts.last().unwrap(),
-                        SymbolType::Identifier,
-                    ) {
-                        Ok(_) => return Ok(()),
-                        Err(_) => return Err(format!("RN: Identifier not found `{}`", expr.name)),
-                    };
+                    for import in &imported_symbols {
+                        if let Some(alias) = &import.alias {
+                            // if the qualified name starts with the alias `alias::foo`
+                            if expr.name.starts_with(alias) {
+                                // replace the name with `import.name::foo`
+                                let new_name =
+                                    expr.name.strip_prefix(&format!("{alias}::")).unwrap();
+                                let new_name = format!("{}::{new_name}", import.name);
+                                resolved.push(new_name);
+                            }
+                        } else {
+                            let parts_of_import = import.name.split("::");
+                            let last_part_of_import = parts_of_import.clone().last().unwrap();
+                            // if the first part of the qualified name matches the end of an import
+                            // prepend the rest of the import to the identifier
+                            // eg. name = `test::foo`, import = `core::test`
+                            if name_parts[0] == last_part_of_import {
+                                // `test::foo` -> `foo`
+                                let ending_of_iden = expr
+                                    .name
+                                    .strip_prefix(&format!("{last_part_of_import}::"))
+                                    .unwrap();
+                                // `core::test::foo`
+                                let new_name = format!("{}::{ending_of_iden}", import.name);
+                                resolved.push(new_name);
+                            }
+                        }
+                    }
                 };
+
+                match resolved.len() {
+                    1 => expr.name = resolved[0].clone(),
+                    0 => return Err(format!("Identifier not found: {:?}", expr.name)),
+                    _ => {
+                        return Err(format!(
+                            "Ambiguous name: {:?}, found these imports: {resolved:?}",
+                            expr.name
+                        ))
+                    }
+                }
             }
             Expression::VariableDecl(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.var_value)?;
@@ -1173,7 +1261,10 @@ impl SemanticAnalyzer {
                     Err(_) => return Err(format!("Type not found `{}`", name)),
                 };
             }
-            Type::Reference(inner) | Type::Structural(inner) | Type::Array(inner) => {
+            Type::Pointer(inner)
+            | Type::Reference(inner)
+            | Type::Structural(inner)
+            | Type::Array(inner) => {
                 self.resolve_type_name(curr_module_name, scope, inner)?;
             }
             Type::Function(func) => {

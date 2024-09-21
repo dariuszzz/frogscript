@@ -625,9 +625,8 @@ impl Lexer {
                 '@' => {
                     if self.match_word("js") {
                         self.add_token(TokenKind::BuiltinJS)
-                    }
-                    if self.match_word("type") {
-                        self.add_token(TokenKind::BuiltinJS)
+                    } else if self.match_word("type") {
+                        self.add_token(TokenKind::BuiltinType)
                     }
                 }
                 '"' => self.parse_fstring()?,

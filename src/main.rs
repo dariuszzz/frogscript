@@ -24,6 +24,7 @@ use lexer::*;
 use parser::*;
 use pond::{find_pond_path, Pond, Target};
 use semantics::*;
+use symbol_table::SymbolTable;
 use transpiler::*;
 
 #[derive(Debug, Options)]
@@ -122,6 +123,7 @@ fn transpile_project(
     program: Program,
     target: &Target,
     output: Option<String>,
+    symbol_table: &SymbolTable,
     perf: bool,
 ) -> Result<(), String> {
     let mut transpiler = Transpiler::new(program);
@@ -140,7 +142,7 @@ fn transpile_project(
     };
 
     let transp_start = Instant::now();
-    transpiler.transpile(&out_path, &target.func)?;
+    transpiler.transpile(&out_path, &target.func, symbol_table)?;
     if perf {
         println!(
             "Transpilation: {}us",
@@ -225,7 +227,7 @@ fn main() -> Result<(), String> {
             let mut semantic = SemanticAnalyzer::default();
             let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
 
-            transpile_project(program, target, None, i_opts.perf)?;
+            transpile_project(program, target, None, &symbol_table, i_opts.perf)?;
             if i_opts.perf {
                 println!(
                     "Total: {}ms",
@@ -256,9 +258,9 @@ fn main() -> Result<(), String> {
             let mut program = parse_project(&pond, i_opts.perf)?;
 
             let mut semantic = SemanticAnalyzer::default();
-            semantic.perform_analysis(&mut program, i_opts.perf)?;
+            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
 
-            transpile_project(program, target, opts.output, i_opts.perf)?;
+            transpile_project(program, target, opts.output, &symbol_table, i_opts.perf)?;
             if i_opts.perf {
                 println!(
                     "Total: {}ms",

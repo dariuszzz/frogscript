@@ -280,6 +280,10 @@ impl Parser {
         let mut type_ = Type::Infer;
 
         type_ = match self.peek(0).kind {
+            TokenKind::Caret => {
+                self.advance();
+                Type::Pointer(Box::new(self.parse_type()?))
+            }
             TokenKind::Ampersand => {
                 self.advance();
                 Type::Reference(Box::new(self.parse_type()?))
@@ -767,6 +771,22 @@ impl Parser {
                 kind,
                 ..
             } => match kind {
+                TokenKind::Caret => {
+                    let term = self.parse_term(indent)?;
+
+                    Expression::UnaryOp(UnaryOp {
+                        op: UnaryOperation::Dereference,
+                        operand: Box::new(term),
+                    })
+                }
+                TokenKind::Ampersand => {
+                    let term = self.parse_term(indent)?;
+
+                    Expression::UnaryOp(UnaryOp {
+                        op: UnaryOperation::Reference,
+                        operand: Box::new(term),
+                    })
+                }
                 TokenKind::Minus => {
                     let term = self.parse_term(indent)?;
 
@@ -1423,7 +1443,10 @@ impl Parser {
                 let expr = self.parse_expression(indent)?;
                 Ok(Expression::Return(Box::new(expr)))
             }
-            TokenKind::Identifier(Identifier::Custom(_)) => self.parse_assignment_or_call(indent),
+            // Caret for dereferencing
+            TokenKind::Identifier(Identifier::Custom(_)) | TokenKind::Caret => {
+                self.parse_assignment_or_call(indent)
+            }
             _ => self.parse_expression(indent),
         }
     }

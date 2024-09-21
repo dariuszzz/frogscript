@@ -6,6 +6,9 @@ use crate::{lexer::Literal, transpiler::ToJS, FStringPart};
 pub enum UnaryOperation {
     Negative,
     Negate,
+    Reference,
+    Pointer,
+    Dereference,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +55,7 @@ pub enum Type {
     Function(FunctionType),
     Struct(StructDef),
     Reference(Box<Type>),
+    Pointer(Box<Type>),
     Structural(Box<Type>),
 }
 
@@ -91,6 +95,7 @@ impl PartialEq for Type {
             (Type::Array(a), Type::Array(b)) => return a == b,
             (Type::Function(a), Type::Function(b)) => return a == b,
             (Type::Reference(a), Type::Reference(b)) => return a == b,
+            (Type::Pointer(a), Type::Pointer(b)) => return a == b,
             (Type::Structural(a), Type::Structural(b)) => return a == b,
             _ => return false,
         };
@@ -162,6 +167,10 @@ impl ToJS for UnaryOp {
         let UnaryOp { op, operand } = self;
 
         let op = match op {
+            // TODO
+            UnaryOperation::Pointer => "".to_owned(),
+            UnaryOperation::Reference => "".to_owned(),
+            UnaryOperation::Dereference => "".to_owned(),
             UnaryOperation::Negative => "-".to_owned(),
             UnaryOperation::Negate => "!".to_owned(),
         };

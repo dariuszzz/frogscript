@@ -22,24 +22,10 @@ module foo =
     module core =
         let val = 23
 
+
+
 fn main =
-    if true:
-        use core::print
-        use test {
-            foo {
-                val as val2,
-                core::val
-            },
-            core::foo1
-        }
-
-        // what should happen with this? error?
-        // let val2 = 0
-
-        print(foo1(val))
-        print(test::foo::core::val)
-        print(val2)
-
+    core::print("siema")
 
 /*
     let siema = 530
