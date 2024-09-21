@@ -8,3 +8,13 @@ fn main =
     assert(a - b == -2)
     assert(a * b == 8)
     assert(b / 2 == 2)
+
+    mut x = 23
+    x += 1
+    assert(x == 24)
+    x -= 1
+    assert(x == 23)
+    x *= 2
+    assert(x == 46)
+    x /= 2
+    assert(x == 23)

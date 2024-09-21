@@ -1,0 +1,39 @@
+/*
+-- output: 
+Int
+Int
+Float
+Float
+String
+Array(Infer)
+Uint
+Custom(CustomType { name: "Bar" })
+String
+*/
+
+fn print(msg string) -> () = @js("console.log({msg})")
+
+fn return_string -> string = return "text"
+
+type Bar =
+    field int
+
+fn main =
+    let a = 1
+    print(@type(a))
+    let b = 1i
+    print(@type(b))
+    let c = 0.0
+    print(@type(c))
+    let d = 0f
+    print(@type(d))
+    let e = ""
+    print(@type(e))
+    let f = []
+    print(@type(f))
+    let g = 1u
+    print(@type(g))
+    let h = Bar { field: 2 }
+    print(@type(h))
+    let i = return_string()
+    print(@type(i))

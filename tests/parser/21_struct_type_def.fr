@@ -1,0 +1,5 @@
+type Foo =
+    field int
+    hello string
+
+fn main = ...

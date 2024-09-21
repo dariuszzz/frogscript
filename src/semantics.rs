@@ -33,9 +33,12 @@ impl SemanticAnalyzer {
                     self.figure_out_unified_type(lhs, rhs)?,
                 )))
             }
-            (lhs, rhs) if lhs == rhs => return Ok(lhs.clone()),
             (Type::Infer, rhs) => return Ok(rhs.clone()),
             (lhs, Type::Infer) => return Ok(lhs.clone()),
+            (Type::Any, Type::Any) => return Ok(Type::Any),
+            (lhs, Type::Any) => return Ok(lhs.clone()),
+            (Type::Any, rhs) => return Ok(rhs.clone()),
+            (lhs, rhs) if lhs == rhs => return Ok(lhs.clone()),
             (Type::Array(lhs_inner), Type::Array(rhs_inner)) => {
                 return Ok(Type::Array(Box::new(
                     self.figure_out_unified_type(lhs_inner, rhs_inner)?,
@@ -472,6 +475,7 @@ impl SemanticAnalyzer {
             Expression::Lambda(expr) => {
                 *scope += 1;
                 let ret_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
+
                 let unified_ret_ty = self.figure_out_unified_type(&ret_ty, &expr.return_type)?;
 
                 let mut arg_types = Vec::new();
@@ -571,7 +575,7 @@ impl SemanticAnalyzer {
 
                 let unified_body_ty = self.figure_out_unified_type(&body_ty, &func.return_type)?;
 
-                if !matches!(unified_body_ty, Type::Any) {
+                if !matches!(unified_body_ty, Type::Any) && matches!(func.return_type, Type::Infer) {
                     func.return_type = unified_body_ty.clone();
 
                     let old_ret_ty = self

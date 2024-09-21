@@ -133,14 +133,9 @@ fn parse_project(pond: &Pond, perf: bool) -> Result<Program, String> {
     Ok(program)
 }
 
-fn test_file(path: &Path) -> Result<(), String> {
-    let source = fs::read_to_string(path).unwrap();
+fn compile_file_for_testing(source: &str, path: &Path, file_name: &Path) -> Result<Program, String> {
     let mut lexer = Lexer::new(&source, path, false);
     let tokens = lexer.parse().map_err(|e| format!("Lexer: {e:?}"))?;
-    let expectations = tokens
-        .clone()
-        .into_iter()
-        .find(|t| t.kind == TokenKind::MultilineComment);
 
     let tokens = tokens
         .into_iter()
@@ -160,62 +155,101 @@ fn test_file(path: &Path) -> Result<(), String> {
 
     let mut transpiler = Transpiler::new(program.clone());
 
-    let file_name = path.parent().unwrap().join("out/out.js");
 
     transpiler
         .transpile(&file_name, "main", &symbol_table)
         .map_err(|e| format!("Transpiler: {e:?}"))?;
 
-    let output = std::process::Command::new("node")
-        .args([file_name])
-        .output()
-        .expect("Failed to run program");
+    Ok(program)
+}
 
-    let exit = output.status;
-    let out = String::from_utf8(output.stdout).unwrap();
-    let out = out.trim();
-    let err = String::from_utf8(output.stderr).unwrap();
-    let err = err.trim();
+fn test_file(path: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(path).unwrap();
+
+    let expectations = {
+        if source.starts_with("/*") {
+            let start = 2;
+            let mut end = 2;
+
+
+            loop {
+                match source.get(end..end+2) {
+                    None => break None,
+                    Some("*/") => break source.get(start..end),
+                    a => {}
+                }
+
+                end += 1
+            }
+        } else {
+            None
+        }
+    };
+
+    let file_name = path.parent().unwrap().join("out/out.js");
+    let program = compile_file_for_testing(&source, path, &file_name);
 
     if let Some(expectations) = expectations {
         let string = expectations
-            .lexeme
-            .strip_prefix("/*")
-            .unwrap()
-            .strip_suffix("*/")
-            .unwrap()
-            .trim();
+            .trim()
+            .replace("\r\n", "\n");
 
         let expectations = string
             .split("-- ")
-            .filter_map(|exp| exp.split_once(": "))
+            .filter_map(|exp| exp.split_once(":"))
+            .map(|(exp, val)| (exp.trim(), val.trim()))
             .collect::<Vec<_>>();
 
-        for (exp, val) in expectations {
+        for (exp, val) in expectations.clone() {
             match exp {
-                "output" => {
-                    if val != out {
-                        return Err(format!("Wrong output: {val:?} != {out:?}"));
-                    }
-                }
-                "ast" => {
-                    if format!("{:#?}", program.modules[0]) != val {
-                        return Err(format!("Wrong ast: {val:?} != {out:?}"));
-                    }
-                }
-                "panics" if val == "true" => {
-                    if err.is_empty() {
-                        return Err(format!("Expected to panic but didnt"));
+                "fails" if val == "true" => {
+                    if program.is_ok() {
+                        return Err(format!("Expected to not compile but did"));
+                    } else {
+                        return Ok(())
                     }
                 }
                 _ => {}
             }
         }
+
+        if let Ok(program) = program {
+            let output = std::process::Command::new("node")
+                .args([file_name])
+                .output()
+                .expect("Failed to run program");
+
+            let exit = output.status;
+            let out = String::from_utf8(output.stdout).unwrap();
+            let out = out.trim();
+            let err = String::from_utf8(output.stderr).unwrap();
+            let err = err.trim();
+
+            if !err.is_empty() {
+                return Err(format!("Executable failed with: {err:?}"));
+            }
+
+
+            for (exp, val) in expectations {
+                match exp {
+                    "output" => {
+                        if val != out {
+                            return Err(format!("Wrong output: {val:?} != {out:?}"));
+                        }
+                    }
+                    "ast" => {
+                        if format!("{:#?}", program.modules[0]) != val {
+                            return Err(format!("Wrong ast: {val:?} != {out:?}"));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            return Err(program.unwrap_err())
+        }
     }
 
-    if !err.is_empty() {
-        return Err(format!("Executable failed with: {err:?}"));
-    }
 
     Ok(())
 }
@@ -355,24 +389,32 @@ fn main() -> Result<(), String> {
             let mut dirs_to_check = VecDeque::new();
             dirs_to_check.push_back(path);
 
+            let mut files_to_test = Vec::new();
+
             while let Some(dir) = dirs_to_check.pop_front() {
                 let paths = fs::read_dir(&dir).unwrap();
                 for path in paths {
                     let path = path.unwrap().path();
 
                     if path.is_file() && path.extension().unwrap() == "fr" {
-                        match test_file(&path) {
-                            Ok(()) if !opts.failed => println!("PASSED: {path:?}"),
-                            Ok(()) => {}
-                            Err(e) => {
-                                println!("FAILED: {path:?}\nREASON: {e:?}");
-                                if opts.early {
-                                    return Ok(());
-                                }
-                            }
-                        }
+                        files_to_test.push(path);
                     } else if path.is_dir() {
                         dirs_to_check.push_back(path);
+                    }
+                }
+            }
+
+            files_to_test.sort();
+
+            for file in &files_to_test {
+                match test_file(file) {
+                    Ok(()) if !opts.failed => println!("PASSED: {file:?}"),
+                    Ok(()) => {}
+                    Err(e) => {
+                        println!("FAILED: {file:?}\nREASON: {e:?}");
+                        if opts.early {
+                            return Ok(());
+                        }
                     }
                 }
             }

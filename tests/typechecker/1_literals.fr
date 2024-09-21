@@ -1,0 +1,32 @@
+/*
+-- output:
+Int
+Int
+Uint
+Float
+Float
+String
+Boolean
+Boolean
+Array(Infer)
+Array(Int)
+Custom(CustomType { name: "Bar" })
+*/
+
+fn print(msg string) -> () = @js("console.log({msg})")
+
+type Bar = 
+    field bool
+
+fn main = 
+    print(@type(1))
+    print(@type(1i))
+    print(@type(1u))
+    print(@type(1.0))
+    print(@type(1f))
+    print(@type(""))
+    print(@type(true))
+    print(@type(false))
+    print(@type([]))
+    print(@type([1]))
+    print(@type(Bar { field: true }))

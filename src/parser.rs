@@ -812,11 +812,11 @@ impl Parser {
                 TokenKind::Identifier(Identifier::Fn) => self.parse_lambda(indent)?,
                 TokenKind::SquareLeft => self.parse_array_literal(indent)?,
                 kind => {
-                    dbg!(format!(
-                        "[{:?}:{:?}] unexpected token {:?}",
-                        start_line, start_char, kind
-                    ));
-                    todo!("This is either invalid or unimplemented")
+                    return Err(format!("{start_line:?}:{start_char:?} - Unexpected token {kind:?}"))
+                    // dbg!(format!(
+                    //     "[{:?}:{:?}] unexpected token {:?}",
+                    //     start_line, start_char, kind
+                    // ));
                 }
             },
         };
@@ -1658,7 +1658,6 @@ impl Parser {
         loop {
             self.expr_start = self.current;
             let t = self.peek(0);
-            let next = self.peek(1);
             match t.kind {
                 TokenKind::EOF => break,
                 TokenKind::ParenLeft => {
@@ -1683,6 +1682,7 @@ impl Parser {
                     self.advance();
                 }
                 TokenKind::Literal(_) => {
+                    return Err(format!("Top level expressions are yuck"));
                     let expr = self.parse_expression(curr_indent)?;
                     current_module.toplevel_scope.expressions.push(expr);
                 }
@@ -1754,19 +1754,18 @@ impl Parser {
                         current_module.toplevel_scope.expressions.push(expr);
                     }
                     Identifier::Mut => {
-                        panic!("Mutable global variables are yuck i think");
+                        return Err(format!("Mutable global variables are yuck i think"));
                         let expr = self.parse_variable_decl(curr_indent)?;
                         current_module.toplevel_scope.expressions.push(expr);
                     }
 
                     Identifier::If | Identifier::For => {
-                        panic!("Top level statements are yuck");
+                        return Err(format!("Top level statements are yuck"));
                         let expr = self.parse_expression(curr_indent)?;
                         current_module.toplevel_scope.expressions.push(expr);
                     }
                     Identifier::Custom(iden) => {
-                        println!("{}:{} -> {iden:?}", t.start_line, t.start_char);
-                        panic!("Top level expressions are yuck");
+                        return Err(format!("Top level expressions are yuck"));
                         let expr = self.parse_assignment_or_call(curr_indent)?;
 
                         current_module.toplevel_scope.expressions.push(expr);
@@ -1776,11 +1775,10 @@ impl Parser {
                     }
                 },
                 token => {
-                    eprintln!(
+                    return Err(format!(
                         "{:?}:{:?} - Unexpected {token:?}",
                         t.start_line, t.start_char
-                    );
-                    todo!();
+                    ))
                 }
             };
         }

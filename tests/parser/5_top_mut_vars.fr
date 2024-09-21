@@ -1,0 +1,7 @@
+/*
+-- fails: true
+*/
+
+mut val = 23
+
+fn main = ...

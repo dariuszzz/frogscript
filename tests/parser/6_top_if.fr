@@ -1,0 +1,8 @@
+/*
+-- fails: true
+*/
+
+if true:
+    ...
+
+fn main = ...
