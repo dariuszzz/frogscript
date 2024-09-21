@@ -1,0 +1,6 @@
+/*
+-- output: 2
+*/
+
+fn main =
+    @js("console.log(2)")

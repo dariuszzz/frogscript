@@ -1803,10 +1803,20 @@ impl Parser {
             .expect(&format!("Module does not exist: {:?}", file_path.to_str()));
         let mut lexer = Lexer::new(&source_file, &file_path, self.perf);
         let tokens = lexer.parse()?;
-        self.tokens = tokens
+        let tokens = tokens
             .into_iter()
             .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
             .collect::<Vec<_>>();
+
+        self.parse_tokens(tokens, pond_name)
+    }
+
+    pub fn parse_tokens(
+        &mut self,
+        tokens: Vec<Token>,
+        pond_name: &str,
+    ) -> Result<Vec<Module>, String> {
+        self.tokens = tokens;
 
         self.current = 0;
         self.expr_start = 0;

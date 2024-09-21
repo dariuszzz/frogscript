@@ -1,0 +1,6 @@
+fn foo() -> () = ...
+fn foo2(x int) -> () = ...
+
+fn main =
+    foo()
+    foo2(4)

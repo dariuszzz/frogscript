@@ -1,6 +1,6 @@
 #![feature(path_file_prefix)]
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -41,6 +41,8 @@ struct MyOptions {
 
 #[derive(Debug, Options)]
 enum Command {
+    #[options(help = "run tests")]
+    Test(TestOpts),
     #[options(help = "run a target")]
     Run(RunOpts),
     #[options(help = "transpile a target")]
@@ -49,6 +51,18 @@ enum Command {
     Parse(ParseOpts),
     #[options(help = "lex a file")]
     Lex(LexOpts),
+}
+
+#[derive(Debug, Options)]
+struct TestOpts {
+    #[options(help = "show only failed tests")]
+    failed: bool,
+
+    #[options(help = "terminate early")]
+    early: bool,
+
+    #[options(free, help = "path to tests (defaults to cwd)")]
+    path: Vec<String>,
 }
 
 #[derive(Debug, Options)]
@@ -117,6 +131,93 @@ fn parse_project(pond: &Pond, perf: bool) -> Result<Program, String> {
     };
 
     Ok(program)
+}
+
+fn test_file(path: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(path).unwrap();
+    let mut lexer = Lexer::new(&source, path, false);
+    let tokens = lexer.parse().map_err(|e| format!("Lexer: {e:?}"))?;
+    let expectations = tokens
+        .clone()
+        .into_iter()
+        .find(|t| t.kind == TokenKind::MultilineComment);
+
+    let tokens = tokens
+        .into_iter()
+        .filter(|t| t.kind != TokenKind::MultilineComment && t.kind != TokenKind::Comment)
+        .collect::<Vec<_>>();
+
+    let mut parser = Parser::new(false);
+    let modules = parser
+        .parse_tokens(tokens, "test")
+        .map_err(|e| format!("Parser: {e:?}"))?;
+
+    let mut program = Program { modules };
+    let mut semantic = SemanticAnalyzer::default();
+    let symbol_table = semantic
+        .perform_analysis(&mut program, false)
+        .map_err(|e| format!("Semantics: {e:?}"))?;
+
+    let mut transpiler = Transpiler::new(program.clone());
+
+    let file_name = path.parent().unwrap().join("out/out.js");
+
+    transpiler
+        .transpile(&file_name, "main", &symbol_table)
+        .map_err(|e| format!("Transpiler: {e:?}"))?;
+
+    let output = std::process::Command::new("node")
+        .args([file_name])
+        .output()
+        .expect("Failed to run program");
+
+    let exit = output.status;
+    let out = String::from_utf8(output.stdout).unwrap();
+    let out = out.trim();
+    let err = String::from_utf8(output.stderr).unwrap();
+    let err = err.trim();
+
+    if let Some(expectations) = expectations {
+        let string = expectations
+            .lexeme
+            .strip_prefix("/*")
+            .unwrap()
+            .strip_suffix("*/")
+            .unwrap()
+            .trim();
+
+        let expectations = string
+            .split("-- ")
+            .filter_map(|exp| exp.split_once(": "))
+            .collect::<Vec<_>>();
+
+        for (exp, val) in expectations {
+            match exp {
+                "output" => {
+                    if val != out {
+                        return Err(format!("Wrong output: {val:?} != {out:?}"));
+                    }
+                }
+                "ast" => {
+                    if format!("{:#?}", program.modules[0]) != val {
+                        return Err(format!("Wrong ast: {val:?} != {out:?}"));
+                    }
+                }
+                "panics" if val == "true" => {
+                    if err.is_empty() {
+                        return Err(format!("Expected to panic but didnt"));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !err.is_empty() {
+        return Err(format!("Executable failed with: {err:?}"));
+    }
+
+    Ok(())
 }
 
 fn transpile_project(
@@ -242,6 +343,39 @@ fn main() -> Result<(), String> {
                 .expect("Failed to run program");
 
             handle.wait().expect("Program quit unexpectedly");
+        }
+        Command::Test(opts) => {
+            let path = if opts.path.len() == 1 {
+                let path = opts.path.get(0).unwrap();
+                PathBuf::from(&path)
+            } else {
+                std::env::current_dir().expect("Invalid cwd")
+            };
+
+            let mut dirs_to_check = VecDeque::new();
+            dirs_to_check.push_back(path);
+
+            while let Some(dir) = dirs_to_check.pop_front() {
+                let paths = fs::read_dir(&dir).unwrap();
+                for path in paths {
+                    let path = path.unwrap().path();
+
+                    if path.is_file() && path.extension().unwrap() == "fr" {
+                        match test_file(&path) {
+                            Ok(()) if !opts.failed => println!("PASSED: {path:?}"),
+                            Ok(()) => {}
+                            Err(e) => {
+                                println!("FAILED: {path:?}\nREASON: {e:?}");
+                                if opts.early {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    } else if path.is_dir() {
+                        dirs_to_check.push_back(path);
+                    }
+                }
+            }
         }
         Command::Transpile(opts) => {
             let path = if opts.path.len() == 1 {

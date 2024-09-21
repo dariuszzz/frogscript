@@ -490,7 +490,6 @@ impl ToJS for Expression {
                 format!("continue;")
             }
             Self::Placeholder => {
-                eprintln!("Transpiling placeholder");
                 format!("{{ /* placeholder */ }}")
             }
             Self::Literal(literal) => match literal {

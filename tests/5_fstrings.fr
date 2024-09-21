@@ -1,0 +1,7 @@
+/*
+-- output: Hello world
+*/
+
+fn main =
+    let hello = "Hello world"
+    @js("console.log({hello})")
