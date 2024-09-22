@@ -1,14 +1,14 @@
 /*
--- output: 
-Int
-Int
-Float
-Float
-String
-Array(Infer)
-Uint
-Custom(CustomType { name: "Bar" })
-String
+-- output:
+int
+int
+float
+float
+string
+[infer]
+uint
+Bar
+string
 */
 
 fn print(msg string) -> () = @js("console.log({msg})")

@@ -34,11 +34,11 @@ module array =
         return @js("{arr}.pop()")
 
 
-    export fn map(arr [any], f fn(any -> any)) -> () =
+    export fn map(arr [any], f fn(any) -> any) -> () =
         for i in 0..core::len(arr):
             arr[i] = f(arr[i])
 
-    export fn filter(arr [any], f fn(any -> bool)) -> [any] =
+    export fn filter(arr [any], f fn(any) -> bool) -> [any] =
         mut new_arr = []
 
         for el in arr:

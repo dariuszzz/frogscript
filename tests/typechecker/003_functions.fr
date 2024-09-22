@@ -1,0 +1,11 @@
+/*
+-- output:
+fn() -> infer
+fn(string) -> void
+*/
+
+fn print(msg string) -> () = @js("console.log({msg})")
+
+fn main =
+    print(@type(main))
+    print(@type(print))

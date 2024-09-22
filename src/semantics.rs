@@ -132,7 +132,7 @@ impl SemanticAnalyzer {
         if let Expression::BuiltinType(expr_copy) = expr {
             if let Ok(inner_ty) = self.typecheck_expr(scope, expr_copy) {
                 *expr = Expression::Literal(Literal::String(vec![FStringPart::String(format!(
-                    "{inner_ty:?}"
+                    "{inner_ty}"
                 ))]));
             };
         }
@@ -575,7 +575,8 @@ impl SemanticAnalyzer {
 
                 let unified_body_ty = self.figure_out_unified_type(&body_ty, &func.return_type)?;
 
-                if !matches!(unified_body_ty, Type::Any) && matches!(func.return_type, Type::Infer) {
+                if !matches!(unified_body_ty, Type::Any) && matches!(func.return_type, Type::Infer)
+                {
                     func.return_type = unified_body_ty.clone();
 
                     let old_ret_ty = self

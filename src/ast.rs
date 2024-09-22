@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::Binary};
+use std::{
+    collections::HashMap,
+    fmt::{Binary, Display},
+};
 
 use crate::{lexer::Literal, transpiler::ToJS, FStringPart};
 
@@ -57,6 +60,39 @@ pub enum Type {
     Reference(Box<Type>),
     Pointer(Box<Type>),
     Structural(Box<Type>),
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Custom(CustomType { name }) => f.write_fmt(format_args!("{name}")),
+            Self::Array(inner) => f.write_fmt(format_args!("[{inner}]")),
+            Self::Function(FunctionType {
+                env_args,
+                args,
+                ret,
+            }) => {
+                let args: Vec<_> = args.iter().map(|t| format!("{t}")).collect();
+                let args = args.join(", ");
+
+                f.write_fmt(format_args!("fn({args}) -> {ret}"))
+            }
+            Self::Struct(StructDef { fields }) => {
+                let fields: Vec<_> = fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.field_name, field.field_type))
+                    .collect();
+
+                let fields = fields.join(", ");
+
+                f.write_fmt(format_args!("{{ {fields} }}"))
+            }
+            Self::Reference(inner) => f.write_fmt(format_args!("&{inner}")),
+            Self::Pointer(inner) => f.write_fmt(format_args!("^{inner}")),
+            Self::Structural(inner) => f.write_fmt(format_args!("~{inner}")),
+            other => f.write_str(&format!("{other:?}").to_lowercase()),
+        }
+    }
 }
 
 impl PartialEq for Type {

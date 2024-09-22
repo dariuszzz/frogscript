@@ -1,0 +1,23 @@
+/*
+-- output:
+fn(int) -> int
+[int]
+*/
+
+fn print(msg string) -> () = @js("console.log({msg})")
+
+fn func_that_takes_lambda(f fn(int) -> int) -> int = return f(2)
+
+type Foo =
+    field [int]
+
+fn main =
+    let a = fn(x) return 4
+    func_that_takes_lambda(a)
+
+    print(@type(a))
+
+    let arr = []
+    let foo = Foo { field: arr }
+
+    print(@type(arr))

@@ -133,7 +133,11 @@ fn parse_project(pond: &Pond, perf: bool) -> Result<Program, String> {
     Ok(program)
 }
 
-fn compile_file_for_testing(source: &str, path: &Path, file_name: &Path) -> Result<Program, String> {
+fn compile_file_for_testing(
+    source: &str,
+    path: &Path,
+    file_name: &Path,
+) -> Result<Program, String> {
     let mut lexer = Lexer::new(&source, path, false);
     let tokens = lexer.parse().map_err(|e| format!("Lexer: {e:?}"))?;
 
@@ -155,7 +159,6 @@ fn compile_file_for_testing(source: &str, path: &Path, file_name: &Path) -> Resu
 
     let mut transpiler = Transpiler::new(program.clone());
 
-
     transpiler
         .transpile(&file_name, "main", &symbol_table)
         .map_err(|e| format!("Transpiler: {e:?}"))?;
@@ -171,9 +174,8 @@ fn test_file(path: &Path) -> Result<(), String> {
             let start = 2;
             let mut end = 2;
 
-
             loop {
-                match source.get(end..end+2) {
+                match source.get(end..end + 2) {
                     None => break None,
                     Some("*/") => break source.get(start..end),
                     a => {}
@@ -190,9 +192,7 @@ fn test_file(path: &Path) -> Result<(), String> {
     let program = compile_file_for_testing(&source, path, &file_name);
 
     if let Some(expectations) = expectations {
-        let string = expectations
-            .trim()
-            .replace("\r\n", "\n");
+        let string = expectations.trim().replace("\r\n", "\n");
 
         let expectations = string
             .split("-- ")
@@ -206,7 +206,7 @@ fn test_file(path: &Path) -> Result<(), String> {
                     if program.is_ok() {
                         return Err(format!("Expected to not compile but did"));
                     } else {
-                        return Ok(())
+                        return Ok(());
                     }
                 }
                 _ => {}
@@ -229,7 +229,6 @@ fn test_file(path: &Path) -> Result<(), String> {
                 return Err(format!("Executable failed with: {err:?}"));
             }
 
-
             for (exp, val) in expectations {
                 match exp {
                     "output" => {
@@ -246,10 +245,9 @@ fn test_file(path: &Path) -> Result<(), String> {
                 }
             }
         } else {
-            return Err(program.unwrap_err())
+            return Err(program.unwrap_err());
         }
     }
-
 
     Ok(())
 }
@@ -396,8 +394,10 @@ fn main() -> Result<(), String> {
                 for path in paths {
                     let path = path.unwrap().path();
 
-                    if path.is_file() && path.extension().unwrap() == "fr" {
-                        files_to_test.push(path);
+                    if path.is_file() && path.extension().is_some() {
+                        if path.extension().unwrap() == "fr" {
+                            files_to_test.push(path);
+                        }
                     } else if path.is_dir() {
                         dirs_to_check.push_back(path);
                     }

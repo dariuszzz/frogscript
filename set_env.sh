@@ -1,1 +1,2 @@
-export PATH=$PATH:~/dev/frogscript/target/debug
+#  iforgotthisisanabsolutepathnotrelative
+# export PATH=$PATH:~/dev/frogscript/target/debug

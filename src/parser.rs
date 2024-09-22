@@ -341,66 +341,27 @@ impl Parser {
             TokenKind::Identifier(Identifier::Fn) => {
                 self.advance();
 
-                if let TokenKind::ParenLeft = self.peek(0).kind {
-                    self.advance();
-                    let mut args1 = self.parse_func_type_args()?;
-                    let mut args2 = Vec::new();
-                    let mut were_there_2_arg_lists = false;
+                let args1 = self.parse_func_type_args()?;
+                let args2 = self.parse_func_type_args();
 
-                    match self.advance().kind {
-                        TokenKind::ThinArrow => {}
-                        TokenKind::ParenRight => {
-                            were_there_2_arg_lists = true;
+                match self.advance().kind {
+                    TokenKind::ThinArrow => {}
+                    _ => return Err(format!("'->' token missing in function type")),
+                }
 
-                            if let TokenKind::ParenLeft = self.advance().kind {
-                            } else {
-                                return Err(format!("Expected another arg list"));
-                            }
-
-                            args2.append(&mut self.parse_func_type_args()?);
-
-                            match self.advance().kind {
-                                TokenKind::ThinArrow => {}
-                                _ => return Err(format!("'->' token missing in function type")),
-                            }
-                        }
-                        _ => return Err(format!("'->' or ')' token missing in function type")),
-                    }
-
-                    let return_type = self.parse_type()?;
-
-                    if let TokenKind::ParenRight = self.advance().kind {
-                    } else {
-                        return Err(format!("Unclosed function type"));
-                    }
-
-                    if args1.len() == 1 {
-                        if let Type::Void = args1[0] {
-                            args1 = Vec::new();
-                        }
-                    }
-
-                    if args2.len() == 1 {
-                        if let Type::Void = args2[0] {
-                            args2 = Vec::new();
-                        }
-                    }
-
-                    if were_there_2_arg_lists {
-                        Type::Function(FunctionType {
-                            env_args: args1,
-                            args: args2,
-                            ret: Box::new(return_type),
-                        })
-                    } else {
-                        Type::Function(FunctionType {
-                            env_args: Vec::new(),
-                            args: args1,
-                            ret: Box::new(return_type),
-                        })
-                    }
+                let return_type = self.parse_type()?;
+                if let Ok(args2) = args2 {
+                    Type::Function(FunctionType {
+                        env_args: args1,
+                        args: args2,
+                        ret: Box::new(return_type),
+                    })
                 } else {
-                    return Err(format!("Expected '(' after Fn in type"));
+                    Type::Function(FunctionType {
+                        env_args: Vec::new(),
+                        args: args1,
+                        ret: Box::new(return_type),
+                    })
                 }
             }
             TokenKind::ParenLeft => {
@@ -426,6 +387,13 @@ impl Parser {
     }
 
     pub fn parse_func_type_args(&mut self) -> Result<Vec<Type>, String> {
+        match self.peek(0).kind {
+            TokenKind::ParenLeft => {
+                self.advance();
+            }
+            _ => return Err(format!("'(' token missing in function type")),
+        }
+
         let mut args = Vec::new();
 
         loop {
@@ -435,10 +403,15 @@ impl Parser {
 
             match self.peek(0).kind {
                 TokenKind::Comma => self.advance(),
-                TokenKind::ParenRight | TokenKind::ThinArrow => break,
+                TokenKind::ParenRight => break,
                 _ => return Err(format!("Invalid function argument separator in type")),
             };
         }
+
+        match self.peek(0).kind {
+            TokenKind::ParenRight => self.advance(),
+            _ => return Err(format!("')' token expected, unclosed arg list in type")),
+        };
 
         Ok(args)
     }
@@ -812,7 +785,9 @@ impl Parser {
                 TokenKind::Identifier(Identifier::Fn) => self.parse_lambda(indent)?,
                 TokenKind::SquareLeft => self.parse_array_literal(indent)?,
                 kind => {
-                    return Err(format!("{start_line:?}:{start_char:?} - Unexpected token {kind:?}"))
+                    return Err(format!(
+                        "{start_line:?}:{start_char:?} - Unexpected token {kind:?}"
+                    ));
                     // dbg!(format!(
                     //     "[{:?}:{:?}] unexpected token {:?}",
                     //     start_line, start_char, kind

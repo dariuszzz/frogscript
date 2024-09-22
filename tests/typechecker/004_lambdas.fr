@@ -1,0 +1,15 @@
+/*
+-- output:
+fn() -> int
+fn(infer) -> int
+fn(infer, int) -> uint
+fn() -> string
+*/
+
+fn print(msg string) -> () = @js("console.log({msg})")
+
+fn main =
+    print(@type(fn() return 2 ))
+    print(@type(fn(x) return 2 ))
+    print(@type(fn(x, y int) -> uint ... ))
+    print(@type(fn() -> string return "" ))

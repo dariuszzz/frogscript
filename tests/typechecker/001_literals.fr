@@ -1,24 +1,24 @@
 /*
 -- output:
-Int
-Int
-Uint
-Float
-Float
-String
-Boolean
-Boolean
-Array(Infer)
-Array(Int)
-Custom(CustomType { name: "Bar" })
+int
+int
+uint
+float
+float
+string
+boolean
+boolean
+[infer]
+[int]
+Bar
 */
 
 fn print(msg string) -> () = @js("console.log({msg})")
 
-type Bar = 
+type Bar =
     field bool
 
-fn main = 
+fn main =
     print(@type(1))
     print(@type(1i))
     print(@type(1u))
