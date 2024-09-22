@@ -88,7 +88,9 @@ pub enum TokenKind {
     DoubleDotEqual,
     TripleDot,
     Ampersand,
+    LogicAnd,
     Pipe,
+    LogicOr,
     Caret,
     Tilde,
     RShift,
@@ -590,6 +592,8 @@ impl Lexer {
                 '|' => {
                     if self.match_char('>') {
                         self.add_token(TokenKind::TrianglePipe)
+                    } else if self.match_char('|') {
+                        self.add_token(TokenKind::LogicOr)
                     } else {
                         self.add_token(TokenKind::Pipe)
                     }
@@ -617,7 +621,13 @@ impl Lexer {
                         self.add_token(TokenKind::Dot)
                     }
                 }
-                '&' => self.add_token(TokenKind::Ampersand),
+                '&' => {
+                    if self.match_char('&') {
+                        self.add_token(TokenKind::LogicAnd)
+                    } else {
+                        self.add_token(TokenKind::Ampersand)
+                    }
+                }
                 '^' => self.add_token(TokenKind::Caret),
                 '~' => self.add_token(TokenKind::Tilde),
                 '$' => self.add_token(TokenKind::Dollar),

@@ -1,0 +1,43 @@
+fn main =
+    // ints
+    let a = 23
+    let b = 48
+
+    let res1 = a + b
+    let res2 = a - b
+    let res3 = a * b
+    let res4 = a / b
+    let res14 = -a
+
+    // floats
+    let c = 2.6
+    let d = 95.3
+
+    let res5 = c + d
+    let res6 = c - d
+    let res7 = c * d
+    let res8 = c / d
+    let res15 = -c
+
+    // strings
+    let e = "test"
+    let f = "foo"
+
+    let res9 = e + f
+
+    // uints
+    let g = 8u
+    let h = 42u
+
+    let res10 = g + h
+    let res11 = g - h
+    let res12 = g * h
+    let res13 = g / h
+
+    // bools
+    let i = true
+    let j = false
+
+    let res16 = i && j
+    let res17 = !i
+    let res18 = i || j

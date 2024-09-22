@@ -586,6 +586,56 @@ impl Parser {
         Ok(Expression::FunctionCall(call))
     }
 
+    pub fn parse_logic_or(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_logic_and(indent)?;
+
+        loop {
+            let token = self.peek_skip_ws(indent)?;
+            let op = match token.kind {
+                TokenKind::LogicOr => BinaryOperation::Or,
+                _ => break,
+            };
+
+            // consume &&
+            self.advance_skip_ws(indent);
+
+            let rhs = self.parse_logic_and(indent)?;
+
+            lhs = Expression::BinaryOp(BinaryOp {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+
+        Ok(lhs)
+    }
+
+    pub fn parse_logic_and(&mut self, indent: usize) -> Result<Expression, String> {
+        let mut lhs = self.parse_equality(indent)?;
+
+        loop {
+            let token = self.peek_skip_ws(indent)?;
+            let op = match token.kind {
+                TokenKind::LogicAnd => BinaryOperation::And,
+                _ => break,
+            };
+
+            // consume &&
+            self.advance_skip_ws(indent);
+
+            let rhs = self.parse_equality(indent)?;
+
+            lhs = Expression::BinaryOp(BinaryOp {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+
+        Ok(lhs)
+    }
+
     pub fn parse_equality(&mut self, indent: usize) -> Result<Expression, String> {
         let mut lhs = self.parse_ord(indent)?;
 
@@ -1284,7 +1334,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Continue)
             }
-            _ => self.parse_equality(indent),
+            _ => self.parse_logic_or(indent),
         }
     }
 
