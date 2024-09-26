@@ -405,11 +405,17 @@ fn main() -> Result<(), String> {
             }
 
             files_to_test.sort();
+            let mut passed = 0;
 
             for file in &files_to_test {
                 match test_file(file) {
-                    Ok(()) if !opts.failed => println!("PASSED: {file:?}"),
-                    Ok(()) => {}
+                    Ok(()) => {
+                        passed += 1;
+
+                        if !opts.failed {
+                            println!("PASSED: {file:?}")
+                        }
+                    }
                     Err(e) => {
                         println!("FAILED: {file:?}\nREASON: {e:?}");
                         if opts.early {
@@ -418,6 +424,8 @@ fn main() -> Result<(), String> {
                     }
                 }
             }
+
+            println!("Passed {passed}/{} tests", files_to_test.len());
         }
         Command::Transpile(opts) => {
             let path = if opts.path.len() == 1 {
