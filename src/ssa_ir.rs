@@ -41,4 +41,5 @@ pub enum IRInstr {
     CreateVar(String),
     SetVar(String, IRValue),
     GetVar(String),
+    Add,
 }

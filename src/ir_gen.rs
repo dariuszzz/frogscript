@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     pond::Target,
     ssa_ir::{Block, IRInstr, IRValue, SSAIR},
-    CodeBlock, Expression, Literal, Program, Variable,
+    CodeBlock, ExprKind, Expression, Literal, Program, Variable,
 };
 
 #[derive(Default)]
@@ -52,60 +52,77 @@ impl IRGen {
     ) -> Result<(String, Vec<IRInstr>), String> {
         let mut instructions = Vec::new();
 
-        match expr {
-            Expression::VariableDecl(variable_decl) => {
+        match &expr.kind {
+            ExprKind::VariableDecl(variable_decl) => {
                 let var_name = variable_decl.var_name.clone();
                 instructions.push(IRInstr::CreateVar(var_name.clone()));
 
-                let (res_var, mut instrs) = self.generate_ir_expr(&variable_decl.var_value)?;
+                let (res, mut instrs) = self.generate_ir_expr(&variable_decl.var_value)?;
 
                 instructions.append(&mut instrs);
 
                 instructions.push(IRInstr::SetVar(
                     var_name.clone(),
-                    IRValue::Variable(Variable { name: res_var }),
+                    IRValue::Variable(Variable { name: res }),
                 ));
 
                 return Ok((var_name, instructions));
             }
-            Expression::Literal(literal) => {
-                let var_name = format!("__{}", self.var_counter);
-                self.var_counter += 1;
-                instructions.push(IRInstr::CreateVar(var_name.clone()));
+            ExprKind::Literal(literal) => {
+                let res = self.get_next_var_name("_");
+                instructions.push(IRInstr::CreateVar(res.clone()));
 
                 match literal {
                     Literal::String(vec) => todo!(),
                     lit => {
-                        instructions.push(IRInstr::SetVar(
-                            var_name.clone(),
-                            IRValue::Literal(lit.clone()),
-                        ));
+                        instructions
+                            .push(IRInstr::SetVar(res.clone(), IRValue::Literal(lit.clone())));
                     }
                 }
 
-                return Ok((var_name, instructions));
+                return Ok((res, instructions));
             }
-            Expression::BinaryOp(binary_op) => todo!(),
-            Expression::UnaryOp(unary_op) => todo!(),
-            Expression::FunctionCall(function_call) => todo!(),
-            Expression::Variable(variable) => todo!(),
-            Expression::Return(expression) => todo!(),
-            Expression::Assignment(assignment) => todo!(),
-            Expression::AnonStruct(anon_struct) => todo!(),
-            Expression::ArrayLiteral(array_literal) => todo!(),
-            Expression::ArrayAccess(array_access) => todo!(),
-            Expression::FieldAccess(field_access) => todo!(),
-            Expression::NamedStruct(named_struct) => todo!(),
-            Expression::Lambda(lambda) => todo!(),
-            Expression::Range(range) => todo!(),
-            Expression::JS(expression) => todo!(),
-            Expression::BuiltinType(expression) => todo!(),
-            Expression::If(_) => todo!(),
-            Expression::For(_) => todo!(),
-            Expression::Import(import) => todo!(),
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            ExprKind::BinaryOp(binary_op) => {
+                let res = self.get_next_var_name("_");
+                instructions.push(IRInstr::CreateVar(res.clone()));
+
+                let (lhs, mut lhs_instrs) = self.generate_ir_expr(&binary_op.lhs)?;
+                let (rhs, mut rhs_instrs) = self.generate_ir_expr(&binary_op.rhs)?;
+
+                instructions.append(&mut lhs_instrs);
+                instructions.append(&mut rhs_instrs);
+
+                instructions.push(IRInstr::Add);
+
+                return Ok((res, instructions));
+            }
+            ExprKind::UnaryOp(unary_op) => todo!(),
+            ExprKind::FunctionCall(function_call) => todo!(),
+            ExprKind::Variable(variable) => todo!(),
+            ExprKind::Return(expression) => todo!(),
+            ExprKind::Assignment(assignment) => todo!(),
+            ExprKind::AnonStruct(anon_struct) => todo!(),
+            ExprKind::ArrayLiteral(array_literal) => todo!(),
+            ExprKind::ArrayAccess(array_access) => todo!(),
+            ExprKind::FieldAccess(field_access) => todo!(),
+            ExprKind::NamedStruct(named_struct) => todo!(),
+            ExprKind::Lambda(lambda) => todo!(),
+            ExprKind::Range(range) => todo!(),
+            ExprKind::JS(expression) => todo!(),
+            ExprKind::BuiltinType(expression) => todo!(),
+            ExprKind::If(_) => todo!(),
+            ExprKind::For(_) => todo!(),
+            ExprKind::Import(import) => todo!(),
+            ExprKind::Placeholder => todo!(),
+            ExprKind::Break => todo!(),
+            ExprKind::Continue => todo!(),
         }
+    }
+
+    fn get_next_var_name(&mut self, smth: &str) -> String {
+        let res = format!("{smth}_{}", self.var_counter);
+        self.var_counter += 1;
+
+        return res;
     }
 }

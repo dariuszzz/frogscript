@@ -461,7 +461,10 @@ impl Parser {
                 is_env,
             };
 
-            Ok(Expression::VariableDecl(variable))
+            Ok(Expression {
+                kind: ExprKind::VariableDecl(variable),
+                ty: Type::Infer,
+            })
         } else {
             return Err(format!("Invalid variable declaration"));
         }
@@ -507,9 +510,9 @@ impl Parser {
         {
             self.advance();
             let mut call = FunctionCall {
-                func_expr: Box::new(Expression::Variable(Variable {
+                func_expr: Box::new(Expression::infer(ExprKind::Variable(Variable {
                     name: name.join("::"),
-                })),
+                }))),
                 arguments: vec![called_on],
             };
 
@@ -533,16 +536,16 @@ impl Parser {
                 }
             }
 
-            Ok(Expression::FunctionCall(call))
+            Ok(Expression::infer(ExprKind::FunctionCall(call)))
         } else {
             if name.len() > 1 {
                 return Err(format!("Missing '(' after qualifed function name"));
             }
 
-            Ok(Expression::FieldAccess(FieldAccess {
+            Ok(Expression::infer(ExprKind::FieldAccess(FieldAccess {
                 expr: Box::new(called_on),
                 field: name[0].clone(),
-            }))
+            })))
         }
     }
 
@@ -583,7 +586,7 @@ impl Parser {
             unreachable!()
         }
 
-        Ok(Expression::FunctionCall(call))
+        Ok(Expression::infer(ExprKind::FunctionCall(call)))
     }
 
     pub fn parse_logic_or(&mut self, indent: usize) -> Result<Expression, String> {
@@ -601,11 +604,11 @@ impl Parser {
 
             let rhs = self.parse_logic_and(indent)?;
 
-            lhs = Expression::BinaryOp(BinaryOp {
+            lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            });
+            }));
         }
 
         Ok(lhs)
@@ -626,11 +629,11 @@ impl Parser {
 
             let rhs = self.parse_equality(indent)?;
 
-            lhs = Expression::BinaryOp(BinaryOp {
+            lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            });
+            }));
         }
 
         Ok(lhs)
@@ -652,11 +655,11 @@ impl Parser {
 
             let rhs = self.parse_ord(indent)?;
 
-            lhs = Expression::BinaryOp(BinaryOp {
+            lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            });
+            }));
         }
 
         Ok(lhs)
@@ -679,11 +682,11 @@ impl Parser {
 
         let rhs = self.parse_range(indent)?;
 
-        lhs = Expression::BinaryOp(BinaryOp {
+        lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
-        });
+        }));
 
         Ok(lhs)
     }
@@ -705,25 +708,25 @@ impl Parser {
             let rhs = self.parse_sum(indent)?;
 
             // FIXME: goofy ahh way to get ranges working, this shouldnt happen in the parser
-            lhs = Expression::FunctionCall(FunctionCall {
-                func_expr: Box::new(Expression::Variable(Variable {
+            lhs = Expression::infer(ExprKind::FunctionCall(FunctionCall {
+                func_expr: Box::new(Expression::infer(ExprKind::Variable(Variable {
                     name: "core::range".to_owned(),
-                })),
+                }))),
                 arguments: vec![
                     lhs,
                     if inclusive {
-                        Expression::BinaryOp(BinaryOp {
+                        Expression::infer(ExprKind::BinaryOp(BinaryOp {
                             op: BinaryOperation::Add,
                             lhs: Box::new(rhs),
-                            rhs: Box::new(Expression::Literal(Literal::Int(1))),
-                        })
+                            rhs: Box::new(Expression::infer(ExprKind::Literal(Literal::Int(1)))),
+                        }))
                     } else {
                         rhs
                     },
                 ],
-            });
+            }));
 
-            // lhs = Expression::Range(Range {
+            // lhs = ExprKind::Range(Range {
             //     start: Box::new(lhs),
             //     end: Box::new(rhs),
             //     inclusive,
@@ -749,11 +752,11 @@ impl Parser {
 
             let rhs = self.parse_product(indent)?;
 
-            lhs = Expression::BinaryOp(BinaryOp {
+            lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            });
+            }));
         }
 
         Ok(lhs)
@@ -775,11 +778,11 @@ impl Parser {
 
             let rhs = self.parse_term(indent)?;
 
-            lhs = Expression::BinaryOp(BinaryOp {
+            lhs = Expression::infer(ExprKind::BinaryOp(BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-            });
+            }));
         }
 
         Ok(lhs)
@@ -797,34 +800,34 @@ impl Parser {
                 TokenKind::Caret => {
                     let term = self.parse_term(indent)?;
 
-                    Expression::UnaryOp(UnaryOp {
+                    Expression::infer(ExprKind::UnaryOp(UnaryOp {
                         op: UnaryOperation::Dereference,
                         operand: Box::new(term),
-                    })
+                    }))
                 }
                 TokenKind::Ampersand => {
                     let term = self.parse_term(indent)?;
 
-                    Expression::UnaryOp(UnaryOp {
+                    Expression::infer(ExprKind::UnaryOp(UnaryOp {
                         op: UnaryOperation::Reference,
                         operand: Box::new(term),
-                    })
+                    }))
                 }
                 TokenKind::Minus => {
                     let term = self.parse_term(indent)?;
 
-                    Expression::UnaryOp(UnaryOp {
+                    Expression::infer(ExprKind::UnaryOp(UnaryOp {
                         op: UnaryOperation::Negative,
                         operand: Box::new(term),
-                    })
+                    }))
                 }
                 TokenKind::Exclamation => {
                     let term = self.parse_term(indent)?;
 
-                    Expression::UnaryOp(UnaryOp {
+                    Expression::infer(ExprKind::UnaryOp(UnaryOp {
                         op: UnaryOperation::Negate,
                         operand: Box::new(term),
-                    })
+                    }))
                 }
                 TokenKind::StartString => self.parse_string(indent)?,
                 TokenKind::Literal(literal) => self.parse_literal(literal, indent)?,
@@ -943,7 +946,7 @@ impl Parser {
             }
         }
 
-        Ok(Expression::Lambda(lambda))
+        Ok(Expression::infer(ExprKind::Lambda(lambda)))
     }
 
     pub fn parse_array_literal(&mut self, indent: usize) -> Result<Expression, String> {
@@ -955,7 +958,7 @@ impl Parser {
         match token.kind {
             TokenKind::SquareRight => {
                 self.advance_skip_ws(indent);
-                return Ok(Expression::ArrayLiteral(array));
+                return Ok(Expression::infer(ExprKind::ArrayLiteral(array)));
             }
             _ => {}
         }
@@ -983,7 +986,7 @@ impl Parser {
             };
         }
 
-        Ok(Expression::ArrayLiteral(array))
+        Ok(Expression::infer(ExprKind::ArrayLiteral(array)))
     }
 
     pub fn parse_expr_in_parentheses(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1022,11 +1025,11 @@ impl Parser {
             };
         }
 
-        return Ok(Expression::Literal(Literal::String(parts)));
+        return Ok(Expression::infer(ExprKind::Literal(Literal::String(parts))));
     }
 
     pub fn parse_literal(&mut self, literal: Literal, indent: usize) -> Result<Expression, String> {
-        Ok(Expression::Literal(literal))
+        Ok(Expression::infer(ExprKind::Literal(literal)))
     }
 
     pub fn parse_array_access(
@@ -1037,7 +1040,7 @@ impl Parser {
         let index = self.parse_expression(indent)?;
 
         let expr = if let TokenKind::SquareRight = self.advance().kind {
-            Expression::ArrayAccess(ArrayAccess {
+            ExprKind::ArrayAccess(ArrayAccess {
                 expr: Box::new(lhs),
                 index: Box::new(index),
             })
@@ -1062,7 +1065,7 @@ impl Parser {
         //     }
         //     _ => Ok(expr),
         // }
-        Ok(expr)
+        Ok(Expression::infer(expr))
     }
 
     pub fn parse_variable(
@@ -1070,7 +1073,9 @@ impl Parser {
         var_name: String,
         indent: usize,
     ) -> Result<Expression, String> {
-        Ok(Expression::Variable(Variable { name: var_name }))
+        Ok(Expression::infer(ExprKind::Variable(Variable {
+            name: var_name,
+        })))
     }
 
     pub fn parse_custom_iden(
@@ -1092,24 +1097,24 @@ impl Parser {
         }
 
         let final_name = path.join("::");
-        let func_expr = Expression::Variable(Variable {
+        let func_expr = Expression::infer(ExprKind::Variable(Variable {
             name: final_name.clone(),
-        });
+        }));
 
         let expr = match self.peek_skip_ws(0)?.kind {
             TokenKind::ParenLeft => self.parse_standalone_function_call(func_expr, indent)?,
             TokenKind::CurlyLeft => {
                 let struct_literal =
-                    if let Expression::AnonStruct(lit) = self.parse_struct_literal(indent)? {
+                    if let ExprKind::AnonStruct(lit) = self.parse_struct_literal(indent)?.kind {
                         lit
                     } else {
                         unreachable!()
                     };
 
-                Expression::NamedStruct(NamedStruct {
+                Expression::infer(ExprKind::NamedStruct(NamedStruct {
                     casted_to: final_name,
                     struct_literal,
-                })
+                }))
             }
             _ => self.parse_variable(final_name, indent)?,
         };
@@ -1160,12 +1165,12 @@ impl Parser {
                 }
             };
 
-            Ok(Expression::For(For {
+            Ok(Expression::infer(ExprKind::For(For {
                 binding,
                 binding_type,
                 iterator: Box::new(iterator),
                 body,
-            }))
+            })))
         } else {
             return Err(format!("Expected for keyword"));
         }
@@ -1241,11 +1246,11 @@ impl Parser {
             _ => None,
         };
 
-        Ok(Expression::If(If {
+        Ok(Expression::infer(ExprKind::If(If {
             cond: Box::new(check),
             true_branch,
             else_branch,
-        }))
+        })))
     }
 
     pub fn parse_struct_literal(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1266,9 +1271,11 @@ impl Parser {
                     self.advance_skip_ws(indent);
                     self.parse_expression(indent)?
                 }
-                TokenKind::Comma | TokenKind::CurlyRight => Expression::Variable(Variable {
-                    name: field_name.clone(),
-                }),
+                TokenKind::Comma | TokenKind::CurlyRight => {
+                    Expression::infer(ExprKind::Variable(Variable {
+                        name: field_name.clone(),
+                    }))
+                }
                 _ => {
                     return Err(format!(
                         "Unexpected token, expected struct field value, comma or right curly"
@@ -1296,7 +1303,7 @@ impl Parser {
             }
         }
 
-        Ok(Expression::AnonStruct(struct_literal))
+        Ok(Expression::infer(ExprKind::AnonStruct(struct_literal)))
     }
 
     pub fn parse_builtin_type(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1315,7 +1322,7 @@ impl Parser {
             return Err(format!("Couldnt find rparen after @type"));
         }
 
-        Ok(Expression::BuiltinType(Box::new(expr)))
+        Ok(Expression::infer(ExprKind::BuiltinType(Box::new(expr))))
     }
 
     pub fn parse_expression(&mut self, indent: usize) -> Result<Expression, String> {
@@ -1324,15 +1331,15 @@ impl Parser {
             TokenKind::Identifier(Identifier::For) => self.parse_for(indent),
             TokenKind::TripleDot => {
                 self.advance();
-                Ok(Expression::Placeholder)
+                Ok(Expression::infer(ExprKind::Placeholder))
             }
-            TokenKind::Identifier(Identifier::Break) => Ok(Expression::Break),
+            TokenKind::Identifier(Identifier::Break) => Ok(Expression::infer(ExprKind::Break)),
             TokenKind::BuiltinJS => self.parse_js(indent),
             TokenKind::BuiltinType => self.parse_builtin_type(indent),
             TokenKind::CurlyLeft => self.parse_struct_literal(indent),
             TokenKind::Identifier(Identifier::Continue) => {
                 self.advance();
-                Ok(Expression::Continue)
+                Ok(Expression::infer(ExprKind::Continue))
             }
             _ => self.parse_logic_or(indent),
         }
@@ -1424,10 +1431,10 @@ impl Parser {
 
                 let rhs = self.parse_expression(indent)?;
 
-                Ok(Expression::Assignment(Assignment {
+                Ok(Expression::infer(ExprKind::Assignment(Assignment {
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
-                }))
+                })))
             }
             TokenKind::PlusEqual
             | TokenKind::MinusEqual
@@ -1443,14 +1450,14 @@ impl Parser {
 
                 let rhs = self.parse_expression(indent)?;
 
-                Ok(Expression::Assignment(Assignment {
+                Ok(Expression::infer(ExprKind::Assignment(Assignment {
                     lhs: Box::new(lhs.clone()),
-                    rhs: Box::new(Expression::BinaryOp(BinaryOp {
+                    rhs: Box::new(Expression::infer(ExprKind::BinaryOp(BinaryOp {
                         op,
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
-                    })),
-                }))
+                    }))),
+                })))
             }
             _ => return Err(format!("Invalid assignment operator")),
         }
@@ -1466,7 +1473,7 @@ impl Parser {
                 // consume return
                 self.advance();
                 let expr = self.parse_expression(indent)?;
-                Ok(Expression::Return(Box::new(expr)))
+                Ok(Expression::infer(ExprKind::Return(Box::new(expr))))
             }
             // Caret for dereferencing
             TokenKind::Identifier(Identifier::Custom(_)) | TokenKind::Caret => {
@@ -1497,7 +1504,7 @@ impl Parser {
             return Err(format!("Couldnt find rparen after @js"));
         }
 
-        Ok(Expression::JS(Box::new(expr)))
+        Ok(Expression::infer(ExprKind::JS(Box::new(expr))))
     }
 
     pub fn parse_import_item(&mut self, indent: usize) -> Result<Import, String> {
@@ -1558,7 +1565,7 @@ impl Parser {
 
         let import = self.parse_import_item(indent)?;
 
-        Ok(Expression::Import(import))
+        Ok(Expression::infer(ExprKind::Import(import)))
     }
 
     pub fn parse_type_def(&mut self) -> Result<TypeDef, String> {

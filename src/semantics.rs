@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
+    ast::{CodeBlock, ExprKind, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
     symbol_table::{Scope, Symbol, SymbolTable, SymbolType},
     Arena, BinaryOperation, CustomType, FStringPart, FunctionType, Import, Lambda, Literal, Module,
@@ -112,7 +112,7 @@ impl SemanticAnalyzer {
             return Ok(());
         }
 
-        if let Expression::Variable(var) = expr {
+        if let ExprKind::Variable(var) = &expr.kind {
             let (scope, var_name) = self.get_var_scope(*scope, &var.name);
             let symbol = self
                 .symbol_table
@@ -126,9 +126,9 @@ impl SemanticAnalyzer {
     }
 
     fn replace_builtin_type(&mut self, scope: &mut usize, expr: &mut Expression) {
-        if let Expression::BuiltinType(expr_copy) = expr {
+        if let ExprKind::BuiltinType(expr_copy) = &mut expr.kind {
             if let Ok(inner_ty) = self.typecheck_expr(scope, expr_copy) {
-                *expr = Expression::Literal(Literal::String(vec![FStringPart::String(format!(
+                expr.kind = ExprKind::Literal(Literal::String(vec![FStringPart::String(format!(
                     "{inner_ty}"
                 ))]));
             };
@@ -136,20 +136,20 @@ impl SemanticAnalyzer {
     }
 
     fn typecheck_expr(&mut self, scope: &mut usize, expr: &mut Expression) -> Result<Type, String> {
-        match expr {
-            expr @ Expression::BuiltinType(_) => {
+        match &mut expr.kind {
+            kind @ ExprKind::BuiltinType(_) => {
                 self.replace_builtin_type(scope, expr);
                 return Ok(Type::String);
             }
             //     let inner_ty = self.typecheck_expr(scope, inner.as_mut())?;
 
-            //     *expr = Expression::Literal(Literal::String(vec![FStringPart::String(format!(
+            //     *expr = ExprKind::Literal(Literal::String(vec![FStringPart::String(format!(
             //         "{inner_ty:?}"
             //     ))]));
 
             //     return Ok(Type::String);
             // }
-            Expression::VariableDecl(expr) => {
+            ExprKind::VariableDecl(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.var_value)?;
                 let unified = self.figure_out_unified_type(&rhs, &expr.var_type)?;
                 expr.var_type = unified.clone();
@@ -162,7 +162,7 @@ impl SemanticAnalyzer {
                 symbol.value_type = unified.clone();
                 return Ok(unified);
             }
-            Expression::Variable(expr) => {
+            ExprKind::Variable(expr) => {
                 let (scope, var_name) = self.get_var_scope(*scope, &expr.name);
 
                 match self
@@ -175,7 +175,7 @@ impl SemanticAnalyzer {
                     Err(_) => return Err(format!("TC: Couldnt find symbol `{}`", expr.name)),
                 }
             }
-            Expression::Literal(lit) => {
+            ExprKind::Literal(lit) => {
                 let ty = match lit {
                     Literal::String(parts) => {
                         for part in parts {
@@ -194,7 +194,7 @@ impl SemanticAnalyzer {
 
                 return Ok(ty);
             }
-            Expression::BinaryOp(expr) => {
+            ExprKind::BinaryOp(expr) => {
                 let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
 
@@ -249,7 +249,7 @@ impl SemanticAnalyzer {
 
                 return Ok(expr_ty);
             }
-            Expression::UnaryOp(expr) => {
+            ExprKind::UnaryOp(expr) => {
                 let expected = match expr.op {
                     UnaryOperation::Negate => vec![Type::Boolean],
                     UnaryOperation::Negative => vec![Type::Int, Type::Float],
@@ -282,7 +282,7 @@ impl SemanticAnalyzer {
 
                 return Ok(out_ty);
             }
-            Expression::FunctionCall(func) => {
+            ExprKind::FunctionCall(func) => {
                 let call_ty = self.typecheck_expr(scope, &mut func.func_expr)?;
 
                 match call_ty {
@@ -313,11 +313,11 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            Expression::Return(expr) => {
+            ExprKind::Return(expr) => {
                 let ty = self.typecheck_expr(scope, expr)?;
                 return Ok(ty);
             }
-            Expression::Assignment(expr) => {
+            ExprKind::Assignment(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
                 let lhs = self.typecheck_expr(scope, &mut expr.lhs)?;
 
@@ -327,7 +327,7 @@ impl SemanticAnalyzer {
 
                 return Ok(Type::Void);
             }
-            Expression::AnonStruct(expr) => {
+            ExprKind::AnonStruct(expr) => {
                 let mut fields = Vec::new();
 
                 // TODO this will fail because this isnt guaranteed to create the same field order
@@ -343,7 +343,7 @@ impl SemanticAnalyzer {
 
                 return Ok(ty);
             }
-            Expression::ArrayLiteral(expr) => {
+            ExprKind::ArrayLiteral(expr) => {
                 let mut last_type = None;
                 for el in &mut expr.elements {
                     let el_ty = self.typecheck_expr(scope, el)?;
@@ -363,7 +363,7 @@ impl SemanticAnalyzer {
 
                 return Ok(Type::Array(Box::new(arr_ty)));
             }
-            Expression::ArrayAccess(expr) => {
+            ExprKind::ArrayAccess(expr) => {
                 let arr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
                 let index_ty = self.typecheck_expr(scope, &mut expr.index)?;
 
@@ -388,7 +388,7 @@ impl SemanticAnalyzer {
 
                 return Ok(inner_ty);
             }
-            Expression::FieldAccess(expr) => {
+            ExprKind::FieldAccess(expr) => {
                 let expr_ty = self.typecheck_expr(scope, &mut expr.expr)?;
 
                 let ty = if let Type::Custom(CustomType { name }) = expr_ty {
@@ -419,7 +419,7 @@ impl SemanticAnalyzer {
                     ));
                 }
             }
-            Expression::NamedStruct(expr) => {
+            ExprKind::NamedStruct(expr) => {
                 let (ty_scope, type_name) = self.get_var_scope(*scope, &expr.casted_to);
                 let casted_ty = self
                     .symbol_table
@@ -464,7 +464,7 @@ impl SemanticAnalyzer {
                     name: expr.casted_to.clone(),
                 }));
             }
-            Expression::Range(expr) => {
+            ExprKind::Range(expr) => {
                 let start_ty = self.typecheck_expr(scope, &mut expr.start)?;
                 let end_ty = self.typecheck_expr(scope, &mut expr.end)?;
 
@@ -474,7 +474,7 @@ impl SemanticAnalyzer {
                     return Err(format!("Range start and end must be uint/int"));
                 }
             }
-            Expression::Lambda(expr) => {
+            ExprKind::Lambda(expr) => {
                 *scope += 1;
                 let ret_ty = self.typecheck_codeblock(scope, &mut expr.function_body)?;
 
@@ -494,12 +494,12 @@ impl SemanticAnalyzer {
 
                 return Ok(new_type);
             }
-            Expression::JS(expr) => {
+            ExprKind::JS(expr) => {
                 self.typecheck_expr(scope, expr)?;
 
                 return Ok(Type::Any);
             }
-            Expression::If(expr) => {
+            ExprKind::If(expr) => {
                 let cond_ty = self.typecheck_expr(scope, &mut expr.cond)?;
                 if !matches!(cond_ty, Type::Boolean) {
                     return Err(format!("If condition must evaluate to boolean"));
@@ -518,7 +518,7 @@ impl SemanticAnalyzer {
 
                 return Ok(Type::Void);
             }
-            Expression::For(expr) => {
+            ExprKind::For(expr) => {
                 let iter_ty = self.typecheck_expr(scope, &mut expr.iterator)?;
                 match iter_ty {
                     Type::Array(inner) => {
@@ -544,7 +544,7 @@ impl SemanticAnalyzer {
 
                 return Ok(Type::Void);
             }
-            Expression::Placeholder => return Ok(Type::Any),
+            ExprKind::Placeholder => return Ok(Type::Any),
             _ => {}
         }
 
@@ -614,50 +614,48 @@ impl SemanticAnalyzer {
         mutable_vars: &mut HashSet<String>,
         expr: &Expression,
     ) -> Result<(), String> {
-        match expr {
-            Expression::Literal(Literal::String(parts)) => {
+        match &expr.kind {
+            ExprKind::Literal(Literal::String(parts)) => {
                 for part in parts {
                     if let FStringPart::Code(expr) = part {
                         self.enforce_mutability_expr(mutable_vars, &expr)?
                     }
                 }
             }
-            Expression::UnaryOp(expr) => match expr.op {
+            ExprKind::UnaryOp(expr) => match expr.op {
                 UnaryOperation::Dereference => {
                     self.enforce_mutability_expr(mutable_vars, &expr.operand)?;
                 }
                 _ => {}
             },
-            Expression::Assignment(expr) => {
+            ExprKind::Assignment(expr) => {
                 self.enforce_mutability_expr(mutable_vars, &expr.lhs)?;
             }
-            Expression::Lambda(expr) => {
+            ExprKind::Lambda(expr) => {
                 for arg in &expr.argument_list {
                     mutable_vars.insert(arg.arg_name.clone());
                 }
                 self.enforce_mutability_codeblock(mutable_vars, &expr.function_body)?
             }
-            Expression::If(expr) => {
+            ExprKind::If(expr) => {
                 self.enforce_mutability_codeblock(mutable_vars, &expr.true_branch)?;
                 if let Some(else_branch) = &expr.else_branch {
                     self.enforce_mutability_codeblock(mutable_vars, else_branch)?;
                 }
             }
-            Expression::For(expr) => {
+            ExprKind::For(expr) => {
                 self.enforce_mutability_codeblock(mutable_vars, &expr.body)?;
             }
-            Expression::Variable(var) => {
+            ExprKind::Variable(var) => {
                 if !mutable_vars.contains(&var.name) {
                     return Err(format!("Variable `{}` is not mutable", var.name));
                 }
             }
-            Expression::ArrayAccess(arr) => {
-                self.enforce_mutability_expr(mutable_vars, &arr.expr)?
-            }
-            Expression::FieldAccess(access) => {
+            ExprKind::ArrayAccess(arr) => self.enforce_mutability_expr(mutable_vars, &arr.expr)?,
+            ExprKind::FieldAccess(access) => {
                 self.enforce_mutability_expr(mutable_vars, &access.expr)?
             }
-            Expression::VariableDecl(expr) => {
+            ExprKind::VariableDecl(expr) => {
                 if expr.is_mutable {
                     mutable_vars.insert(expr.var_name.clone());
                 }
@@ -719,11 +717,11 @@ impl SemanticAnalyzer {
         scope: usize,
         expr: &Expression,
     ) -> Result<(), String> {
-        match expr {
-            Expression::BuiltinType(expr) => {
+        match &expr.kind {
+            ExprKind::BuiltinType(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, expr)?;
             }
-            Expression::Import(import) => {
+            ExprKind::Import(import) => {
                 let imports = self.get_imports_rec(scope)?;
 
                 let curr_scope = self
@@ -773,8 +771,8 @@ impl SemanticAnalyzer {
                 //     import.module_name
                 // ));
             }
-            Expression::Variable(_) => {}
-            Expression::VariableDecl(expr) => {
+            ExprKind::Variable(_) => {}
+            ExprKind::VariableDecl(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.var_value)?;
 
                 self.symbol_table.add_symbol_to_scope(
@@ -789,7 +787,7 @@ impl SemanticAnalyzer {
                     },
                 )?;
             }
-            Expression::Literal(lit) => match lit {
+            ExprKind::Literal(lit) => match lit {
                 Literal::String(parts) => {
                     for part in parts {
                         if let FStringPart::Code(expr) = part {
@@ -799,50 +797,50 @@ impl SemanticAnalyzer {
                 }
                 _ => {}
             },
-            Expression::BinaryOp(expr) => {
+            ExprKind::BinaryOp(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.lhs)?;
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.rhs)?;
             }
-            Expression::UnaryOp(expr) => {
+            ExprKind::UnaryOp(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.operand)?;
             }
-            Expression::FunctionCall(expr) => {
+            ExprKind::FunctionCall(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.func_expr)?;
 
                 for arg in &expr.arguments {
                     self.populate_symbol_table_expr(curr_module_name, scope, &arg)?;
                 }
             }
-            Expression::Return(expr) => {
+            ExprKind::Return(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr)?;
             }
-            Expression::Assignment(expr) => {
+            ExprKind::Assignment(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.lhs)?;
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.rhs)?;
             }
-            Expression::AnonStruct(expr) => {
+            ExprKind::AnonStruct(expr) => {
                 for (_, expr) in &expr.fields {
                     self.populate_symbol_table_expr(curr_module_name, scope, &expr)?;
                 }
             }
-            Expression::ArrayLiteral(expr) => {
+            ExprKind::ArrayLiteral(expr) => {
                 for elem in &expr.elements {
                     self.populate_symbol_table_expr(curr_module_name, scope, &elem)?;
                 }
             }
-            Expression::ArrayAccess(expr) => {
+            ExprKind::ArrayAccess(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.expr)?;
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.index)?;
             }
-            Expression::FieldAccess(expr) => {
+            ExprKind::FieldAccess(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.expr)?;
             }
-            Expression::NamedStruct(expr) => {
+            ExprKind::NamedStruct(expr) => {
                 for (_, expr) in &expr.struct_literal.fields {
                     self.populate_symbol_table_expr(curr_module_name, scope, &expr)?;
                 }
             }
-            Expression::Lambda(expr) => {
+            ExprKind::Lambda(expr) => {
                 let lambda_scope = self.symbol_table.new_scope(scope)?;
                 for arg in &expr.argument_list {
                     self.symbol_table.add_symbol_to_scope(
@@ -863,11 +861,11 @@ impl SemanticAnalyzer {
                     &expr.function_body,
                 )?;
             }
-            Expression::Range(expr) => {
+            ExprKind::Range(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.start)?;
                 self.populate_symbol_table_expr(curr_module_name, scope, &expr.end)?;
             }
-            Expression::If(expr) => {
+            ExprKind::If(expr) => {
                 let true_scope = self.symbol_table.new_scope(scope)?;
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
@@ -883,7 +881,7 @@ impl SemanticAnalyzer {
                     )?;
                 }
             }
-            Expression::For(expr) => {
+            ExprKind::For(expr) => {
                 let for_scope = self.symbol_table.new_scope(scope)?;
                 self.symbol_table.add_symbol_to_scope(
                     for_scope,
@@ -898,12 +896,12 @@ impl SemanticAnalyzer {
                 )?;
                 self.populate_symbol_table_codeblock(curr_module_name, for_scope, &expr.body)?;
             }
-            Expression::JS(expr) => {
+            ExprKind::JS(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, expr)?;
             }
-            Expression::Placeholder => {}
-            Expression::Break => {}
-            Expression::Continue => {}
+            ExprKind::Placeholder => {}
+            ExprKind::Break => {}
+            ExprKind::Continue => {}
         }
         Ok(())
     }
@@ -1014,14 +1012,14 @@ impl SemanticAnalyzer {
         scope: &mut usize,
         expr: &mut Expression,
     ) -> Result<(), String> {
-        match expr {
-            Expression::BuiltinType(expr) => {
+        match &mut expr.kind {
+            ExprKind::BuiltinType(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, expr)?;
             }
-            Expression::Import(import) => {
+            ExprKind::Import(import) => {
                 return Ok(());
             }
-            Expression::Variable(expr) => {
+            ExprKind::Variable(expr) => {
                 let name_parts = expr.name.split("::").collect::<Vec<_>>();
                 let module_parts = name_parts
                     .clone()
@@ -1119,11 +1117,11 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            Expression::VariableDecl(expr) => {
+            ExprKind::VariableDecl(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.var_value)?;
                 self.resolve_type_name(curr_module_name, scope, &mut expr.var_type)?;
             }
-            Expression::Literal(literal) => match literal {
+            ExprKind::Literal(literal) => match literal {
                 Literal::String(parts) => {
                     for part in parts {
                         if let FStringPart::Code(expr) = part {
@@ -1133,50 +1131,50 @@ impl SemanticAnalyzer {
                 }
                 _ => {}
             },
-            Expression::BinaryOp(expr) => {
+            ExprKind::BinaryOp(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.lhs)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.rhs)?;
             }
-            Expression::UnaryOp(expr) => {
+            ExprKind::UnaryOp(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.operand)?;
             }
-            Expression::FunctionCall(expr) => {
+            ExprKind::FunctionCall(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.func_expr)?;
 
                 for arg in &mut expr.arguments {
                     self.resolve_names_expr(curr_module_name, scope, arg)?;
                 }
             }
-            Expression::Return(expr) => {
+            ExprKind::Return(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, expr)?;
             }
-            Expression::Assignment(expr) => {
+            ExprKind::Assignment(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.lhs)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.rhs)?;
             }
-            Expression::AnonStruct(expr) => {
+            ExprKind::AnonStruct(expr) => {
                 for (_, expr) in &mut expr.fields {
                     self.resolve_names_expr(curr_module_name, scope, expr)?;
                 }
             }
-            Expression::ArrayLiteral(expr) => {
+            ExprKind::ArrayLiteral(expr) => {
                 for elem in &mut expr.elements {
                     self.resolve_names_expr(curr_module_name, scope, elem)?;
                 }
             }
-            Expression::ArrayAccess(expr) => {
+            ExprKind::ArrayAccess(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.expr)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.index)?;
             }
-            Expression::FieldAccess(expr) => {
+            ExprKind::FieldAccess(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.expr)?;
             }
-            Expression::NamedStruct(expr) => {
+            ExprKind::NamedStruct(expr) => {
                 for (_, expr) in &mut expr.struct_literal.fields {
                     self.resolve_names_expr(curr_module_name, scope, expr)?;
                 }
             }
-            Expression::Lambda(expr) => {
+            ExprKind::Lambda(expr) => {
                 self.resolve_type_name(curr_module_name, scope, &mut expr.return_type)?;
                 for arg in &mut expr.argument_list {
                     self.resolve_type_name(curr_module_name, scope, &mut arg.arg_type)?;
@@ -1185,11 +1183,11 @@ impl SemanticAnalyzer {
                 *scope += 1;
                 self.resolve_names_codeblock(curr_module_name, scope, &mut expr.function_body)?;
             }
-            Expression::Range(expr) => {
+            ExprKind::Range(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.start)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.end)?;
             }
-            Expression::If(expr) => {
+            ExprKind::If(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.cond)?;
                 *scope += 1;
                 self.resolve_names_codeblock(curr_module_name, scope, &mut expr.true_branch)?;
@@ -1198,18 +1196,18 @@ impl SemanticAnalyzer {
                     self.resolve_names_codeblock(curr_module_name, scope, else_branch)?;
                 }
             }
-            Expression::For(expr) => {
+            ExprKind::For(expr) => {
                 *scope += 1;
                 self.resolve_type_name(curr_module_name, scope, &mut expr.binding_type)?;
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.iterator)?;
                 self.resolve_names_codeblock(curr_module_name, scope, &mut expr.body)?;
             }
-            Expression::JS(expr) => {
+            ExprKind::JS(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, expr)?;
             }
-            Expression::Placeholder => {}
-            Expression::Break => {}
-            Expression::Continue => {}
+            ExprKind::Placeholder => {}
+            ExprKind::Break => {}
+            ExprKind::Continue => {}
         }
 
         Ok(())
@@ -1378,19 +1376,19 @@ impl SemanticAnalyzer {
         shadowed_vars: &mut HashMap<String, String>,
         expr: &mut Expression,
     ) -> Result<(), String> {
-        match expr {
-            Expression::BuiltinType(expr) => {
+        match &mut expr.kind {
+            ExprKind::BuiltinType(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, expr)?;
             }
-            Expression::Import(import) => {}
-            Expression::Variable(expr) => {
+            ExprKind::Import(import) => {}
+            ExprKind::Variable(expr) => {
                 expr.name = shadowed_vars.get(&expr.name).unwrap().clone();
             }
-            Expression::VariableDecl(expr) => {
+            ExprKind::VariableDecl(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.var_value)?;
                 self.map_to_unique_name(shadowed_vars, &mut expr.var_name);
             }
-            Expression::Literal(literal) => match literal {
+            ExprKind::Literal(literal) => match literal {
                 Literal::String(parts) => {
                     for part in parts {
                         if let FStringPart::Code(expr) = part {
@@ -1400,77 +1398,77 @@ impl SemanticAnalyzer {
                 }
                 _ => {}
             },
-            Expression::BinaryOp(expr) => {
+            ExprKind::BinaryOp(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.lhs)?;
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.rhs)?;
             }
-            Expression::UnaryOp(expr) => {
+            ExprKind::UnaryOp(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.operand)?;
             }
-            Expression::FunctionCall(expr) => {
+            ExprKind::FunctionCall(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.func_expr)?;
 
                 for arg in &mut expr.arguments {
                     self.enable_shadowing_expr(shadowed_vars, arg)?;
                 }
             }
-            Expression::Return(expr) => {
+            ExprKind::Return(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, expr)?;
             }
-            Expression::Assignment(expr) => {
+            ExprKind::Assignment(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.lhs)?;
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.rhs)?;
             }
-            Expression::AnonStruct(expr) => {
+            ExprKind::AnonStruct(expr) => {
                 for (_, expr) in &mut expr.fields {
                     self.enable_shadowing_expr(shadowed_vars, expr)?;
                 }
             }
-            Expression::ArrayLiteral(expr) => {
+            ExprKind::ArrayLiteral(expr) => {
                 for elem in &mut expr.elements {
                     self.enable_shadowing_expr(shadowed_vars, elem)?;
                 }
             }
-            Expression::ArrayAccess(expr) => {
+            ExprKind::ArrayAccess(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.expr)?;
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.index)?;
             }
-            Expression::FieldAccess(expr) => {
+            ExprKind::FieldAccess(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.expr)?;
             }
-            Expression::NamedStruct(expr) => {
+            ExprKind::NamedStruct(expr) => {
                 for (_, expr) in &mut expr.struct_literal.fields {
                     self.enable_shadowing_expr(shadowed_vars, expr)?;
                 }
             }
-            Expression::Lambda(expr) => {
+            ExprKind::Lambda(expr) => {
                 for arg in &mut expr.argument_list {
                     self.map_to_unique_name(shadowed_vars, &mut arg.arg_name);
                 }
                 self.enable_shadowing_codeblock(shadowed_vars, &mut expr.function_body)?;
             }
-            Expression::Range(expr) => {
+            ExprKind::Range(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.start)?;
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.end)?;
             }
-            Expression::If(expr) => {
+            ExprKind::If(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.cond)?;
                 self.enable_shadowing_codeblock(shadowed_vars, &mut expr.true_branch)?;
                 if let Some(else_branch) = &mut expr.else_branch {
                     self.enable_shadowing_codeblock(shadowed_vars, else_branch)?;
                 }
             }
-            Expression::For(expr) => {
+            ExprKind::For(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.iterator)?;
                 self.enable_shadowing_codeblock(shadowed_vars, &mut expr.body)?;
                 self.map_to_unique_name(shadowed_vars, &mut expr.binding);
             }
-            Expression::JS(expr) => {
+            ExprKind::JS(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, expr)?;
             }
-            Expression::Placeholder => {}
-            Expression::Break => {}
-            Expression::Continue => {}
+            ExprKind::Placeholder => {}
+            ExprKind::Break => {}
+            ExprKind::Continue => {}
         }
 
         Ok(())
