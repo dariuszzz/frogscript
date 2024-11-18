@@ -15,35 +15,30 @@ use crate::{
 
 #[derive(Debug, Clone, Default)]
 pub struct SemanticAnalyzer {
+    pub unique_name_suffix: usize,
     pub symbol_table: SymbolTable,
     pub module_to_scope: HashMap<String, usize>,
 }
 
 impl SemanticAnalyzer {
     fn figure_out_unified_type(&mut self, lhs: &Type, rhs: &Type) -> Result<Type, String> {
-        match (lhs, rhs) {
+        let out = match (lhs, rhs) {
             (Type::Infer, Type::Infer) => return Err(format!("Cant infer type")),
             (Type::Reference(lhs), Type::Pointer(rhs)) => {
-                return Ok(Type::Reference(Box::new(
-                    self.figure_out_unified_type(lhs, rhs)?,
-                )))
+                Type::Reference(Box::new(self.figure_out_unified_type(lhs, rhs)?))
             }
             (Type::Pointer(lhs), Type::Reference(rhs)) => {
-                return Ok(Type::Reference(Box::new(
-                    self.figure_out_unified_type(lhs, rhs)?,
-                )))
+                Type::Reference(Box::new(self.figure_out_unified_type(lhs, rhs)?))
             }
-            (Type::Infer, rhs) => return Ok(rhs.clone()),
-            (lhs, Type::Infer) => return Ok(lhs.clone()),
-            (Type::Any, Type::Any) => return Ok(Type::Any),
-            (lhs, Type::Any) => return Ok(lhs.clone()),
-            (Type::Any, rhs) => return Ok(rhs.clone()),
-            (lhs, rhs) if lhs == rhs => return Ok(lhs.clone()),
-            (Type::Array(lhs_inner), Type::Array(rhs_inner)) => {
-                return Ok(Type::Array(Box::new(
-                    self.figure_out_unified_type(lhs_inner, rhs_inner)?,
-                )));
-            }
+            (Type::Infer, rhs) => rhs.clone(),
+            (lhs, Type::Infer) => lhs.clone(),
+            (Type::Any, Type::Any) => Type::Any,
+            (lhs, Type::Any) => lhs.clone(),
+            (Type::Any, rhs) => rhs.clone(),
+            (lhs, rhs) if lhs == rhs => lhs.clone(),
+            (Type::Array(lhs_inner), Type::Array(rhs_inner)) => Type::Array(Box::new(
+                self.figure_out_unified_type(lhs_inner, rhs_inner)?,
+            )),
             (
                 Type::Function(FunctionType {
                     env_args: lhs_env,
@@ -77,10 +72,12 @@ impl SemanticAnalyzer {
                     unified_type.args.push(unified_arg);
                 }
 
-                return Ok(Type::Function(unified_type));
+                Type::Function(unified_type)
             }
             _ => return Err(format!("Lhs != rhs: {lhs:?} != {rhs:?}")),
-        }
+        };
+
+        return Ok(out);
     }
 
     fn get_var_scope(&self, scope: usize, identifier: &str) -> (usize, String) {
@@ -456,6 +453,11 @@ impl SemanticAnalyzer {
 
                         self.set_type_if_expr_is_var(scope, field_expr, unified_field_ty)?;
                     }
+                } else {
+                    return Err(format!(
+                        "Invalid amount of fields for type`{:?}`",
+                        expr.casted_to
+                    ));
                 }
 
                 return Ok(Type::Custom(CustomType {
@@ -779,6 +781,7 @@ impl SemanticAnalyzer {
                     scope,
                     Symbol {
                         original_name: expr.var_name.to_string(),
+                        name: expr.var_name.to_string(),
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.var_type.clone(),
                         exported: false,
@@ -845,6 +848,7 @@ impl SemanticAnalyzer {
                     self.symbol_table.add_symbol_to_scope(
                         lambda_scope,
                         Symbol {
+                            name: arg.arg_name.clone(),
                             original_name: arg.arg_name.clone(),
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
@@ -884,6 +888,7 @@ impl SemanticAnalyzer {
                 self.symbol_table.add_symbol_to_scope(
                     for_scope,
                     Symbol {
+                        name: expr.binding.clone(),
                         original_name: expr.binding.clone(),
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.binding_type.clone(),
@@ -934,6 +939,7 @@ impl SemanticAnalyzer {
                 self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
+                        name: type_def.name.clone(),
                         original_name: type_def.name.clone(),
                         symbol_type: SymbolType::Type,
                         value_type: type_def.underlying_ty.clone(),
@@ -963,6 +969,7 @@ impl SemanticAnalyzer {
                 self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
+                        name: func_def.func_name.to_string(),
                         original_name: func_def.func_name.to_string(),
                         symbol_type: SymbolType::Identifier,
                         value_type: func_type,
@@ -977,6 +984,7 @@ impl SemanticAnalyzer {
                     self.symbol_table.add_symbol_to_scope(
                         func_scope,
                         Symbol {
+                            name: arg.arg_name.clone(),
                             original_name: arg.arg_name.clone(),
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
@@ -1338,17 +1346,29 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn map_to_unique_name(shadowed_vars: &mut HashMap<String, String>, name: &mut String) {
+    fn map_to_unique_name(
+        &mut self,
+        shadowed_vars: &mut HashMap<String, String>,
+        name: &mut String,
+    ) {
         use std::collections::hash_map::Entry;
         match shadowed_vars.entry(name.to_string()) {
             Entry::Occupied(mut entry) => {
-                let old_name = entry.get().clone();
-                entry.insert(format!("{old_name}_unique"));
+                let new_name = format!("_{}", self.unique_name_suffix);
+                entry.insert(new_name.clone());
+                self.symbol_table
+                    .mapped_names
+                    .insert(name.clone(), new_name);
             }
             Entry::Vacant(entry) => {
-                entry.insert(format!("{}_", name.to_string()));
+                let new_name = format!("_{}", self.unique_name_suffix);
+                entry.insert(new_name.clone());
+                self.symbol_table
+                    .mapped_names
+                    .insert(name.clone(), new_name);
             }
         }
+        self.unique_name_suffix += 1;
 
         *name = shadowed_vars.get(name).unwrap().clone();
     }
@@ -1364,13 +1384,11 @@ impl SemanticAnalyzer {
             }
             Expression::Import(import) => {}
             Expression::Variable(expr) => {
-                println!("{}", expr.name);
-                println!("{shadowed_vars:?}");
                 expr.name = shadowed_vars.get(&expr.name).unwrap().clone();
             }
             Expression::VariableDecl(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.var_value)?;
-                SemanticAnalyzer::map_to_unique_name(shadowed_vars, &mut expr.var_name);
+                self.map_to_unique_name(shadowed_vars, &mut expr.var_name);
             }
             Expression::Literal(literal) => match literal {
                 Literal::String(parts) => {
@@ -1427,7 +1445,7 @@ impl SemanticAnalyzer {
             }
             Expression::Lambda(expr) => {
                 for arg in &mut expr.argument_list {
-                    SemanticAnalyzer::map_to_unique_name(shadowed_vars, &mut arg.arg_name);
+                    self.map_to_unique_name(shadowed_vars, &mut arg.arg_name);
                 }
                 self.enable_shadowing_codeblock(shadowed_vars, &mut expr.function_body)?;
             }
@@ -1445,14 +1463,14 @@ impl SemanticAnalyzer {
             Expression::For(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, &mut expr.iterator)?;
                 self.enable_shadowing_codeblock(shadowed_vars, &mut expr.body)?;
-                SemanticAnalyzer::map_to_unique_name(shadowed_vars, &mut expr.binding);
+                self.map_to_unique_name(shadowed_vars, &mut expr.binding);
             }
             Expression::JS(expr) => {
                 self.enable_shadowing_expr(shadowed_vars, expr)?;
             }
-            Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
         }
 
         Ok(())
@@ -1472,15 +1490,14 @@ impl SemanticAnalyzer {
     }
 
     pub fn enable_shadowing(&mut self, program: &mut Program) -> Result<(), String> {
+        let mut shadowed_vars: HashMap<String, String> = HashMap::new();
         for module in &mut program.modules {
-            let mut shadowed_vars: HashMap<String, String> = HashMap::new();
-
             self.enable_shadowing_codeblock(&mut shadowed_vars, &mut module.toplevel_scope)?;
 
             for func_def in &mut module.function_defs {
-                SemanticAnalyzer::map_to_unique_name(&mut shadowed_vars, &mut func_def.func_name);
+                self.map_to_unique_name(&mut shadowed_vars, &mut func_def.func_name);
                 for arg in &mut func_def.argument_list {
-                    SemanticAnalyzer::map_to_unique_name(&mut shadowed_vars, &mut arg.arg_name);
+                    self.map_to_unique_name(&mut shadowed_vars, &mut arg.arg_name);
                 }
 
                 self.enable_shadowing_codeblock(&mut shadowed_vars, &mut func_def.function_body)?;

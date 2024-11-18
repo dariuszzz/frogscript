@@ -1,0 +1,16 @@
+/*
+-- output:
+23
+50
+*/
+
+fn print(x int) -> () = @js("console.log({x})")
+
+fn main =
+    let a = 23
+
+    print(a)
+
+    let a = 50
+
+    print(a)

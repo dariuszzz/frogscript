@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use crate::{Arena, Import, Type};
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
+    pub name: String,
     pub original_name: String,
     pub symbol_type: SymbolType,
     pub value_type: Type,
@@ -38,6 +41,7 @@ impl Scope {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub table: Arena<Scope>,
+    pub mapped_names: HashMap<String, String>,
 }
 
 impl SymbolTable {
@@ -74,7 +78,7 @@ impl SymbolTable {
         scope
             .symbols
             .iter()
-            .filter(|s| s.original_name == name && s.symbol_type == symbol_type)
+            .filter(|s| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -89,7 +93,7 @@ impl SymbolTable {
         scope
             .symbols
             .iter_mut()
-            .filter(|s| s.original_name == name && s.symbol_type == symbol_type)
+            .filter(|s| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -150,13 +154,13 @@ impl SymbolTable {
 
     pub fn add_symbol_to_scope(&mut self, scope: usize, symbol: Symbol) -> Result<(), String> {
         let exists = self
-            .scope_get_symbol(scope, &symbol.original_name, symbol.symbol_type)
+            .scope_get_symbol(scope, &symbol.name, symbol.symbol_type)
             .is_some();
 
         let curr_scope = self.get_scope_mut(scope).ok_or("Scope does not exist")?;
 
         if exists {
-            return Err(format!("Duplicate symbol {:?}", symbol.original_name));
+            return Err(format!("Duplicate symbol {:?}", symbol.name));
         } else {
             curr_scope.symbols.push(symbol);
             Ok(())

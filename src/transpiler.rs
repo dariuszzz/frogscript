@@ -431,6 +431,8 @@ impl Transpiler {
         // self.ensure_pass_by_value(symbol_table)?;
         self.fix_scopes()?;
 
+        // let mapped_entrypoint = symbol_table.mapped_names.get(entrypoint).unwrap();
+
         if let Some(entrypoint) = self
             .ast
             .modules

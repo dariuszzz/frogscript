@@ -1,0 +1,10 @@
+/*
+-- fails: true
+*/
+
+type Foo =
+    field1 int
+    field2 string
+
+fn main =
+    let a = Foo { field1: 23 }

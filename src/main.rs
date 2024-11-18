@@ -11,15 +11,18 @@ use gumdrop::Options;
 
 mod arena;
 mod ast;
+mod ir_gen;
 mod lexer;
 mod parser;
 mod pond;
 mod semantics;
+mod ssa_ir;
 mod symbol_table;
 mod transpiler;
 
 use arena::*;
 use ast::*;
+use ir_gen::IRGen;
 use lexer::*;
 use parser::*;
 use pond::{find_pond_path, Pond, Target};
@@ -51,6 +54,17 @@ enum Command {
     Parse(ParseOpts),
     #[options(help = "lex a file")]
     Lex(LexOpts),
+    #[options(help = "generate ssa ir")]
+    GenIr(GenIrOpts),
+}
+
+#[derive(Debug, Options)]
+struct GenIrOpts {
+    #[options(help = "target to run (defaults to target 'main')")]
+    target: Option<String>,
+
+    #[options(free, help = "path to project (defaults to cwd)")]
+    path: Vec<String>,
 }
 
 #[derive(Debug, Options)]
@@ -426,6 +440,34 @@ fn main() -> Result<(), String> {
             }
 
             println!("Passed {passed}/{} tests", files_to_test.len());
+        }
+        Command::GenIr(opts) => {
+            let path = if opts.path.len() == 1 {
+                let path = opts.path.get(0).unwrap();
+                PathBuf::from(&path)
+            } else {
+                std::env::current_dir().expect("Invalid cwd")
+            };
+
+            let target_name = opts.target.unwrap_or("main".to_string());
+            let pond = find_project(&path)?;
+            let target = pond.targets.get(&target_name).expect("Invalid target");
+
+            let mut program = parse_project(&pond, i_opts.perf)?;
+
+            let mut semantic = SemanticAnalyzer::default();
+            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
+
+            let mut ir_gen = IRGen::default();
+
+            let ssa_ir = ir_gen.generate_ir(program, target)?;
+
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
+            }
         }
         Command::Transpile(opts) => {
             let path = if opts.path.len() == 1 {

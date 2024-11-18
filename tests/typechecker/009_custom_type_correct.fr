@@ -1,0 +1,5 @@
+type Foo =
+    field int
+
+fn main =
+    let a = Foo { field: 51 }
