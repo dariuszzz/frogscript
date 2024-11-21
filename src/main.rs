@@ -460,7 +460,7 @@ fn main() -> Result<(), String> {
 
             let mut ir_gen = IRGen::default();
 
-            let ssa_ir = ir_gen.generate_ir(program, target)?;
+            let ssa_ir = ir_gen.generate_ir(program, target, &symbol_table)?;
 
             if i_opts.perf {
                 println!(

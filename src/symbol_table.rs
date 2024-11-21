@@ -102,7 +102,7 @@ impl SymbolTable {
         scope: usize,
         symbol_name: &str,
         symbol_type: SymbolType,
-    ) -> Result<&Symbol, String> {
+    ) -> Result<(usize, &Symbol), String> {
         let mut curr_scope_opt = Some(scope);
         while let Some(curr_scope_idx) = curr_scope_opt {
             let curr_scope_parent = self
@@ -111,7 +111,7 @@ impl SymbolTable {
                 .parent_scope;
 
             if let Some(symbol) = self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type) {
-                return Ok(symbol);
+                return Ok((curr_scope_idx, symbol));
             } else {
                 curr_scope_opt = curr_scope_parent;
             }

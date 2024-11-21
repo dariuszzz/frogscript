@@ -28,12 +28,12 @@ impl Transpiler {
         mapped_names: &HashMap<String, String>,
         expr: &mut Expression,
     ) {
-        match &mut expr.kind {
-            ExprKind::BuiltinType(expr) => {
+        match expr {
+            Expression::BuiltinType(expr) => {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
             }
-            ExprKind::Import(_) => {}
-            ExprKind::Lambda(lambda) => {
+            Expression::Import(_) => {}
+            Expression::Lambda(lambda) => {
                 let Lambda {
                     argument_list,
                     return_type,
@@ -49,25 +49,25 @@ impl Transpiler {
 
                 Transpiler::fix_scopes_codeblock(module_name, function_body, &mut mapped_names)
             }
-            ExprKind::VariableDecl(var_decl) => {
+            Expression::VariableDecl(var_decl) => {
                 unreachable!("this is done in fix_codeblock")
             }
-            ExprKind::BinaryOp(op) => {
+            Expression::BinaryOp(op) => {
                 let BinaryOp { op, lhs, rhs } = op;
                 Transpiler::replace_names_in_expr(module_name, mapped_names, lhs);
                 Transpiler::replace_names_in_expr(module_name, mapped_names, rhs);
             }
-            ExprKind::UnaryOp(op) => {
+            Expression::UnaryOp(op) => {
                 let UnaryOp { op, operand } = op;
                 Transpiler::replace_names_in_expr(module_name, mapped_names, operand);
             }
-            ExprKind::FunctionCall(func) => {
+            Expression::FunctionCall(func) => {
                 let FunctionCall {
                     func_expr,
                     arguments,
                 } = func;
 
-                if let ExprKind::Variable(Variable { name }) = &mut func_expr.kind {
+                if let Expression::Variable(Variable { name, .. }) = func_expr.as_mut() {
                     if name.split("::").count() == 1 {
                         *name = format!("{}::{}", module_name, name.clone());
                     }
@@ -79,8 +79,8 @@ impl Transpiler {
                     Transpiler::replace_names_in_expr(module_name, mapped_names, arg)
                 }
             }
-            ExprKind::Variable(var) => {
-                let Variable { name } = var;
+            Expression::Variable(var) => {
+                let Variable { name, .. } = var;
 
                 // is not qualified
                 if name.split("::").count() == 1 {
@@ -93,39 +93,39 @@ impl Transpiler {
                     *name = new_name;
                 }
             }
-            ExprKind::Return(ret) => {
+            Expression::Return(ret) => {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, ret)
             }
-            ExprKind::Assignment(assignment) => {
+            Expression::Assignment(assignment) => {
                 let Assignment { lhs, rhs } = assignment;
                 Transpiler::replace_names_in_expr(module_name, mapped_names, lhs);
                 Transpiler::replace_names_in_expr(module_name, mapped_names, rhs);
             }
-            ExprKind::AnonStruct(anon) => {
+            Expression::AnonStruct(anon) => {
                 let AnonStruct { fields } = anon;
                 for (name, val) in fields.iter_mut() {
                     Transpiler::replace_names_in_expr(module_name, mapped_names, val);
                 }
             }
-            ExprKind::ArrayLiteral(array) => {
+            Expression::ArrayLiteral(array) => {
                 let ArrayLiteral { elements } = array;
 
                 for elem in elements {
                     Transpiler::replace_names_in_expr(module_name, mapped_names, elem);
                 }
             }
-            ExprKind::ArrayAccess(array_access) => {
+            Expression::ArrayAccess(array_access) => {
                 let ArrayAccess { expr, index } = array_access;
 
                 Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
                 Transpiler::replace_names_in_expr(module_name, mapped_names, index);
             }
-            ExprKind::FieldAccess(field_access) => {
+            Expression::FieldAccess(field_access) => {
                 let FieldAccess { expr, field } = field_access;
 
                 Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
             }
-            ExprKind::NamedStruct(named) => {
+            Expression::NamedStruct(named) => {
                 let NamedStruct {
                     casted_to,
                     struct_literal,
@@ -135,7 +135,7 @@ impl Transpiler {
                     Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
                 }
             }
-            ExprKind::Range(range) => {
+            Expression::Range(range) => {
                 let Range {
                     start,
                     end,
@@ -145,7 +145,7 @@ impl Transpiler {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, start);
                 Transpiler::replace_names_in_expr(module_name, mapped_names, end);
             }
-            ExprKind::If(if_block) => {
+            Expression::If(if_block) => {
                 let If {
                     cond,
                     true_branch,
@@ -167,7 +167,7 @@ impl Transpiler {
                     );
                 }
             }
-            ExprKind::For(for_block) => {
+            Expression::For(for_block) => {
                 let For {
                     binding,
                     binding_type,
@@ -180,10 +180,10 @@ impl Transpiler {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, iterator);
                 Transpiler::fix_scopes_codeblock(module_name, body, &mut mapped_names.clone());
             }
-            ExprKind::Placeholder => {}
-            ExprKind::Break => {}
-            ExprKind::Continue => {}
-            ExprKind::Literal(lit) => {
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
+            Expression::Literal(lit) => {
                 if let Literal::String(parts) = lit {
                     for part in parts {
                         if let FStringPart::Code(expr) = part {
@@ -192,7 +192,7 @@ impl Transpiler {
                     }
                 }
             }
-            ExprKind::JS(expr) => {
+            Expression::JS(expr) => {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
             }
         }
@@ -204,8 +204,8 @@ impl Transpiler {
         mapped_names: &mut HashMap<String, String>,
     ) {
         for expr in &mut codeblock.expressions {
-            match &mut expr.kind {
-                ExprKind::VariableDecl(VariableDecl {
+            match expr {
+                Expression::VariableDecl(VariableDecl {
                     var_name,
                     var_value,
                     ..
@@ -263,20 +263,18 @@ impl Transpiler {
 
     fn wrap_in_copy(expr: &mut Expression, scope: &usize, symbol_table: &SymbolTable) {
         let curr_expr = expr.clone();
-        if let ExprKind::Variable(var) = &curr_expr.kind {
-            if let Ok(symbol) =
+        if let Expression::Variable(var) = &curr_expr {
+            if let Ok((_, symbol)) =
                 symbol_table.find_symbol_rec(*scope, &var.name, SymbolType::Identifier)
             {
                 match symbol.value_type {
                     Type::Function(_) => {}
                     _ => {
-                        expr.kind = ExprKind::FunctionCall(FunctionCall {
-                            func_expr: Box::new(Expression {
-                                kind: ExprKind::Variable(Variable {
-                                    name: "core::deep_copy".to_string(),
-                                }),
-                                ty: Type::Any, // TODO: do something with this
-                            }),
+                        *expr = Expression::FunctionCall(FunctionCall {
+                            func_expr: Box::new(Expression::Variable(Variable {
+                                name: "core::deep_copy".to_string(),
+                                decl_scope: 0,
+                            })),
                             arguments: vec![curr_expr],
                         })
                     }
@@ -290,16 +288,16 @@ impl Transpiler {
         symbol_table: &SymbolTable,
         scope: &mut usize,
     ) {
-        match &mut expr.kind {
-            ExprKind::BuiltinType(expr) => {
+        match expr {
+            Expression::BuiltinType(expr) => {
                 Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope)
             }
-            ExprKind::Import(_) => {}
-            kind @ ExprKind::Variable(_) => Transpiler::wrap_in_copy(expr, scope, symbol_table),
-            ExprKind::VariableDecl(expr) => {
+            Expression::Import(_) => {}
+            expr @ Expression::Variable(_) => Transpiler::wrap_in_copy(expr, scope, symbol_table),
+            Expression::VariableDecl(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.var_value, symbol_table, scope);
             }
-            ExprKind::Literal(literal) => match literal {
+            Expression::Literal(literal) => match literal {
                 Literal::String(parts) => {
                     for part in parts {
                         if let FStringPart::Code(expr) = part {
@@ -309,49 +307,49 @@ impl Transpiler {
                 }
                 _ => {}
             },
-            ExprKind::BinaryOp(expr) => {
+            Expression::BinaryOp(expr) => {
                 // Transpiler::ensure_pass_by_value_expr(&mut expr.lhs, symbol_table, scope);
                 // Transpiler::ensure_pass_by_value_expr(&mut expr.rhs, symbol_table, scope);
             }
-            ExprKind::UnaryOp(expr) => {
+            Expression::UnaryOp(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.operand, symbol_table, scope);
             }
-            ExprKind::FunctionCall(expr) => {
+            Expression::FunctionCall(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.func_expr, symbol_table, scope);
                 for arg in &mut expr.arguments {
                     Transpiler::ensure_pass_by_value_expr(arg, symbol_table, scope);
                 }
             }
-            ExprKind::Return(expr) => {
+            Expression::Return(expr) => {
                 Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
             }
-            ExprKind::Assignment(expr) => {
+            Expression::Assignment(expr) => {
                 // Transpiler::ensure_pass_by_value_expr(&mut expr.lhs, symbol_table, scope);
                 Transpiler::ensure_pass_by_value_expr(&mut expr.rhs, symbol_table, scope);
             }
-            ExprKind::AnonStruct(expr) => {
+            Expression::AnonStruct(expr) => {
                 for (_, expr) in &mut expr.fields {
                     Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
                 }
             }
-            ExprKind::ArrayLiteral(expr) => {
+            Expression::ArrayLiteral(expr) => {
                 for elem in &mut expr.elements {
                     Transpiler::ensure_pass_by_value_expr(elem, symbol_table, scope);
                 }
             }
-            ExprKind::ArrayAccess(expr) => {
+            Expression::ArrayAccess(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.expr, symbol_table, scope);
                 Transpiler::ensure_pass_by_value_expr(&mut expr.index, symbol_table, scope);
             }
-            ExprKind::FieldAccess(expr) => {
+            Expression::FieldAccess(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.expr, symbol_table, scope);
             }
-            ExprKind::NamedStruct(expr) => {
+            Expression::NamedStruct(expr) => {
                 for (_, expr) in &mut expr.struct_literal.fields {
                     Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
                 }
             }
-            ExprKind::Lambda(expr) => {
+            Expression::Lambda(expr) => {
                 *scope += 1;
                 Transpiler::ensure_pass_by_value_codeblock(
                     &mut expr.function_body,
@@ -359,11 +357,11 @@ impl Transpiler {
                     scope,
                 );
             }
-            ExprKind::Range(expr) => {
+            Expression::Range(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.start, symbol_table, scope);
                 Transpiler::ensure_pass_by_value_expr(&mut expr.end, symbol_table, scope);
             }
-            ExprKind::If(expr) => {
+            Expression::If(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.cond, symbol_table, scope);
                 *scope += 1;
                 Transpiler::ensure_pass_by_value_codeblock(
@@ -376,18 +374,18 @@ impl Transpiler {
                     Transpiler::ensure_pass_by_value_codeblock(else_branch, symbol_table, scope);
                 }
             }
-            ExprKind::For(expr) => {
+            Expression::For(expr) => {
                 Transpiler::ensure_pass_by_value_expr(&mut expr.iterator, symbol_table, scope);
                 *scope += 1;
                 Transpiler::ensure_pass_by_value_codeblock(&mut expr.body, symbol_table, scope);
             }
-            ExprKind::JS(expr) => {
+            Expression::JS(expr) => {
                 // JS semantics in @js blocks
                 // Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
             }
-            ExprKind::Placeholder => {}
-            ExprKind::Break => {}
-            ExprKind::Continue => {}
+            Expression::Placeholder => {}
+            Expression::Break => {}
+            Expression::Continue => {}
         }
     }
 
@@ -436,6 +434,7 @@ impl Transpiler {
 
         // let mapped_entrypoint = symbol_table.mapped_names.get(entrypoint).unwrap();
 
+        let entrypoint_scope = self.ast.modules.len() - 1;
         if let Some(entrypoint) = self
             .ast
             .modules
@@ -452,22 +451,13 @@ impl Transpiler {
                 .unwrap()
                 .toplevel_scope
                 .expressions
-                .push(Expression {
-                    kind: ExprKind::FunctionCall(FunctionCall {
-                        func_expr: Box::new(Expression {
-                            kind: ExprKind::Variable(Variable {
-                                name: entrypoint.func_name.clone(),
-                            }),
-                            ty: Type::Function(FunctionType {
-                                env_args: Vec::new(),
-                                args: Vec::new(),
-                                ret: Box::new(Type::Any),
-                            }),
-                        }),
-                        arguments: Vec::new(),
-                    }),
-                    ty: entrypoint.return_type,
-                });
+                .push(Expression::FunctionCall(FunctionCall {
+                    func_expr: Box::new(Expression::Variable(Variable {
+                        name: entrypoint.func_name.clone(),
+                        decl_scope: entrypoint_scope,
+                    })),
+                    arguments: Vec::new(),
+                }));
         } else {
             return Err(format!(
                 "No main function in {:?}",

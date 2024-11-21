@@ -41,6 +41,7 @@ pub struct FunctionType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomType {
     pub name: String,
+    pub decl_scope: usize,
 }
 
 #[derive(Debug, Clone, Eq)]
@@ -65,7 +66,7 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Custom(CustomType { name }) => f.write_fmt(format_args!("{name}")),
+            Self::Custom(CustomType { name, .. }) => f.write_fmt(format_args!("{name}")),
             Self::Array(inner) => f.write_fmt(format_args!("[{inner}]")),
             Self::Function(FunctionType {
                 env_args,
@@ -158,7 +159,7 @@ impl ToJS for VariableDecl {
         } = self;
         let var_name = var_name.replace("::", "_");
         let keyword = if *is_mutable { "let" } else { "const" };
-        let value = var_value.kind.to_js();
+        let value = var_value.to_js();
 
         format!("{keyword} {var_name} = {value};")
     }
@@ -177,14 +178,14 @@ impl ToJS for FunctionCall {
             arguments,
         } = self;
 
-        let func_expr = match &func_expr.kind {
-            ExprKind::Variable(Variable { name }) => name.replace("::", "_"),
+        let func_expr = match func_expr.as_ref() {
+            Expression::Variable(Variable { name, .. }) => name.replace("::", "_"),
             expr => expr.to_js(),
         };
 
         let args = arguments
             .into_iter()
-            .map(|arg| arg.kind.to_js())
+            .map(|arg| arg.to_js())
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -211,7 +212,7 @@ impl ToJS for UnaryOp {
             UnaryOperation::Negate => "!".to_owned(),
         };
 
-        let expr = operand.kind.to_js();
+        let expr = operand.to_js();
 
         format!("({op}{expr})")
     }
@@ -244,8 +245,8 @@ impl ToJS for BinaryOp {
             BinaryOperation::Or => "||".to_owned(),
         };
 
-        let lhs = lhs.kind.to_js();
-        let rhs = rhs.kind.to_js();
+        let lhs = lhs.to_js();
+        let rhs = rhs.to_js();
 
         format!("({lhs} {op} {rhs})")
     }
@@ -254,11 +255,12 @@ impl ToJS for BinaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub name: String,
+    pub decl_scope: usize,
 }
 
 impl ToJS for Variable {
     fn to_js(&self) -> String {
-        let Variable { name } = self;
+        let Variable { name, .. } = self;
         self.name.replace("::", "_")
     }
 }
@@ -273,8 +275,8 @@ impl ToJS for Assignment {
     fn to_js(&self) -> String {
         let Assignment { lhs, rhs } = self;
 
-        let lhs = lhs.kind.to_js();
-        let rhs = rhs.kind.to_js();
+        let lhs = lhs.to_js();
+        let rhs = rhs.to_js();
 
         format!("{lhs} = {rhs}")
     }
@@ -294,7 +296,7 @@ impl ToJS for If {
             true_branch,
             else_branch,
         } = self;
-        let cond = cond.kind.to_js();
+        let cond = cond.to_js();
         let true_branch = true_branch.to_js();
 
         let else_branch = else_branch.clone().map_or(String::new(), |b| {
@@ -323,7 +325,7 @@ impl ToJS for For {
             body,
         } = self;
 
-        let iterator = iterator.kind.to_js();
+        let iterator = iterator.to_js();
         let body = body.to_js();
         let binding = binding.replace("::", "_");
 
@@ -341,8 +343,8 @@ impl ToJS for ArrayAccess {
     fn to_js(&self) -> String {
         let ArrayAccess { expr, index } = self;
 
-        let expr = expr.kind.to_js();
-        let index = index.kind.to_js();
+        let expr = expr.to_js();
+        let index = index.to_js();
 
         format!("{expr}[{index}]")
     }
@@ -358,7 +360,7 @@ impl ToJS for ArrayLiteral {
         let elements = self
             .elements
             .iter()
-            .map(|elem| elem.kind.to_js())
+            .map(|elem| elem.to_js())
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -396,7 +398,7 @@ impl ToJS for AnonStruct {
         let fields = fields
             .into_iter()
             .map(|(field_name, field_val)| {
-                let val_expr = field_val.kind.to_js();
+                let val_expr = field_val.to_js();
                 format!("{field_name}: {val_expr}")
             })
             .collect::<Vec<_>>()
@@ -437,7 +439,7 @@ impl ToJS for FieldAccess {
     fn to_js(&self) -> String {
         let FieldAccess { expr, field } = self;
 
-        let expr = expr.kind.to_js();
+        let expr = expr.to_js();
 
         format!("{expr}.{field}")
     }
@@ -471,22 +473,7 @@ impl ToJS for Lambda {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Expression {
-    pub kind: ExprKind,
-    pub ty: Type,
-}
-
-impl Expression {
-    pub fn infer(kind: ExprKind) -> Self {
-        Self {
-            kind,
-            ty: Type::Infer,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExprKind {
+pub enum Expression {
     VariableDecl(VariableDecl),
     Literal(Literal),
     BinaryOp(BinaryOp),
@@ -512,7 +499,7 @@ pub enum ExprKind {
     Continue,
 }
 
-impl ToJS for ExprKind {
+impl ToJS for Expression {
     fn to_js(&self) -> String {
         match self {
             Self::VariableDecl(var_decl) => var_decl.to_js(),
@@ -531,7 +518,7 @@ impl ToJS for ExprKind {
             Self::Range(range) => range.to_js(),
             Self::For(for_expr) => for_expr.to_js(),
             Self::Return(expr) => {
-                let expr = expr.kind.to_js();
+                let expr = expr.to_js();
                 format!("return ({expr});")
             }
             Self::Break => {
@@ -553,9 +540,7 @@ impl ToJS for ExprKind {
                     for part in parts {
                         match part {
                             FStringPart::String(string) => str += string,
-                            FStringPart::Code(expr) => {
-                                str += &format!("${{{}}}", expr.kind.to_js())
-                            }
+                            FStringPart::Code(expr) => str += &format!("${{{}}}", expr.to_js()),
                         }
                     }
 
@@ -566,12 +551,12 @@ impl ToJS for ExprKind {
             },
             Self::Import(import) => format!("/* imported module {import:#?} */",),
             Self::JS(code) => {
-                if let ExprKind::Literal(Literal::String(parts)) = &code.kind {
+                if let Expression::Literal(Literal::String(parts)) = code.as_ref() {
                     let mut js = "".to_string();
                     for part in parts {
                         let text = match part {
                             // TODO: this doesnt work if expr is an if or a for since js doesnt support that
-                            FStringPart::Code(expr) => format!("({})", expr.kind.to_js()),
+                            FStringPart::Code(expr) => format!("({})", expr.to_js()),
                             FStringPart::String(string) => string.clone().replace("\\", ""),
                         };
                         js += &text;
@@ -604,7 +589,7 @@ impl ToJS for CodeBlock {
             .expressions
             .iter()
             .map(|expr| {
-                let expr = expr.kind.to_js();
+                let expr = expr.to_js();
                 format!("{indentation}{expr}")
             })
             .collect::<Vec<_>>()
