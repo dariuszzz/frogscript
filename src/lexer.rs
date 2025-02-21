@@ -117,8 +117,9 @@ pub enum TokenKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
-    pub start_line: usize,
     pub start_char: usize,
+    pub start_line: usize,
+    pub start_col: usize,
     pub lexeme: String,
 }
 
@@ -297,8 +298,9 @@ impl Lexer {
     fn add_token(&mut self, kind: TokenKind) {
         let token = Token {
             kind,
+            start_char: self.lexeme_start,
             start_line: self.lexeme_start_line,
-            start_char: self.lexeme_start_line_char,
+            start_col: self.lexeme_start_line_char,
             lexeme: self.get_substring(self.lexeme_start, self.current).unwrap(),
         };
 

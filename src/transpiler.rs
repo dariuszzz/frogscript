@@ -171,6 +171,7 @@ impl Transpiler {
                 let For {
                     binding,
                     binding_type,
+                    symbol_idx,
                     iterator,
                     body,
                 } = for_block;
@@ -272,6 +273,7 @@ impl Transpiler {
                     _ => {
                         *expr = Expression::FunctionCall(FunctionCall {
                             func_expr: Box::new(Expression::Variable(Variable {
+                                symbol_idx: 0,
                                 name: "core::deep_copy".to_string(),
                                 decl_scope: 0,
                             })),
@@ -434,6 +436,7 @@ impl Transpiler {
 
         // let mapped_entrypoint = symbol_table.mapped_names.get(entrypoint).unwrap();
 
+        // TODO: last module is not neccessarily the correct one
         let entrypoint_scope = self.ast.modules.len() - 1;
         if let Some(entrypoint) = self
             .ast
@@ -455,6 +458,7 @@ impl Transpiler {
                     func_expr: Box::new(Expression::Variable(Variable {
                         name: entrypoint.func_name.clone(),
                         decl_scope: entrypoint_scope,
+                        symbol_idx: 0,
                     })),
                     arguments: Vec::new(),
                 }));

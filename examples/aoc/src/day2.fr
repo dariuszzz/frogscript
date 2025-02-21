@@ -1,0 +1,95 @@
+fn d2_parse_input(input string) -> [[int]] =
+    use core::array { map, push }
+
+    let lines = input.split_str("\n")
+
+    let report_count = core::len(lines)
+
+    mut reports = []
+    for report in lines:
+        let levels = report.split_str(" ")
+
+        levels.map(fn(l) return parse_int(l))
+
+        reports.push(levels)
+
+    return reports
+
+fn d2_check_safety(report [int]) -> bool =
+    mut monotonicity = -1
+
+    if report[1] - report[0] > 0:
+        monotonicity = 1
+    else if report[1] - report[0] == 0:
+        return false
+
+    let report_len = core::len(report)
+
+    for i in 0..(report_len - 1):
+        let diff = report[i+1] - report[i]
+
+        if diff / abs(diff) != monotonicity:
+            return false
+
+        if abs(diff) < 1 || abs(diff) > 3:
+            return false
+
+    return true
+
+fn d2_only_one(arr [any], f fn(any) -> bool) -> int =
+    use core::array { push }
+    mut true_elements = []
+
+    for i in 0..core::len(arr):
+        if f(arr[i]):
+            true_elements.push(i)
+
+    if core::len(true_elements) == 1:
+        return true_elements[0]
+    else return -1
+
+
+fn d2_check_safety_dampener(report [int]) -> bool =
+    use core::array { push, remove }
+
+    if d2_check_safety(report):
+        return true
+
+    let report_len = core::len(report)
+
+    for i in 0..report_len:
+        mut copy = core::deep_copy(report)
+        copy.remove(i)
+
+        if d2_check_safety(copy):
+            return true
+
+    return false
+
+fn d2_part2(reports [[int]]) -> int =
+    mut counter = 0
+
+    for report in reports:
+        if d2_check_safety_dampener(report):
+            counter += 1
+
+    return counter
+
+fn d2_part1(reports [[int]]) -> int =
+    mut counter = 0
+
+    for report in reports:
+        if d2_check_safety(report):
+            counter += 1
+
+    return counter
+
+fn day2 =
+    let contents = read_file("./input/day2.txt").trim_str()
+    let input = d2_parse_input(contents)
+
+    let part1_ans = d2_part1(input)
+    print("Part1: {part1_ans}")
+
+    let part2_ans = d2_part2(input)
+    print("Part2: {part2_ans}")

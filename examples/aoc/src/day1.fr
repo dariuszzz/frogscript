@@ -1,0 +1,69 @@
+use core::print
+
+fn d1_parse_input(input string) -> [[int]] =
+    let lines = input.split_str("\n")
+
+    let el_count = core::len(lines)
+
+    mut list1 = []
+    mut list2 = []
+
+    for line in lines:
+        use core::array::push
+
+        let split_line = line.split_str("  ")
+
+        list1.push(parse_int(split_line[0]))
+        list2.push(parse_int(split_line[1]))
+
+    sort_list(list1)
+    sort_list(list2)
+
+    return [list1, list2]
+
+fn d1_part1(input [[int]]) -> int =
+    let list1 = input[0]
+    let list2 = input[1]
+
+    let el_count = core::len(list1)
+
+    mut sum = 0
+
+    for i in 0..el_count:
+        let el1 = list1[i]
+        let el2 = list2[i]
+
+        let dist = abs(el1 - el2)
+        sum += dist
+
+    return sum
+
+fn d1_part2(input [[int]]) -> int =
+    let list1 = input[0]
+    let list2 = input[1]
+
+    let n = core::len(list1)
+
+    mut sum = 0
+
+    for el1 in list1:
+        mut appearances = 0
+
+        for el2 in list2:
+            if el1 == el2:
+                appearances += 1
+
+        let similarity = el1 * appearances
+        sum += similarity
+
+    return sum
+
+fn day1 =
+    let contents = read_file("./input/day1.txt").trim_str()
+    let input = d1_parse_input(contents)
+
+    let part1_ans = d1_part1(input)
+    print("Part1: {part1_ans}")
+
+    let part2_ans = d1_part2(input)
+    print("Part2: {part2_ans}")

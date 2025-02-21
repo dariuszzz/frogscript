@@ -46,3 +46,24 @@ module array =
                 new_arr.push(el)
 
         return new_arr
+
+    export fn remove(arr [any], index int) -> () =
+        for i in index..(core::len(arr) - 1):
+            arr[i] = arr[i+1]
+
+        arr.pop()
+
+module map =
+    type Map = any
+
+    export fn new() -> Map =
+        return @js("new Map()")
+
+    export fn insert(map Map, key any, val any) -> Map =
+        @js("{map}.set({key}, {val})")
+
+    export fn get(map Map, key any) -> any =
+        return @js("{map}.get({key})")
+
+    export fn keys(map Map) -> [any] =
+        return @js("{map}.keys()")

@@ -1,0 +1,43 @@
+let fs = @js("require('node:fs')")
+
+fn read_file(path string) -> string =
+    let data = @js("{fs}.readFileSync({path}, 'utf8')")
+
+    return data
+
+fn split_str(text string, char string) -> [string] =
+    let split = @js("{text}.split({char})")
+
+    return split
+
+fn parse_int(num string) -> int =
+    let number = @js("parseInt({num})")
+
+    return number
+
+fn trim_str(text string) -> string =
+    let trimmed = @js("{text}.trim()")
+
+    return trimmed
+
+fn sort_list(arr [any]) =
+    let n = core::len(arr)
+    mut bool swapped = ...
+
+    for i in 0..(n - 1):
+        swapped = false
+        for j in 0..(n - i - 1):
+            if arr[j] > arr[j + 1]:
+                let temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+                swapped = true
+
+        if !swapped:
+            break
+
+fn abs(x int) -> int =
+    if x >= 0:
+        return x
+    else
+        return -x

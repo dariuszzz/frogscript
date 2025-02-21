@@ -1,0 +1,11 @@
+name "aoc2024"
+version "0.1"
+
+dependencies {
+    core path="../core/"
+}
+
+targets {
+    day1 "./src/day1.fr" func="day1"
+    day2 "./src/day2.fr" func="day2"
+}

@@ -95,6 +95,7 @@ impl IRGen {
                     IRValue::Variable(Variable {
                         name: res,
                         decl_scope: 0,
+                        symbol_idx: 0,
                     }),
                 ));
 

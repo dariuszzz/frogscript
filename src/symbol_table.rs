@@ -41,7 +41,6 @@ impl Scope {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub table: Arena<Scope>,
-    pub mapped_names: HashMap<String, String>,
 }
 
 impl SymbolTable {
@@ -95,6 +94,15 @@ impl SymbolTable {
             .iter_mut()
             .filter(|s| s.name == name && s.symbol_type == symbol_type)
             .next()
+    }
+
+    pub fn ensure_unique_name(&self, scope: usize, name: &str, symbol_type: SymbolType) -> String {
+        let mut name = name.to_string();
+        while let Ok(_) = self.find_symbol_rec(scope, &name, symbol_type) {
+            name = format!("{name}@unique");
+        }
+
+        name
     }
 
     pub fn find_symbol_rec(

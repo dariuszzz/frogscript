@@ -41,7 +41,6 @@ pub struct FunctionType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomType {
     pub name: String,
-    pub decl_scope: usize,
 }
 
 #[derive(Debug, Clone, Eq)]
@@ -144,6 +143,8 @@ pub struct VariableDecl {
     pub var_name: String,
     pub var_type: Type,
     pub var_value: Box<Expression>,
+    pub symbol_idx: usize,
+    pub byte_idx: usize, // at which byte does this decl start. used for shadowing
     pub is_mutable: bool,
     pub is_env: bool,
 }
@@ -154,7 +155,9 @@ impl ToJS for VariableDecl {
             var_name,
             var_type,
             var_value,
+            byte_idx,
             is_mutable,
+            symbol_idx,
             is_env,
         } = self;
         let var_name = var_name.replace("::", "_");
@@ -256,6 +259,7 @@ impl ToJS for BinaryOp {
 pub struct Variable {
     pub name: String,
     pub decl_scope: usize,
+    pub symbol_idx: usize,
 }
 
 impl ToJS for Variable {
@@ -311,6 +315,7 @@ impl ToJS for If {
 #[derive(Debug, Clone, PartialEq)]
 pub struct For {
     pub binding: String,
+    pub symbol_idx: usize,
     pub binding_type: Type,
     pub iterator: Box<Expression>,
     pub body: CodeBlock,
@@ -321,6 +326,7 @@ impl ToJS for For {
         let For {
             binding,
             binding_type,
+            symbol_idx,
             iterator,
             body,
         } = self;
@@ -604,6 +610,7 @@ pub struct FunctionArgument {
     pub arg_name: String,
     pub arg_type: Type,
     pub is_env: bool,
+    pub symbol_idx: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

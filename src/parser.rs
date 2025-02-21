@@ -46,16 +46,18 @@ impl Parser {
         if self.is_at_end() {
             return Token {
                 kind: TokenKind::EOF,
-                start_char: 0,
+                start_col: 0,
                 start_line: 0,
+                start_char: 0,
                 lexeme: String::new(),
             };
         }
         return self.tokens.get(self.current + n).map_or(
             Token {
                 kind: TokenKind::EOF,
-                start_char: 0,
+                start_col: 0,
                 start_line: 0,
+                start_char: 0,
                 lexeme: String::new(),
             },
             |t| t.clone(),
@@ -169,6 +171,7 @@ impl Parser {
                         arg_name: String::new(),
                         arg_type: Type::Infer,
                         is_env: false,
+                        symbol_idx: 0,
                     };
 
                     match self.peek_skip_ws(0)?.kind {
@@ -215,7 +218,7 @@ impl Parser {
             }
         } else {
             let line = self.peek(0).start_line;
-            let pos = self.peek(0).start_char;
+            let pos = self.peek(0).start_col;
             return Err(format!(
                 "{line}:{pos} Missing tokens in '(export) fn funcname'",
             ));
@@ -257,6 +260,7 @@ impl Parser {
                 arg_name: String::new(),
                 arg_type: Type::Uint,
                 is_env: true,
+                symbol_idx: 0,
             };
 
             let name_token = arg_tokens.get("name").unwrap();
@@ -321,7 +325,7 @@ impl Parser {
                         "any" => Type::Any,
                         _ => Type::Custom(CustomType {
                             name,
-                            decl_scope: 0,
+                            // decl_scope: 0,
                         }),
                     }
                 }
@@ -379,7 +383,7 @@ impl Parser {
                 } else {
                     return Err(format!(
                         "{}:{} Unexpected token after '(' in type",
-                        token.start_line, token.start_char
+                        token.start_line, token.start_col
                     ));
                 }
             }
@@ -422,10 +426,13 @@ impl Parser {
     pub fn parse_variable_decl(&mut self, indent: usize) -> Result<Expression, String> {
         let mut is_mutable = true;
 
+        let access_qualifier = self.advance();
+        let byte_idx = access_qualifier.start_char;
+
         if let Token {
             kind: TokenKind::Identifier(Identifier::Let),
             ..
-        } = self.advance()
+        } = access_qualifier
         {
             is_mutable = false;
         }
@@ -460,7 +467,9 @@ impl Parser {
                 var_name,
                 var_type,
                 var_value: Box::new(value),
+                byte_idx,
                 is_mutable,
+                symbol_idx: 0,
                 is_env,
             };
 
@@ -498,7 +507,7 @@ impl Parser {
             token => {
                 return Err(format!(
                     "{:?}:{:?}: No func/field name found, got {:?} instead",
-                    token.start_line, token.start_char, token.kind
+                    token.start_line, token.start_col, token.kind
                 ))
             }
         };
@@ -512,6 +521,7 @@ impl Parser {
             let mut call = FunctionCall {
                 func_expr: Box::new(Expression::Variable(Variable {
                     name: name.join("::"),
+                    symbol_idx: 0,
                     decl_scope: 0,
                 })),
                 arguments: vec![called_on],
@@ -713,6 +723,7 @@ impl Parser {
                 func_expr: Box::new(Expression::Variable(Variable {
                     name: "core::range".to_owned(),
                     decl_scope: 0,
+                    symbol_idx: 0,
                 })),
                 arguments: vec![
                     lhs,
@@ -794,7 +805,7 @@ impl Parser {
         let token = self.advance_skip_ws(indent);
         let mut term = match token {
             Token {
-                start_char,
+                start_col: start_char,
                 start_line,
                 kind,
                 ..
@@ -887,6 +898,7 @@ impl Parser {
                 arg_name: String::new(),
                 arg_type: Type::Infer,
                 is_env: false,
+                symbol_idx: 0,
             };
 
             match self.peek_skip_ws(0)?.kind {
@@ -1077,6 +1089,7 @@ impl Parser {
     ) -> Result<Expression, String> {
         Ok(Expression::Variable(Variable {
             name: var_name,
+            symbol_idx: 0,
             decl_scope: 0,
         }))
     }
@@ -1103,6 +1116,7 @@ impl Parser {
         let func_expr = Expression::Variable(Variable {
             name: final_name.clone(),
             decl_scope: 0,
+            symbol_idx: 0,
         });
 
         let expr = match self.peek_skip_ws(0)?.kind {
@@ -1172,6 +1186,7 @@ impl Parser {
             Ok(Expression::For(For {
                 binding,
                 binding_type,
+                symbol_idx: 0,
                 iterator: Box::new(iterator),
                 body,
             }))
@@ -1277,6 +1292,7 @@ impl Parser {
                 }
                 TokenKind::Comma | TokenKind::CurlyRight => Expression::Variable(Variable {
                     name: field_name.clone(),
+                    symbol_idx: 0,
                     decl_scope: 0,
                 }),
                 _ => {
@@ -1812,7 +1828,7 @@ impl Parser {
                 token => {
                     return Err(format!(
                         "{:?}:{:?} - Unexpected {token:?}",
-                        t.start_line, t.start_char
+                        t.start_line, t.start_col
                     ))
                 }
             };
