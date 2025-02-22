@@ -117,7 +117,8 @@ impl SemanticAnalyzer {
             let symbol = self
                 .symbol_table
                 .find_symbol_rec_mut(scope, &var_name, SymbolType::Identifier)
-                .unwrap();
+                .unwrap()
+                .1;
 
             symbol.value_type = ty;
         }
@@ -154,11 +155,10 @@ impl SemanticAnalyzer {
                 let unified = self.figure_out_unified_type(&rhs, &expr.var_type)?;
                 expr.var_type = unified.clone();
                 //no need to use get_var_scope since this is a declaration so its in the local scope
-                let symbol = self.symbol_table.find_symbol_rec_mut(
-                    *scope,
-                    &expr.var_name,
-                    SymbolType::Identifier,
-                )?;
+                let symbol = self
+                    .symbol_table
+                    .find_symbol_rec_mut(*scope, &expr.var_name, SymbolType::Identifier)?
+                    .1;
                 symbol.value_type = unified.clone();
                 return Ok(unified);
             }
@@ -421,7 +421,7 @@ impl SemanticAnalyzer {
             }
             Expression::NamedStruct(expr) => {
                 let (ty_scope, type_name) = self.get_var_scope(*scope, &expr.casted_to);
-                let (casted_ty_decl_scope, casted_ty_sym) = self
+                let (casted_symbol_idx, casted_ty_sym) = self
                     .symbol_table
                     .find_symbol_rec(ty_scope, &type_name, SymbolType::Type)
                     .expect(&format!("Type `{}` doesnt exist", expr.casted_to));
@@ -462,7 +462,6 @@ impl SemanticAnalyzer {
 
                 return Ok(Type::Custom(CustomType {
                     name: expr.casted_to.clone(),
-                    // decl_scope: casted_ty_decl_scope,
                 }));
             }
             Expression::Range(expr) => {
@@ -524,11 +523,10 @@ impl SemanticAnalyzer {
                 match iter_ty {
                     Type::Array(inner) => {
                         // local symbol, no need for get_var_scope
-                        let symbol = self.symbol_table.find_symbol_rec_mut(
-                            *scope + 1,
-                            &expr.binding,
-                            SymbolType::Identifier,
-                        )?;
+                        let symbol = self
+                            .symbol_table
+                            .find_symbol_rec_mut(*scope + 1, &expr.binding, SymbolType::Identifier)?
+                            .1;
 
                         symbol.value_type = *inner;
                     }
@@ -595,11 +593,14 @@ impl SemanticAnalyzer {
                         let mut new_ret_type = old_ty;
                         new_ret_type.ret = Box::new(body_ty.clone());
 
-                        let symbol = self.symbol_table.find_symbol_rec_mut(
-                            scope - 1,
-                            &func.func_name,
-                            SymbolType::Identifier,
-                        )?;
+                        let symbol = self
+                            .symbol_table
+                            .find_symbol_rec_mut(
+                                scope - 1,
+                                &func.func_name,
+                                SymbolType::Identifier,
+                            )?
+                            .1;
 
                         symbol.value_type = Type::Function(new_ret_type);
                     }
@@ -720,7 +721,7 @@ impl SemanticAnalyzer {
         &mut self,
         curr_module_name: &str,
         scope: usize,
-        expr: &Expression,
+        expr: &mut Expression,
         shadowing: bool,
     ) -> Result<(), String> {
         match expr {
@@ -782,7 +783,7 @@ impl SemanticAnalyzer {
                 self.populate_symbol_table_expr(
                     curr_module_name,
                     scope,
-                    &expr.var_value,
+                    &mut expr.var_value,
                     shadowing,
                 )?;
 
@@ -791,7 +792,7 @@ impl SemanticAnalyzer {
                     self.symbol_table
                         .ensure_unique_name(scope, &og_name, SymbolType::Identifier);
 
-                self.symbol_table.add_symbol_to_scope(
+                let symbol_idx = self.symbol_table.add_symbol_to_scope(
                     scope,
                     Symbol {
                         original_name: og_name,
@@ -802,6 +803,8 @@ impl SemanticAnalyzer {
                         mutable: expr.is_mutable,
                     },
                 )?;
+
+                expr.symbol_idx = (scope, symbol_idx);
             }
             Expression::Literal(lit) => match lit {
                 Literal::String(parts) => {
@@ -819,56 +822,76 @@ impl SemanticAnalyzer {
                 _ => {}
             },
             Expression::BinaryOp(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.lhs, shadowing)?;
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.rhs, shadowing)?;
+                self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.lhs, shadowing)?;
+                self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.rhs, shadowing)?;
             }
             Expression::UnaryOp(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.operand, shadowing)?;
+                self.populate_symbol_table_expr(
+                    curr_module_name,
+                    scope,
+                    &mut expr.operand,
+                    shadowing,
+                )?;
             }
             Expression::FunctionCall(expr) => {
                 self.populate_symbol_table_expr(
                     curr_module_name,
                     scope,
-                    &expr.func_expr,
+                    &mut expr.func_expr,
                     shadowing,
                 )?;
 
-                for arg in &expr.arguments {
-                    self.populate_symbol_table_expr(curr_module_name, scope, &arg, shadowing)?;
+                for arg in &mut expr.arguments {
+                    self.populate_symbol_table_expr(curr_module_name, scope, arg, shadowing)?;
                 }
             }
             Expression::Return(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr, shadowing)?;
+                self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
             }
             Expression::Assignment(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.lhs, shadowing)?;
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.rhs, shadowing)?;
+                self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.lhs, shadowing)?;
+                self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.rhs, shadowing)?;
             }
             Expression::AnonStruct(expr) => {
-                for (_, expr) in &expr.fields {
-                    self.populate_symbol_table_expr(curr_module_name, scope, &expr, shadowing)?;
+                for (_, expr) in &mut expr.fields {
+                    self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
                 }
             }
             Expression::ArrayLiteral(expr) => {
-                for elem in &expr.elements {
-                    self.populate_symbol_table_expr(curr_module_name, scope, &elem, shadowing)?;
+                for elem in &mut expr.elements {
+                    self.populate_symbol_table_expr(curr_module_name, scope, elem, shadowing)?;
                 }
             }
             Expression::ArrayAccess(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.expr, shadowing)?;
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.index, shadowing)?;
+                self.populate_symbol_table_expr(
+                    curr_module_name,
+                    scope,
+                    &mut expr.expr,
+                    shadowing,
+                )?;
+                self.populate_symbol_table_expr(
+                    curr_module_name,
+                    scope,
+                    &mut expr.index,
+                    shadowing,
+                )?;
             }
             Expression::FieldAccess(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.expr, shadowing)?;
+                self.populate_symbol_table_expr(
+                    curr_module_name,
+                    scope,
+                    &mut expr.expr,
+                    shadowing,
+                )?;
             }
             Expression::NamedStruct(expr) => {
-                for (_, expr) in &expr.struct_literal.fields {
-                    self.populate_symbol_table_expr(curr_module_name, scope, &expr, shadowing)?;
+                for (_, expr) in &mut expr.struct_literal.fields {
+                    self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
                 }
             }
             Expression::Lambda(expr) => {
                 let lambda_scope = self.symbol_table.new_scope(scope)?;
-                for arg in &expr.argument_list {
+                for arg in &mut expr.argument_list {
                     let og_name = arg.arg_name.clone();
                     let unique_name = self.symbol_table.ensure_unique_name(
                         scope,
@@ -876,7 +899,7 @@ impl SemanticAnalyzer {
                         SymbolType::Identifier,
                     );
 
-                    self.symbol_table.add_symbol_to_scope(
+                    let idx = self.symbol_table.add_symbol_to_scope(
                         lambda_scope,
                         Symbol {
                             name: unique_name,
@@ -887,32 +910,39 @@ impl SemanticAnalyzer {
                             mutable: true,
                         },
                     )?;
+
+                    arg.symbol_idx = (lambda_scope, idx);
                 }
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
                     lambda_scope,
-                    &expr.function_body,
+                    &mut expr.function_body,
                     shadowing,
                 )?;
             }
             Expression::Range(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.start, shadowing)?;
-                self.populate_symbol_table_expr(curr_module_name, scope, &expr.end, shadowing)?;
+                self.populate_symbol_table_expr(
+                    curr_module_name,
+                    scope,
+                    &mut expr.start,
+                    shadowing,
+                )?;
+                self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.end, shadowing)?;
             }
             Expression::If(expr) => {
                 let true_scope = self.symbol_table.new_scope(scope)?;
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
                     true_scope,
-                    &expr.true_branch,
+                    &mut expr.true_branch,
                     shadowing,
                 )?;
-                if let Some(else_branch) = &expr.else_branch {
+                if let Some(else_branch) = &mut expr.else_branch {
                     let else_scope = self.symbol_table.new_scope(scope)?;
                     self.populate_symbol_table_codeblock(
                         curr_module_name,
                         else_scope,
-                        &else_branch,
+                        else_branch,
                         shadowing,
                     )?;
                 }
@@ -925,7 +955,7 @@ impl SemanticAnalyzer {
                     self.symbol_table
                         .ensure_unique_name(scope, &og_name, SymbolType::Identifier);
 
-                self.symbol_table.add_symbol_to_scope(
+                let idx = self.symbol_table.add_symbol_to_scope(
                     for_scope,
                     Symbol {
                         name: unique_name,
@@ -936,10 +966,13 @@ impl SemanticAnalyzer {
                         mutable: false,
                     },
                 )?;
+
+                expr.symbol_idx = (for_scope, idx);
+
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
                     for_scope,
-                    &expr.body,
+                    &mut expr.body,
                     shadowing,
                 )?;
             }
@@ -957,26 +990,26 @@ impl SemanticAnalyzer {
         &mut self,
         curr_module_name: &str,
         scope: usize,
-        codeblock: &CodeBlock,
+        codeblock: &mut CodeBlock,
         shadowing: bool,
     ) -> Result<(), String> {
-        for expr in &codeblock.expressions {
+        for expr in &mut codeblock.expressions {
             self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
         }
 
         Ok(())
     }
 
-    pub fn populate_symbol_table(&mut self, program: &Program) -> Result<(), String> {
-        for module in &program.modules {
+    pub fn populate_symbol_table(&mut self, program: &mut Program) -> Result<(), String> {
+        for module in &mut program.modules {
             let module_scope = self.symbol_table.table.insert(Scope::default());
             let curr_module_name = &module.module_name;
 
             self.module_to_scope
                 .insert(module.module_name.clone(), module_scope);
 
-            for type_def in &module.type_defs {
-                self.symbol_table.add_symbol_to_scope(
+            for type_def in &mut module.type_defs {
+                let idx = self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
                         name: type_def.name.clone(),
@@ -987,16 +1020,18 @@ impl SemanticAnalyzer {
                         mutable: false,
                     },
                 )?;
+
+                type_def.symbol_idx = (module_scope, idx);
             }
 
             self.populate_symbol_table_codeblock(
                 curr_module_name,
                 module_scope,
-                &module.toplevel_scope,
+                &mut module.toplevel_scope,
                 false, // toplevel scope has no shadowing
             )?;
 
-            for func_def in &module.function_defs {
+            for func_def in &mut module.function_defs {
                 let func_type = Type::Function(FunctionType {
                     env_args: func_def
                         .argument_list
@@ -1013,7 +1048,7 @@ impl SemanticAnalyzer {
                     ret: Box::new(func_def.return_type.clone()),
                 });
 
-                self.symbol_table.add_symbol_to_scope(
+                let idx = self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
                         name: func_def.func_name.to_string(),
@@ -1025,10 +1060,12 @@ impl SemanticAnalyzer {
                     },
                 )?;
 
+                func_def.symbol_idx = (module_scope, idx);
+
                 let func_scope = self.symbol_table.new_scope(module_scope)?;
 
-                for arg in &func_def.argument_list {
-                    self.symbol_table.add_symbol_to_scope(
+                for arg in &mut func_def.argument_list {
+                    let idx = self.symbol_table.add_symbol_to_scope(
                         func_scope,
                         Symbol {
                             name: arg.arg_name.clone(),
@@ -1042,12 +1079,14 @@ impl SemanticAnalyzer {
                             },
                         },
                     )?;
+
+                    arg.symbol_idx = (func_scope, idx);
                 }
 
                 self.populate_symbol_table_codeblock(
                     curr_module_name,
                     func_scope,
-                    &func_def.function_body,
+                    &mut func_def.function_body,
                     true,
                 )?;
             }
@@ -1087,8 +1126,8 @@ impl SemanticAnalyzer {
                         &name_parts.last().unwrap(),
                         SymbolType::Identifier,
                     ) {
-                        Ok((decl_scope, _)) => {
-                            var.decl_scope = decl_scope;
+                        Ok((idx, _)) => {
+                            var.symbol_idx = idx;
                             return Ok(());
                         }
                         Err(_) => {} // println!(
@@ -1121,8 +1160,8 @@ impl SemanticAnalyzer {
                             &name_parts.last().unwrap(),
                             SymbolType::Identifier,
                         ) {
-                            Ok((decl_scope, _)) => {
-                                var.decl_scope = decl_scope;
+                            Ok((symbol_idx, _)) => {
+                                var.symbol_idx = symbol_idx;
                                 return Ok(());
                             }
                             Err(_) => {
@@ -1324,8 +1363,7 @@ impl SemanticAnalyzer {
                     &name_parts.last().unwrap(),
                     SymbolType::Type,
                 ) {
-                    Ok((new_decl_scope, _)) => {
-                        // *decl_scope = new_decl_scope;
+                    Ok((_idx, _symbol)) => {
                         return Ok(());
                     }
                     Err(_) => return Err(format!("Type not found `{}`", name)),
@@ -1403,167 +1441,6 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
-    fn map_to_unique_name(
-        &mut self,
-        shadowed_vars: &mut HashMap<String, String>,
-        name: &mut String,
-    ) {
-        use std::collections::hash_map::Entry;
-        match shadowed_vars.entry(name.to_string()) {
-            Entry::Occupied(mut entry) => {
-                let new_name = format!("_{}", self.unique_name_suffix);
-                entry.insert(new_name.clone());
-                // self.symbol_table
-                //     .mapped_names
-                //     .insert(name.clone(), new_name);
-            }
-            Entry::Vacant(entry) => {
-                let new_name = format!("_{}", self.unique_name_suffix);
-                entry.insert(new_name.clone());
-                // self.symbol_table
-                //     .mapped_names
-                //     .insert(name.clone(), new_name);
-            }
-        }
-        self.unique_name_suffix += 1;
-
-        *name = shadowed_vars.get(name).unwrap().clone();
-    }
-
-    fn enable_shadowing_expr(
-        &mut self,
-        shadowed_vars: &mut HashMap<String, String>,
-        expr: &mut Expression,
-    ) -> Result<(), String> {
-        match expr {
-            Expression::BuiltinType(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, expr)?;
-            }
-            Expression::Import(import) => {}
-            Expression::Variable(expr) => {
-                expr.name = shadowed_vars.get(&expr.name).unwrap().clone();
-            }
-            Expression::VariableDecl(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.var_value)?;
-                self.map_to_unique_name(shadowed_vars, &mut expr.var_name);
-            }
-            Expression::Literal(literal) => match literal {
-                Literal::String(parts) => {
-                    for part in parts {
-                        if let FStringPart::Code(expr) = part {
-                            self.enable_shadowing_expr(shadowed_vars, expr)?;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            Expression::BinaryOp(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.lhs)?;
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.rhs)?;
-            }
-            Expression::UnaryOp(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.operand)?;
-            }
-            Expression::FunctionCall(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.func_expr)?;
-
-                for arg in &mut expr.arguments {
-                    self.enable_shadowing_expr(shadowed_vars, arg)?;
-                }
-            }
-            Expression::Return(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, expr)?;
-            }
-            Expression::Assignment(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.lhs)?;
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.rhs)?;
-            }
-            Expression::AnonStruct(expr) => {
-                for (_, expr) in &mut expr.fields {
-                    self.enable_shadowing_expr(shadowed_vars, expr)?;
-                }
-            }
-            Expression::ArrayLiteral(expr) => {
-                for elem in &mut expr.elements {
-                    self.enable_shadowing_expr(shadowed_vars, elem)?;
-                }
-            }
-            Expression::ArrayAccess(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.expr)?;
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.index)?;
-            }
-            Expression::FieldAccess(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.expr)?;
-            }
-            Expression::NamedStruct(expr) => {
-                for (_, expr) in &mut expr.struct_literal.fields {
-                    self.enable_shadowing_expr(shadowed_vars, expr)?;
-                }
-            }
-            Expression::Lambda(expr) => {
-                for arg in &mut expr.argument_list {
-                    self.map_to_unique_name(shadowed_vars, &mut arg.arg_name);
-                }
-                self.enable_shadowing_codeblock(shadowed_vars, &mut expr.function_body)?;
-            }
-            Expression::Range(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.start)?;
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.end)?;
-            }
-            Expression::If(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.cond)?;
-                self.enable_shadowing_codeblock(shadowed_vars, &mut expr.true_branch)?;
-                if let Some(else_branch) = &mut expr.else_branch {
-                    self.enable_shadowing_codeblock(shadowed_vars, else_branch)?;
-                }
-            }
-            Expression::For(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, &mut expr.iterator)?;
-                self.enable_shadowing_codeblock(shadowed_vars, &mut expr.body)?;
-                self.map_to_unique_name(shadowed_vars, &mut expr.binding);
-            }
-            Expression::JS(expr) => {
-                self.enable_shadowing_expr(shadowed_vars, expr)?;
-            }
-            Expression::Placeholder => {}
-            Expression::Break => {}
-            Expression::Continue => {}
-        }
-
-        Ok(())
-    }
-
-    fn enable_shadowing_codeblock(
-        &mut self,
-        shadowed_vars: &mut HashMap<String, String>,
-        codeblock: &mut CodeBlock,
-    ) -> Result<(), String> {
-        let mut shadowed_vars = shadowed_vars.clone();
-        for expr in &mut codeblock.expressions {
-            self.enable_shadowing_expr(&mut shadowed_vars, expr)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn enable_shadowing(&mut self, program: &mut Program) -> Result<(), String> {
-        let mut shadowed_vars: HashMap<String, String> = HashMap::new();
-        for module in &mut program.modules {
-            self.enable_shadowing_codeblock(&mut shadowed_vars, &mut module.toplevel_scope)?;
-
-            for func_def in &mut module.function_defs {
-                self.map_to_unique_name(&mut shadowed_vars, &mut func_def.func_name);
-                for arg in &mut func_def.argument_list {
-                    self.map_to_unique_name(&mut shadowed_vars, &mut arg.arg_name);
-                }
-
-                self.enable_shadowing_codeblock(&mut shadowed_vars, &mut func_def.function_body)?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn flatten_import(import: &Import, base: String) -> Vec<Import> {
         let qualified_name = if base.is_empty() {
             import.name.clone()
@@ -1615,12 +1492,10 @@ impl SemanticAnalyzer {
         perf: bool,
     ) -> Result<SymbolTable, String> {
         let start = Instant::now();
-        // self.enable_shadowing(program)?;
         self.populate_symbol_table(program)?;
         self.resolve_names(program)?;
         self.enforce_mutability(program)?;
         self.typecheck(program)?;
-        // self.eval_builtins(program)?;
 
         if perf {
             println!(

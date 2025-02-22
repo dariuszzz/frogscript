@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Arena, Import, Type};
+use crate::{Arena, Import, SymbolIdx, Type};
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
@@ -71,13 +71,14 @@ impl SymbolTable {
         scope: usize,
         name: &str,
         symbol_type: SymbolType,
-    ) -> Option<&Symbol> {
+    ) -> Option<(usize, &Symbol)> {
         let scope = self.get_scope(scope)?;
 
         scope
             .symbols
             .iter()
-            .filter(|s| s.name == name && s.symbol_type == symbol_type)
+            .enumerate()
+            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -86,19 +87,21 @@ impl SymbolTable {
         scope: usize,
         name: &str,
         symbol_type: SymbolType,
-    ) -> Option<&mut Symbol> {
+    ) -> Option<(usize, &mut Symbol)> {
         let scope = self.get_scope_mut(scope)?;
 
         scope
             .symbols
             .iter_mut()
-            .filter(|s| s.name == name && s.symbol_type == symbol_type)
+            .enumerate()
+            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 
     pub fn ensure_unique_name(&self, scope: usize, name: &str, symbol_type: SymbolType) -> String {
         let mut name = name.to_string();
         while let Ok(_) = self.find_symbol_rec(scope, &name, symbol_type) {
+            // lol, guaranteed to not collide since @ is not a valid char in a variable name
             name = format!("{name}@unique");
         }
 
@@ -110,7 +113,7 @@ impl SymbolTable {
         scope: usize,
         symbol_name: &str,
         symbol_type: SymbolType,
-    ) -> Result<(usize, &Symbol), String> {
+    ) -> Result<(SymbolIdx, &Symbol), String> {
         let mut curr_scope_opt = Some(scope);
         while let Some(curr_scope_idx) = curr_scope_opt {
             let curr_scope_parent = self
@@ -118,8 +121,11 @@ impl SymbolTable {
                 .ok_or("Scope does not exist")?
                 .parent_scope;
 
-            if let Some(symbol) = self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type) {
-                return Ok((curr_scope_idx, symbol));
+            if let Some((idx, symbol)) =
+                self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type)
+            {
+                // Scope id, symbol id
+                return Ok(((curr_scope_idx, idx), symbol));
             } else {
                 curr_scope_opt = curr_scope_parent;
             }
@@ -133,7 +139,7 @@ impl SymbolTable {
         scope: usize,
         symbol_name: &str,
         symbol_type: SymbolType,
-    ) -> Result<&mut Symbol, String> {
+    ) -> Result<(SymbolIdx, &mut Symbol), String> {
         let mut curr_scope_opt = Some(scope);
         let mut found_scope = None;
         while let Some(curr_scope_idx) = curr_scope_opt {
@@ -143,7 +149,8 @@ impl SymbolTable {
 
             let curr_scope_parent = curr_scope.parent_scope;
 
-            if let Some(_) = self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type) {
+            if let Some((idx, _)) = self.scope_get_symbol(curr_scope_idx, symbol_name, symbol_type)
+            {
                 found_scope = Some(curr_scope_idx);
                 break;
             } else {
@@ -155,12 +162,14 @@ impl SymbolTable {
             return Err(format!("MUT: Symbol {symbol_name:?} doesnt exist in scope"));
         }
 
-        Ok(self
+        let (idx, symbol) = self
             .scope_get_symbol_mut(found_scope.unwrap(), symbol_name, symbol_type)
-            .unwrap())
+            .unwrap();
+
+        Ok(((found_scope.unwrap(), idx), symbol))
     }
 
-    pub fn add_symbol_to_scope(&mut self, scope: usize, symbol: Symbol) -> Result<(), String> {
+    pub fn add_symbol_to_scope(&mut self, scope: usize, symbol: Symbol) -> Result<usize, String> {
         let exists = self
             .scope_get_symbol(scope, &symbol.name, symbol.symbol_type)
             .is_some();
@@ -171,7 +180,7 @@ impl SymbolTable {
             return Err(format!("Duplicate symbol {:?}", symbol.name));
         } else {
             curr_scope.symbols.push(symbol);
-            Ok(())
+            Ok(curr_scope.symbols.len() - 1)
         }
     }
 }

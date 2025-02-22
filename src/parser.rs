@@ -137,6 +137,7 @@ impl Parser {
             export: false,
             func_name: String::new(),
             argument_list: args,
+            symbol_idx: (0, 0),
             return_type: Type::Infer,
             function_body: CodeBlock::default(),
         };
@@ -171,7 +172,7 @@ impl Parser {
                         arg_name: String::new(),
                         arg_type: Type::Infer,
                         is_env: false,
-                        symbol_idx: 0,
+                        symbol_idx: (0, 0),
                     };
 
                     match self.peek_skip_ws(0)?.kind {
@@ -260,7 +261,7 @@ impl Parser {
                 arg_name: String::new(),
                 arg_type: Type::Uint,
                 is_env: true,
-                symbol_idx: 0,
+                symbol_idx: (0, 0),
             };
 
             let name_token = arg_tokens.get("name").unwrap();
@@ -469,7 +470,7 @@ impl Parser {
                 var_value: Box::new(value),
                 byte_idx,
                 is_mutable,
-                symbol_idx: 0,
+                symbol_idx: (0, 0),
                 is_env,
             };
 
@@ -521,7 +522,7 @@ impl Parser {
             let mut call = FunctionCall {
                 func_expr: Box::new(Expression::Variable(Variable {
                     name: name.join("::"),
-                    symbol_idx: 0,
+                    symbol_idx: (0, 0),
                     decl_scope: 0,
                 })),
                 arguments: vec![called_on],
@@ -723,7 +724,7 @@ impl Parser {
                 func_expr: Box::new(Expression::Variable(Variable {
                     name: "core::range".to_owned(),
                     decl_scope: 0,
-                    symbol_idx: 0,
+                    symbol_idx: (0, 0),
                 })),
                 arguments: vec![
                     lhs,
@@ -898,7 +899,7 @@ impl Parser {
                 arg_name: String::new(),
                 arg_type: Type::Infer,
                 is_env: false,
-                symbol_idx: 0,
+                symbol_idx: (0, 0),
             };
 
             match self.peek_skip_ws(0)?.kind {
@@ -1089,7 +1090,7 @@ impl Parser {
     ) -> Result<Expression, String> {
         Ok(Expression::Variable(Variable {
             name: var_name,
-            symbol_idx: 0,
+            symbol_idx: (0, 0),
             decl_scope: 0,
         }))
     }
@@ -1116,7 +1117,7 @@ impl Parser {
         let func_expr = Expression::Variable(Variable {
             name: final_name.clone(),
             decl_scope: 0,
-            symbol_idx: 0,
+            symbol_idx: (0, 0),
         });
 
         let expr = match self.peek_skip_ws(0)?.kind {
@@ -1186,7 +1187,7 @@ impl Parser {
             Ok(Expression::For(For {
                 binding,
                 binding_type,
-                symbol_idx: 0,
+                symbol_idx: (0, 0),
                 iterator: Box::new(iterator),
                 body,
             }))
@@ -1292,7 +1293,7 @@ impl Parser {
                 }
                 TokenKind::Comma | TokenKind::CurlyRight => Expression::Variable(Variable {
                     name: field_name.clone(),
-                    symbol_idx: 0,
+                    symbol_idx: (0, 0),
                     decl_scope: 0,
                 }),
                 _ => {
@@ -1678,6 +1679,7 @@ impl Parser {
         Ok(TypeDef {
             name: type_name,
             export,
+            symbol_idx: (0, 0),
             underlying_ty: value,
         })
     }

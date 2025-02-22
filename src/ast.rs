@@ -5,7 +5,7 @@ use std::{
 
 use crate::{lexer::Literal, transpiler::ToJS, FStringPart};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum UnaryOperation {
     Negative,
     Negate,
@@ -14,7 +14,21 @@ pub enum UnaryOperation {
     Dereference,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Display for UnaryOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            UnaryOperation::Negative => "-",
+            UnaryOperation::Negate => "!",
+            UnaryOperation::Reference => "&",
+            UnaryOperation::Pointer => "^",
+            UnaryOperation::Dereference => "^",
+        };
+
+        f.write_str(str)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BinaryOperation {
     Add,
     Subtract,
@@ -30,6 +44,30 @@ pub enum BinaryOperation {
     Equal,
     NotEqual,
 }
+
+impl Display for BinaryOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            BinaryOperation::Add => "+",
+            BinaryOperation::Subtract => "-",
+            BinaryOperation::Multiply => "*",
+            BinaryOperation::Divide => "/",
+            BinaryOperation::Power => "^",
+            BinaryOperation::And => "&&",
+            BinaryOperation::Or => "||",
+            BinaryOperation::Less => "<",
+            BinaryOperation::LessEqual => "<=",
+            BinaryOperation::Greater => ">",
+            BinaryOperation::GreaterEqual => ">=",
+            BinaryOperation::Equal => "==",
+            BinaryOperation::NotEqual => "!=",
+        };
+
+        f.write_str(str)
+    }
+}
+
+pub type SymbolIdx = (usize, usize); // scope idx, symbol idx
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionType {
@@ -143,7 +181,7 @@ pub struct VariableDecl {
     pub var_name: String,
     pub var_type: Type,
     pub var_value: Box<Expression>,
-    pub symbol_idx: usize,
+    pub symbol_idx: SymbolIdx,
     pub byte_idx: usize, // at which byte does this decl start. used for shadowing
     pub is_mutable: bool,
     pub is_env: bool,
@@ -259,7 +297,7 @@ impl ToJS for BinaryOp {
 pub struct Variable {
     pub name: String,
     pub decl_scope: usize,
-    pub symbol_idx: usize,
+    pub symbol_idx: SymbolIdx,
 }
 
 impl ToJS for Variable {
@@ -315,7 +353,7 @@ impl ToJS for If {
 #[derive(Debug, Clone, PartialEq)]
 pub struct For {
     pub binding: String,
-    pub symbol_idx: usize,
+    pub symbol_idx: SymbolIdx,
     pub binding_type: Type,
     pub iterator: Box<Expression>,
     pub body: CodeBlock,
@@ -610,7 +648,7 @@ pub struct FunctionArgument {
     pub arg_name: String,
     pub arg_type: Type,
     pub is_env: bool,
-    pub symbol_idx: usize,
+    pub symbol_idx: SymbolIdx,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -627,6 +665,7 @@ pub struct FunctionDef {
     pub argument_list: Vec<FunctionArgument>,
     pub return_type: Type,
     pub function_body: CodeBlock,
+    pub symbol_idx: SymbolIdx,
 }
 
 impl ToJS for FunctionDef {
@@ -636,6 +675,7 @@ impl ToJS for FunctionDef {
             func_name,
             argument_list,
             return_type,
+            symbol_idx,
             function_body,
         } = self;
 
@@ -683,6 +723,7 @@ pub struct TypeDef {
     pub name: String,
     pub export: bool,
     pub underlying_ty: Type,
+    pub symbol_idx: SymbolIdx,
 }
 
 #[derive(Debug, Clone, Default)]

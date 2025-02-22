@@ -273,7 +273,7 @@ impl Transpiler {
                     _ => {
                         *expr = Expression::FunctionCall(FunctionCall {
                             func_expr: Box::new(Expression::Variable(Variable {
-                                symbol_idx: 0,
+                                symbol_idx: (0, 0),
                                 name: "core::deep_copy".to_string(),
                                 decl_scope: 0,
                             })),
@@ -458,7 +458,7 @@ impl Transpiler {
                     func_expr: Box::new(Expression::Variable(Variable {
                         name: entrypoint.func_name.clone(),
                         decl_scope: entrypoint_scope,
-                        symbol_idx: 0,
+                        symbol_idx: (0, 0),
                     })),
                     arguments: Vec::new(),
                 }));
