@@ -182,6 +182,23 @@ impl IRGen {
         block_idx: usize,
     ) -> (Vec<BlockParameter>, Vec<String>) {
         let block = &ssa.blocks[func_block_idx + block_idx];
+
+        // THIS SHOULD BE A HASHMAP LIKE IN THAT OTHER FUNCTION !!!!
+        // SO THAT A PARAMETER GETS RESOLVED IF THE BLOCK OVERWRITES THE VARIABLE
+        // BUT THEN WHAT ABOUT SOMETHING LIKE
+        //
+        // foo(bar#40: int):
+        //      bar#50 = bar#40
+        //      goto baz(bar#50)
+        //
+        // HERE IT SHOULD BE A PARAMETER EVEN THOUGH THE VARIABLE IS OVERWRITTEN
+        //
+        // foo():
+        //      bar#50 = Int(3)
+        //      goto baz(bar#50)
+        //
+        // HERE THE bar PARAMETER ISNT NEEDED
+
         let mut local_vars = vec![];
         let mut new_params = vec![];
 
@@ -258,43 +275,8 @@ impl IRGen {
                             })
                         }
                     }
-
-                    // add all params of branches
-                    // let true_block = ssa.blocks.iter().find(|b| b.name == *true_label).unwrap();
-
-                    // for arg in &true_block.parameters {
-                    //     if !local_vars.contains(&arg.name) {
-                    //         new_params.push(BlockParameter {
-                    //             name: arg.name.clone(),
-                    //             ty: Type::Any,
-                    //         })
-                    //     }
-                    // }
-
-                    // let false_block = ssa.blocks.iter().find(|b| b.name == *false_label).unwrap();
-
-                    // for arg in &false_block.parameters {
-                    //     if !local_vars.contains(&arg.name) {
-                    //         new_params.push(BlockParameter {
-                    //             name: arg.name.clone(),
-                    //             ty: Type::Any,
-                    //         })
-                    //     }
-                    // }
                 }
-                IRInstr::Goto(label, args) => {
-                    // add all params of goto
-                    // let block = ssa.blocks.iter().find(|b| b.name == *label).unwrap();
-
-                    // for arg in &block.parameters {
-                    //     if !local_vars.contains(&arg.name) {
-                    //         new_params.push(BlockParameter {
-                    //             name: arg.name.clone(),
-                    //             ty: Type::Any,
-                    //         })
-                    //     }
-                    // }
-                }
+                IRInstr::Goto(label, args) => {}
                 IRInstr::Return(irvalue) => {
                     if let IRValue::Variable(val) = irvalue {
                         if !local_vars.contains(&val.name) {
@@ -357,6 +339,7 @@ impl IRGen {
                 local_vars_by_block_idx.insert(block_idx, local_vars);
             }
 
+            // THIS GENERATES EXTRA PARAMS? HOW TO FIX NEED TO GO IN CIRCLE OF GROUP? INSTEAD OF TRYING TO CHEESE
             for block_idx in &group {
                 // for each block get rid of the params that it resolved
                 let this_block_local_vars = local_vars_by_block_idx.get(&block_idx).unwrap();
