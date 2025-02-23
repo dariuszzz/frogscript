@@ -796,7 +796,7 @@ impl SemanticAnalyzer {
                     scope,
                     Symbol {
                         original_name: og_name,
-                        name: unique_name,
+                        qualified_name: unique_name,
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.var_type.clone(),
                         exported: false,
@@ -902,7 +902,7 @@ impl SemanticAnalyzer {
                     let idx = self.symbol_table.add_symbol_to_scope(
                         lambda_scope,
                         Symbol {
-                            name: unique_name,
+                            qualified_name: unique_name,
                             original_name: og_name,
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
@@ -958,7 +958,7 @@ impl SemanticAnalyzer {
                 let idx = self.symbol_table.add_symbol_to_scope(
                     for_scope,
                     Symbol {
-                        name: unique_name,
+                        qualified_name: unique_name,
                         original_name: og_name,
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.binding_type.clone(),
@@ -1012,7 +1012,7 @@ impl SemanticAnalyzer {
                 let idx = self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
-                        name: type_def.name.clone(),
+                        qualified_name: format!("{}::{}", module.module_name, type_def.name),
                         original_name: type_def.name.clone(),
                         symbol_type: SymbolType::Type,
                         value_type: type_def.underlying_ty.clone(),
@@ -1051,7 +1051,7 @@ impl SemanticAnalyzer {
                 let idx = self.symbol_table.add_symbol_to_scope(
                     module_scope,
                     Symbol {
-                        name: func_def.func_name.to_string(),
+                        qualified_name: format!("{}::{}", module.module_name, func_def.func_name),
                         original_name: func_def.func_name.to_string(),
                         symbol_type: SymbolType::Identifier,
                         value_type: func_type,
@@ -1068,7 +1068,7 @@ impl SemanticAnalyzer {
                     let idx = self.symbol_table.add_symbol_to_scope(
                         func_scope,
                         Symbol {
-                            name: arg.arg_name.clone(),
+                            qualified_name: arg.arg_name.clone(),
                             original_name: arg.arg_name.clone(),
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
@@ -1093,6 +1093,15 @@ impl SemanticAnalyzer {
         }
 
         Ok(())
+    }
+
+    fn resolve_qualified_name(
+        &mut self,
+        curr_module_name: &str,
+        scope: &mut usize,
+        name: &str,
+    ) -> Result<String, String> {
+        Ok(String::new())
     }
 
     fn resolve_names_expr(

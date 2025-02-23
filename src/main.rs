@@ -1,3 +1,4 @@
+#![feature(extract_if)]
 #![feature(path_file_prefix)]
 use std::{
     collections::{HashMap, VecDeque},

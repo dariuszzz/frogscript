@@ -1,16 +1,43 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ptr::read};
 
 use crate::{
     pond::Target,
-    ssa_ir::{Block, BlockParameter, IRInstr, IRValue, SSAIR},
+    ssa_ir::{Block, BlockParameter, IRInstr, IRValue, IRVariable, SSAIR},
     symbol_table::SymbolTable,
-    BinaryOperation, CodeBlock, Expression, Literal, Program, Type, Variable, VariableDecl,
+    Arena, BinaryOperation, CodeBlock, Expression, Literal, Program, Type, Variable, VariableDecl,
 };
+
+#[derive(Default)]
+pub struct LoopInfo {
+    pub start_label: String,
+    pub end_label: String,
+}
 
 #[derive(Default)]
 pub struct IRGen {
     pub var_counter: u32,
     pub label_counter: u32,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct DTreeNode {
+    pub dependencies: Vec<usize>,
+    pub dependees: Vec<usize>,
+    pub strongly_connected: Option<usize>,
+}
+
+type DependencyGraph = Arena<DTreeNode>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphFragment {
+    CyclicGroup(usize),
+    SingleNode(usize),
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct ParamContext {
+    // target, prev_node
+    pub visits: Vec<(GraphFragment, i32)>,
 }
 
 impl IRGen {
@@ -45,8 +72,15 @@ impl IRGen {
                     });
                 }
 
+                let func_symbol = symbol_table
+                    .get_scope(func.symbol_idx.0)
+                    .unwrap()
+                    .symbols
+                    .get(func.symbol_idx.1)
+                    .unwrap();
+
                 ssa_ir.blocks.push(Block {
-                    name: func.func_name.clone(),
+                    name: func_symbol.qualified_name.clone(),
                     parameters,
                     instructions: vec![],
                 });
@@ -57,157 +91,582 @@ impl IRGen {
                     &mut ssa_ir,
                     symbol_table,
                     &mut HashMap::new(),
+                    &LoopInfo::default(),
                     &func.function_body,
                 )?;
 
-                // stupid hack to make blocks in the correct order
+                // these are the instructions before any label
+                let remaining_instrs = Self::split_labels_into_blocks(&mut ssa_ir, instructions);
                 let block = ssa_ir.blocks.get_mut(block_idx).unwrap();
-                block.instructions = instructions;
+                block.instructions = remaining_instrs;
+
+                // Deletes unreachable instructions in all blocks belonging to this func
+                self.prune_all_instructions_after_first_branch(&mut ssa_ir, block_idx);
+
+                self.figure_out_block_params_for_func(&mut ssa_ir, block_idx);
             }
 
             scope += 1;
         }
-
-        self.figure_out_block_params(&mut ssa_ir);
 
         println!("{ssa_ir}");
 
         Ok(ssa_ir)
     }
 
-    fn figure_out_block_params(&mut self, ssa: &mut SSAIR) {
-        // let mut blocks = ssa.blocks.clone();
-        // for curr_block in &mut blocks {
-        //     let mut new_params = curr_block.parameters.clone();
-        //     let mut local_vars = vec![];
+    fn build_fn_dependency_graph(
+        &mut self,
+        ssa: &mut SSAIR,
+        func_block_idx: usize,
+    ) -> DependencyGraph {
+        let mut graph: DependencyGraph = Arena::new();
 
-        //     // to make sure already existing params wont get scrambled/added again
-        //     for param in &new_params {
-        //         local_vars.push(param.name.clone());
-        //     }
+        let blocks_by_name = ssa
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(idx, b)| (b.name.clone(), idx - func_block_idx))
+            .collect::<HashMap<String, usize>>();
 
-        //     for instr in &mut curr_block.instructions {
-        //         match instr {
-        //             IRInstr::Assign(res, irvalue) => {
-        //                 local_vars.push(res.clone());
-        //                 if let IRValue::Variable(val) = irvalue {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::BinOp(res, irvalue, irvalue1, _) => {
-        //                 local_vars.push(res.clone());
-        //                 if let IRValue::Variable(val) = irvalue {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
+        let len = ssa.blocks.len();
+        // Create nodes
+        for i in func_block_idx..len {
+            let node = DTreeNode::default();
+            graph.insert(node);
+        }
 
-        //                 if let IRValue::Variable(val) = irvalue1 {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::UnOp(res, irvalue, unary_operation) => {
-        //                 local_vars.push(res.clone());
-        //                 if let IRValue::Variable(val) = irvalue {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::Call(res, irvalue, args) => {
-        //                 local_vars.push(res.clone());
-        //                 for arg in args {
-        //                     if let IRValue::Variable(val) = arg {
-        //                         if !local_vars.contains(&val.name) {
-        //                             new_params.push(BlockParameter {
-        //                                 name: val.name.clone(),
-        //                                 ty: Type::Any,
-        //                             })
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
-        //                 if let IRValue::Variable(val) = irvalue {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
+        // Fill in dependees and dependencies
+        for i in func_block_idx..len {
+            let block = &ssa.blocks[i];
+            let curr_idx = i - func_block_idx;
 
-        //                 // add all params of branches
-        //                 let true_block = ssa.blocks.iter().find(|b| b.name == *true_label).unwrap();
+            for instr in &block.instructions {
+                match instr {
+                    IRInstr::If(_, true_block, _, false_block, _) => {
+                        let true_block_id = blocks_by_name.get(true_block).unwrap();
+                        let false_block_id = blocks_by_name.get(false_block).unwrap();
 
-        //                 for arg in &true_block.parameters {
-        //                     if !local_vars.contains(&arg.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: arg.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
+                        let true_block = graph.get_mut(*true_block_id).unwrap();
+                        true_block.dependencies.push(curr_idx);
 
-        //                 let false_block =
-        //                     ssa.blocks.iter().find(|b| b.name == *false_label).unwrap();
+                        let false_block = graph.get_mut(*false_block_id).unwrap();
+                        false_block.dependencies.push(curr_idx);
 
-        //                 for arg in &false_block.parameters {
-        //                     if !local_vars.contains(&arg.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: arg.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::Goto(label, args) => {
-        //                 // add all params of goto
-        //                 let block = ssa.blocks.iter().find(|b| b.name == *label).unwrap();
+                        let this_block = graph.get_mut(curr_idx).unwrap();
+                        this_block
+                            .dependees
+                            .append(&mut vec![*true_block_id, *false_block_id]);
+                    }
+                    IRInstr::Goto(block, _) => {
+                        let goto_block_id = blocks_by_name.get(block).unwrap();
 
-        //                 for arg in &block.parameters {
-        //                     if !local_vars.contains(&arg.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: arg.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::Return(irvalue) => {
-        //                 if let IRValue::Variable(val) = irvalue {
-        //                     if !local_vars.contains(&val.name) {
-        //                         new_params.push(BlockParameter {
-        //                             name: val.name.clone(),
-        //                             ty: Type::Any,
-        //                         })
-        //                     }
-        //                 }
-        //             }
-        //             IRInstr::Label(_) => unimplemented!(),
-        //         }
-        //     }
+                        let goto_block = graph.get_mut(*goto_block_id).unwrap();
+                        goto_block.dependencies.push(curr_idx);
 
-        //     curr_block.parameters = new_params;
+                        let this_block = graph.get_mut(curr_idx).unwrap();
+                        this_block.dependees.append(&mut vec![*goto_block_id]);
+                    }
+                    // other instructions dont reference different blocks
+                    _ => {}
+                }
+            }
+        }
+
+        return graph;
+    }
+
+    fn find_params_from_uninitialized_vars(
+        &mut self,
+        ssa: &mut SSAIR,
+        func_block_idx: usize,
+        block_idx: usize,
+    ) -> (Vec<BlockParameter>, Vec<String>) {
+        let block = &ssa.blocks[func_block_idx + block_idx];
+        let mut local_vars = vec![];
+        let mut new_params = vec![];
+
+        // for param in &block.parameters {
+        //     local_vars.push(param.name.clone());
         // }
 
-        // ssa.blocks = blocks;
+        for instr in &block.instructions {
+            match instr {
+                IRInstr::Unimplemented(res, _) => {
+                    local_vars.push(res.clone());
+                }
+                IRInstr::Assign(res, irvalue) => {
+                    local_vars.push(res.clone());
+                    if let IRValue::Variable(val) = irvalue {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+                }
+                IRInstr::BinOp(res, irvalue, irvalue1, _) => {
+                    local_vars.push(res.clone());
+                    if let IRValue::Variable(val) = irvalue {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+
+                    if let IRValue::Variable(val) = irvalue1 {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+                }
+                IRInstr::UnOp(res, irvalue, unary_operation) => {
+                    local_vars.push(res.clone());
+                    if let IRValue::Variable(val) = irvalue {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+                }
+                IRInstr::Call(res, irvalue, args) => {
+                    local_vars.push(res.clone());
+                    for arg in args {
+                        if let IRValue::Variable(val) = arg {
+                            if !local_vars.contains(&val.name) {
+                                new_params.push(BlockParameter {
+                                    name: val.name.clone(),
+                                    ty: val.ty.clone(),
+                                })
+                            }
+                        }
+                    }
+                }
+                IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
+                    if let IRValue::Variable(val) = irvalue {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+
+                    // add all params of branches
+                    // let true_block = ssa.blocks.iter().find(|b| b.name == *true_label).unwrap();
+
+                    // for arg in &true_block.parameters {
+                    //     if !local_vars.contains(&arg.name) {
+                    //         new_params.push(BlockParameter {
+                    //             name: arg.name.clone(),
+                    //             ty: Type::Any,
+                    //         })
+                    //     }
+                    // }
+
+                    // let false_block = ssa.blocks.iter().find(|b| b.name == *false_label).unwrap();
+
+                    // for arg in &false_block.parameters {
+                    //     if !local_vars.contains(&arg.name) {
+                    //         new_params.push(BlockParameter {
+                    //             name: arg.name.clone(),
+                    //             ty: Type::Any,
+                    //         })
+                    //     }
+                    // }
+                }
+                IRInstr::Goto(label, args) => {
+                    // add all params of goto
+                    // let block = ssa.blocks.iter().find(|b| b.name == *label).unwrap();
+
+                    // for arg in &block.parameters {
+                    //     if !local_vars.contains(&arg.name) {
+                    //         new_params.push(BlockParameter {
+                    //             name: arg.name.clone(),
+                    //             ty: Type::Any,
+                    //         })
+                    //     }
+                    // }
+                }
+                IRInstr::Return(irvalue) => {
+                    if let IRValue::Variable(val) = irvalue {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+                }
+                IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
+            }
+        }
+
+        return (new_params, local_vars);
+    }
+
+    fn figure_out_block_params(
+        &mut self,
+        ssa: &mut SSAIR,
+        graph: &mut DependencyGraph,
+        ctx: &mut ParamContext,
+        func_block_idx: usize,
+        prev_node: i32,
+        unresolved_vars: &mut Vec<BlockParameter>,
+        comps: &Vec<Vec<usize>>,
+        block_idx: usize,
+    ) {
+        let dnode = graph.get(block_idx).unwrap();
+        let cyclic = dnode.strongly_connected.clone();
+        let dependencies = &dnode.dependencies.clone();
+
+        if let Some(group_idx) = cyclic {
+            // Part of a group of cyclic nodes
+            if ctx
+                .visits
+                .contains(&(GraphFragment::CyclicGroup(group_idx), prev_node))
+            {
+                return;
+            }
+            // Mark the whole group as visited
+            ctx.visits
+                .push((GraphFragment::CyclicGroup(group_idx), prev_node));
+
+            let group = comps[group_idx].clone();
+
+            // determine all params of any node from the group
+            let mut all_possible_params = unresolved_vars.clone();
+            let mut local_vars_by_block_idx = HashMap::new();
+            for block_idx in &group {
+                let (guaranteed_params, local_vars) =
+                    self.find_params_from_uninitialized_vars(ssa, func_block_idx, *block_idx);
+
+                for param in guaranteed_params {
+                    if !all_possible_params.contains(&param) {
+                        all_possible_params.push(param);
+                    }
+                }
+
+                local_vars_by_block_idx.insert(block_idx, local_vars);
+            }
+
+            for block_idx in &group {
+                // for each block get rid of the params that it resolved
+                let this_block_local_vars = local_vars_by_block_idx.get(&block_idx).unwrap();
+                let mut this_block_params = all_possible_params.clone();
+                this_block_params.retain(|var| !this_block_local_vars.contains(&var.name));
+
+                // resolve all vars from all blocks' local vars
+                unresolved_vars.retain(|var| !this_block_local_vars.contains(&var.name));
+
+                for param in &this_block_params {
+                    if !unresolved_vars.contains(&param) {
+                        unresolved_vars.push(param.clone());
+                    }
+                }
+
+                let block = &mut ssa.blocks[func_block_idx + block_idx];
+                for param in this_block_params {
+                    if !block.parameters.contains(&param) {
+                        block.parameters.push(param);
+                    }
+                }
+
+                let dnode = graph.get(*block_idx).unwrap();
+
+                // Visit all dependencies outside of this cyclic group
+                let dependencies = &dnode.dependencies.clone();
+                for dep in dependencies {
+                    if group.contains(dep) {
+                        continue;
+                    }
+
+                    self.figure_out_block_params(
+                        ssa,
+                        graph,
+                        ctx,
+                        func_block_idx,
+                        *block_idx as i32,
+                        &mut unresolved_vars.clone(),
+                        comps,
+                        *dep,
+                    );
+                }
+            }
+        } else {
+            // Single node, not cyclic
+            if ctx
+                .visits
+                .contains(&(GraphFragment::SingleNode(block_idx), prev_node))
+            {
+                return;
+            }
+            // Mark node as visited
+            ctx.visits
+                .push((GraphFragment::SingleNode(block_idx), prev_node));
+
+            // Figure out which params are needed from uninit vars
+            let (mut guaranteed_params, local_vars) =
+                self.find_params_from_uninitialized_vars(ssa, func_block_idx, block_idx);
+
+            unresolved_vars.retain(|var| !local_vars.contains(&var.name));
+
+            for param in &guaranteed_params {
+                if !unresolved_vars.contains(&param) {
+                    unresolved_vars.push(param.clone());
+                }
+            }
+
+            for param in unresolved_vars.iter() {
+                if !guaranteed_params.contains(&param) {
+                    guaranteed_params.push(param.clone());
+                }
+            }
+
+            // Add those params
+            let block = &mut ssa.blocks[func_block_idx + block_idx];
+            println!("{}, {:?}", block.name, unresolved_vars);
+            for param in guaranteed_params {
+                if !block.parameters.contains(&param) {
+                    block.parameters.push(param);
+                }
+            }
+
+            // Visit dependencies
+            for dep in dependencies {
+                self.figure_out_block_params(
+                    ssa,
+                    graph,
+                    ctx,
+                    func_block_idx,
+                    block_idx as i32,
+                    &mut unresolved_vars.clone(),
+                    comps,
+                    *dep,
+                );
+            }
+        }
+    }
+
+    //https://www.baeldung.com/cs/scc-tarjans-algorithm
+    fn strong_connect(
+        num: &mut Vec<i32>,
+        lowest: &mut Vec<i32>,
+        visited: &mut Vec<bool>,
+        processed: &mut Vec<bool>,
+        s: &mut Vec<usize>,
+        i: &mut i32,
+        comps: &mut Vec<Vec<usize>>,
+        graph: &mut DependencyGraph,
+        v: usize,
+    ) {
+        num[v] = *i;
+        lowest[v] = num[v];
+        *i = *i + 1;
+        visited[v] = true;
+        s.push(v);
+
+        let node = graph.get(v).unwrap();
+        let successors = node.dependees.clone();
+        for u in successors {
+            if !visited[u] {
+                Self::strong_connect(num, lowest, visited, processed, s, i, comps, graph, u);
+                lowest[v] = lowest[v].min(lowest[u]);
+            } else if !processed[u] {
+                lowest[v] = lowest[v].min(num[u]);
+            }
+        }
+
+        processed[v] = true;
+
+        if lowest[v] == num[v] {
+            let mut scc = Vec::new();
+            let mut scc_v = s.pop().unwrap();
+
+            while scc_v != v {
+                scc.push(scc_v);
+                scc_v = s.pop().unwrap();
+            }
+
+            scc.push(scc_v);
+
+            if scc.len() > 1 {
+                comps.push(scc);
+                let node = graph.get_mut(v).unwrap();
+                node.strongly_connected = Some(comps.len() - 1);
+            }
+        }
+    }
+
+    fn find_strongly_connected(&mut self, graph: &mut DependencyGraph) -> Vec<Vec<usize>> {
+        let mut num = vec![-1; graph.vec.len()];
+        let mut lowest = vec![-1; graph.vec.len()];
+        let mut visited = vec![false; graph.vec.len()];
+        let mut processed = vec![false; graph.vec.len()];
+        let mut s = Vec::new();
+        let mut i = 0;
+
+        let mut comps = vec![];
+
+        let v_count = graph.vec.len();
+        for v in 0..v_count {
+            if !visited[v] {
+                Self::strong_connect(
+                    &mut num,
+                    &mut lowest,
+                    &mut visited,
+                    &mut processed,
+                    &mut s,
+                    &mut i,
+                    &mut comps,
+                    graph,
+                    v,
+                );
+            }
+        }
+
+        comps
+    }
+
+    fn figure_out_block_params_for_func(&mut self, ssa: &mut SSAIR, func_block_idx: usize) {
+        let mut dependency_graph = self.build_fn_dependency_graph(ssa, func_block_idx);
+        let strongly_connected_comps = self.find_strongly_connected(&mut dependency_graph);
+
+        println!("{strongly_connected_comps:?}");
+
+        let last_block_idx = ssa.blocks.len() - func_block_idx - 1;
+
+        let mut ctx = ParamContext::default();
+
+        self.figure_out_block_params(
+            ssa,
+            &mut dependency_graph,
+            &mut ctx,
+            func_block_idx,
+            -1,
+            &mut vec![],
+            &strongly_connected_comps,
+            last_block_idx,
+        );
+
+        self.fix_passing_parameters_by_gotos(ssa, func_block_idx);
+    }
+
+    fn fix_passing_parameters_by_gotos(&mut self, ssa: &mut SSAIR, func_block_idx: usize) {
+        let len = ssa.blocks.len();
+
+        let block_copies = ssa.blocks.clone();
+
+        for idx in func_block_idx..len {
+            let block = &mut ssa.blocks[idx];
+            let mut local_vars = HashMap::new();
+
+            for param in &block.parameters {
+                let og_name = param.name.split("#").next().unwrap().to_string();
+                local_vars.insert(og_name, param.name.clone());
+            }
+
+            for instr in &mut block.instructions {
+                match instr {
+                    IRInstr::Unimplemented(res, _) => {
+                        let og_name = res.split("#").next().unwrap().to_string();
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::Assign(res, irvalue) => {
+                        let og_name = res.split("#").next().unwrap().to_string();
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::BinOp(res, irvalue, irvalue1, _) => {
+                        let og_name = res.split("#").next().unwrap().to_string();
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::UnOp(res, irvalue, unary_operation) => {
+                        let og_name = res.split("#").next().unwrap().to_string();
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::Call(res, irvalue, args) => {
+                        let og_name = res.split("#").next().unwrap().to_string();
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
+                        // add all params of branches
+                        let true_block =
+                            block_copies.iter().find(|b| b.name == *true_label).unwrap();
+
+                        for arg in &true_block.parameters {
+                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            let this_block_name = local_vars.get(&og_name).unwrap();
+                            true_args.push(IRValue::Variable(IRVariable {
+                                name: this_block_name.to_string(),
+                                ty: Type::Any,
+                            }));
+                        }
+
+                        let false_block = block_copies
+                            .iter()
+                            .find(|b| b.name == *false_label)
+                            .unwrap();
+
+                        for arg in &false_block.parameters {
+                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            let this_block_name = local_vars.get(&og_name).unwrap();
+                            false_args.push(IRValue::Variable(IRVariable {
+                                name: this_block_name.to_string(),
+                                ty: Type::Any,
+                            }));
+                        }
+                    }
+                    IRInstr::Goto(label, args) => {
+                        // add all params of goto
+                        //
+                        let block = block_copies.iter().find(|b| b.name == *label).unwrap();
+
+                        for arg in &block.parameters {
+                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            println!("{og_name}, {local_vars:?}");
+                            let this_block_name = local_vars.get(&og_name).unwrap();
+                            args.push(IRValue::Variable(IRVariable {
+                                name: this_block_name.to_string(),
+                                ty: Type::Any,
+                            }));
+                        }
+                    }
+                    IRInstr::Return(irvalue) => {}
+                    IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
+                }
+            }
+        }
+    }
+
+    fn prune_all_instructions_after_first_branch(
+        &mut self,
+        ssa: &mut SSAIR,
+        func_block_idx: usize,
+    ) {
+        let len = ssa.blocks.len();
+        for block_idx in func_block_idx..len {
+            let block = &mut ssa.blocks[block_idx];
+            let mut instructions = Vec::new();
+
+            for instr in block.instructions.clone() {
+                match instr {
+                    instr @ IRInstr::Goto(_, _) | instr @ IRInstr::If(_, _, _, _, _) => {
+                        instructions.push(instr);
+                        break;
+                    }
+                    instr => instructions.push(instr),
+                }
+            }
+
+            block.instructions = instructions;
+        }
     }
 
     fn split_labels_into_blocks(ssa: &mut SSAIR, instructions: Vec<IRInstr>) -> Vec<IRInstr> {
@@ -250,18 +709,18 @@ impl IRGen {
         ssa: &mut SSAIR,
         symbol_table: &SymbolTable,
         renamed_vars: &mut HashMap<String, String>,
+        loop_info: &LoopInfo,
         codeblock: &CodeBlock,
     ) -> Result<Vec<IRInstr>, String> {
         let mut instructions = Vec::new();
 
         for expr in &codeblock.expressions {
             let (res_var, mut instrs) =
-                self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &expr)?;
+                self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, loop_info, &expr)?;
             instructions.append(&mut instrs);
         }
 
-        let remaining_instrs = Self::split_labels_into_blocks(ssa, instructions);
-        Ok(remaining_instrs)
+        Ok(instructions)
     }
 
     pub fn generate_ir_expr(
@@ -270,6 +729,7 @@ impl IRGen {
         ssa: &mut SSAIR,
         symbol_table: &SymbolTable,
         renamed_vars: &mut HashMap<String, String>,
+        loop_info: &LoopInfo,
         expr: &Expression,
     ) -> Result<(IRValue, Vec<IRInstr>), String> {
         let mut instructions = Vec::new();
@@ -283,27 +743,28 @@ impl IRGen {
                     ssa,
                     symbol_table,
                     renamed_vars,
+                    loop_info,
                     &variable_decl.var_value,
                 )?;
 
-                renamed_vars.remove(&variable_decl.var_name);
+                renamed_vars.insert(variable_decl.var_name.clone(), var_name.clone());
 
                 instructions.append(&mut instrs);
 
                 instructions.push(IRInstr::Assign(var_name.clone(), value));
 
                 return Ok((
-                    IRValue::Variable(Variable {
+                    IRValue::Variable(IRVariable {
                         name: var_name,
-                        decl_scope: 0,
-                        symbol_idx: variable_decl.symbol_idx,
+                        // symbol_idx: variable_decl.symbol_idx,
+                        ty: variable_decl.var_type.clone(),
                     }),
                     instructions,
                 ));
             }
             Expression::Literal(literal) => {
                 let value = match literal {
-                    Literal::String(vec) => todo!(),
+                    Literal::String(vec) => IRValue::Literal(Literal::Int(0)),
                     lit => IRValue::Literal(lit.clone()),
                 };
 
@@ -312,21 +773,33 @@ impl IRGen {
             Expression::BinaryOp(binary_op) => {
                 let res = self.get_next_unique_name("_");
 
-                let (lhs, mut lhs_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &binary_op.lhs)?;
-                let (rhs, mut rhs_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &binary_op.rhs)?;
+                let (lhs, mut lhs_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &binary_op.lhs,
+                )?;
+                let (rhs, mut rhs_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &binary_op.rhs,
+                )?;
 
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
-                instructions.push(IRInstr::BinOp(res.clone(), lhs, rhs, binary_op.op));
+                instructions.push(IRInstr::BinOp(res.clone(), lhs.clone(), rhs, binary_op.op));
 
                 return Ok((
-                    IRValue::Variable(Variable {
+                    IRValue::Variable(IRVariable {
                         name: res,
-                        decl_scope: 0,
-                        symbol_idx: (0, 0),
+                        // IDK if this should be lhs cuz what about binops that take different types of args?
+                        ty: lhs.ty(),
                     }),
                     instructions,
                 ));
@@ -339,18 +812,18 @@ impl IRGen {
                     ssa,
                     symbol_table,
                     renamed_vars,
+                    loop_info,
                     &unary_op.operand,
                 )?;
 
                 instructions.append(&mut operand_instrs);
 
-                instructions.push(IRInstr::UnOp(res.clone(), operand, unary_op.op));
+                instructions.push(IRInstr::UnOp(res.clone(), operand.clone(), unary_op.op));
 
                 return Ok((
-                    IRValue::Variable(Variable {
+                    IRValue::Variable(IRVariable {
                         name: res,
-                        decl_scope: 0,
-                        symbol_idx: (0, 0),
+                        ty: operand.ty(),
                     }),
                     instructions,
                 ));
@@ -358,50 +831,89 @@ impl IRGen {
             Expression::FunctionCall(function_call) => {
                 let res = self.get_next_unique_name("_");
 
-                let (func_expr, mut func_instrs) = self.generate_ir_expr(
+                let (mut func_expr, mut func_instrs) = self.generate_ir_expr(
                     scope,
                     ssa,
                     symbol_table,
                     renamed_vars,
+                    loop_info,
                     &function_call.func_expr,
                 )?;
+
+                // if let IRValue::IRVariable(func) = &mut func_expr {
+                // let func_symbol = symbol_table
+                //     .get_scope(func.symbol_idx.0)
+                //     .unwrap()
+                //     .symbols
+                //     .get(func.symbol_idx.1)
+                //     .unwrap();
+
+                // func.name = func_symbol.qualified_name.clone();
+                // }
 
                 instructions.append(&mut func_instrs);
 
                 let mut args = vec![];
                 for arg in &function_call.arguments {
-                    let (arg_expr, mut arg_instrs) =
-                        self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &arg)?;
+                    let (arg_expr, mut arg_instrs) = self.generate_ir_expr(
+                        scope,
+                        ssa,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &arg,
+                    )?;
 
                     instructions.append(&mut arg_instrs);
 
                     args.push(arg_expr);
                 }
 
-                instructions.push(IRInstr::Call(res.clone(), func_expr, args));
+                instructions.push(IRInstr::Call(res.clone(), func_expr.clone(), args));
 
                 return Ok((
-                    IRValue::Variable(Variable {
+                    IRValue::Variable(IRVariable {
                         name: res,
-                        decl_scope: 0,
-                        symbol_idx: (0, 0),
+                        ty: func_expr.ty(),
                     }),
                     instructions,
                 ));
             }
             Expression::Variable(variable) => {
+                let var_symbol = symbol_table
+                    .get_scope(variable.symbol_idx.0)
+                    .unwrap()
+                    .symbols
+                    .get(variable.symbol_idx.1)
+                    .unwrap();
+
                 if let Some(replaced_name) = renamed_vars.get(&variable.name) {
-                    let mut var = variable.clone();
-                    var.name = replaced_name.clone();
-                    return Ok((IRValue::Variable(var), instructions));
+                    return Ok((
+                        IRValue::Variable(IRVariable {
+                            name: replaced_name.clone(),
+                            ty: var_symbol.value_type.clone(),
+                        }),
+                        instructions,
+                    ));
                 }
-                return Ok((IRValue::Variable(variable.clone()), instructions));
+
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: variable.name.clone(),
+                        ty: var_symbol.value_type.clone(),
+                    }),
+                    instructions,
+                ));
             }
             Expression::Return(expression) => {
-                let res = self.get_next_unique_name("_");
-
-                let (ret_expr, mut ret_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &expression)?;
+                let (ret_expr, mut ret_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &expression,
+                )?;
 
                 instructions.append(&mut ret_instrs);
                 instructions.push(IRInstr::Return(ret_expr));
@@ -409,39 +921,136 @@ impl IRGen {
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions));
             }
             Expression::Assignment(assignment) => {
-                let res = self.get_next_unique_name("_");
-
-                let (lhs, mut lhs_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &assignment.lhs)?;
-                let (rhs, mut rhs_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &assignment.rhs)?;
+                let (lhs, mut lhs_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &assignment.lhs,
+                )?;
+                let (rhs, mut rhs_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &assignment.rhs,
+                )?;
 
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
                 if let IRValue::Variable(var) = lhs.clone() {
+                    let original_name = var.name.split("#").next().unwrap();
+                    let res = self.get_next_unique_name(&original_name);
                     instructions.push(IRInstr::Assign(res.clone(), rhs));
-                    renamed_vars.insert(var.name, res.clone());
+                    renamed_vars.insert(original_name.to_string(), res.clone());
                 } else {
-                    panic!("Assignment to literal?");
+                    panic!("Assignment to literal?, {lhs:?}");
                 }
 
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions));
             }
-            Expression::AnonStruct(anon_struct) => todo!(),
-            Expression::ArrayLiteral(array_literal) => todo!(),
-            Expression::ArrayAccess(array_access) => todo!(),
-            Expression::FieldAccess(field_access) => todo!(),
-            Expression::NamedStruct(named_struct) => todo!(),
-            Expression::Lambda(lambda) => todo!(),
-            Expression::Range(range) => todo!(),
-            Expression::JS(expression) => todo!(),
-            Expression::BuiltinType(expression) => todo!(),
-            Expression::If(if_stmt) => {
+            Expression::AnonStruct(anon_struct) => {
                 let res = self.get_next_unique_name("_");
-
-                let (cond_expr, mut cond_instrs) =
-                    self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, &if_stmt.cond)?;
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Anon struct"))],
+                ));
+            }
+            Expression::ArrayLiteral(array_literal) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Array literal"))],
+                ));
+            }
+            Expression::ArrayAccess(array_access) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Array access"))],
+                ));
+            }
+            Expression::FieldAccess(field_access) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Field access"))],
+                ));
+            }
+            Expression::NamedStruct(named_struct) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Named struct"))],
+                ));
+            }
+            Expression::Lambda(lambda) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Lambda"))],
+                ));
+            }
+            Expression::Range(range) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("Range"))],
+                ));
+            }
+            Expression::JS(expression) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("JS"))],
+                ));
+            }
+            Expression::BuiltinType(expression) => {
+                let res = self.get_next_unique_name("_");
+                return Ok((
+                    IRValue::Variable(IRVariable {
+                        name: res.clone(),
+                        ty: Type::Any,
+                    }),
+                    vec![IRInstr::Unimplemented(res, format!("@type"))],
+                ));
+            }
+            Expression::If(if_stmt) => {
+                let (cond_expr, mut cond_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &if_stmt.cond,
+                )?;
 
                 instructions.append(&mut cond_instrs);
 
@@ -469,6 +1078,7 @@ impl IRGen {
                     ssa,
                     symbol_table,
                     &mut renamed_vars.clone(),
+                    loop_info,
                     &if_stmt.true_branch,
                 )?;
 
@@ -483,6 +1093,7 @@ impl IRGen {
                         ssa,
                         symbol_table,
                         &mut renamed_vars.clone(),
+                        loop_info,
                         else_branch,
                     )?;
 
@@ -493,11 +1104,67 @@ impl IRGen {
 
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions));
             }
-            Expression::For(_) => todo!(),
+            Expression::For(for_expr) => {
+                let loop_cond_label = self.get_next_unique_name("loop_cond");
+                let loop_body_label = self.get_next_unique_name("loop_body");
+                let loop_end_label = self.get_next_unique_name("loop_end");
+                instructions.push(IRInstr::Goto(loop_cond_label.clone(), vec![]));
+                instructions.push(IRInstr::Label(loop_cond_label.clone()));
+
+                let (interator_expr, mut iterator_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &for_expr.iterator,
+                )?;
+
+                let unique_binding_name = self.get_next_unique_name(&for_expr.binding);
+                renamed_vars.insert(for_expr.binding.clone(), unique_binding_name.clone());
+
+                instructions.append(&mut iterator_instrs);
+                instructions.push(IRInstr::Assign(unique_binding_name, interator_expr.clone()));
+                // instructions for condition checking here...
+                //
+                //  ---
+                instructions.push(IRInstr::If(
+                    interator_expr,
+                    loop_body_label.clone(),
+                    vec![],
+                    loop_end_label.clone(),
+                    vec![],
+                ));
+                instructions.push(IRInstr::Label(loop_body_label.clone()));
+
+                let mut loop_body = self.generate_ir_codeblock(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    &mut renamed_vars.clone(),
+                    &LoopInfo {
+                        start_label: loop_cond_label.clone(),
+                        end_label: loop_end_label.clone(),
+                    },
+                    &for_expr.body,
+                )?;
+                instructions.append(&mut loop_body);
+
+                instructions.push(IRInstr::Goto(loop_cond_label.clone(), vec![]));
+                instructions.push(IRInstr::Label(loop_end_label.clone()));
+
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+            }
             Expression::Import(import) => todo!(),
             Expression::Placeholder => todo!(),
-            Expression::Break => todo!(),
-            Expression::Continue => todo!(),
+            Expression::Break => {
+                instructions.push(IRInstr::Goto(loop_info.end_label.clone(), vec![]));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+            }
+            Expression::Continue => {
+                instructions.push(IRInstr::Goto(loop_info.start_label.clone(), vec![]));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+            }
         }
     }
 

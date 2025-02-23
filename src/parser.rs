@@ -1353,7 +1353,10 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Placeholder)
             }
-            TokenKind::Identifier(Identifier::Break) => Ok(Expression::Break),
+            TokenKind::Identifier(Identifier::Break) => {
+                self.advance();
+                Ok(Expression::Break)
+            }
             TokenKind::BuiltinJS => self.parse_js(indent),
             TokenKind::BuiltinType => self.parse_builtin_type(indent),
             TokenKind::CurlyLeft => self.parse_struct_literal(indent),

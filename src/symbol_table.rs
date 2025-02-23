@@ -4,7 +4,7 @@ use crate::{Arena, Import, SymbolIdx, Type};
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
-    pub name: String,
+    pub qualified_name: String,
     pub original_name: String,
     pub symbol_type: SymbolType,
     pub value_type: Type,
@@ -78,7 +78,7 @@ impl SymbolTable {
             .symbols
             .iter()
             .enumerate()
-            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
+            .filter(|(idx, s)| s.original_name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -94,7 +94,7 @@ impl SymbolTable {
             .symbols
             .iter_mut()
             .enumerate()
-            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
+            .filter(|(idx, s)| s.original_name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -171,13 +171,13 @@ impl SymbolTable {
 
     pub fn add_symbol_to_scope(&mut self, scope: usize, symbol: Symbol) -> Result<usize, String> {
         let exists = self
-            .scope_get_symbol(scope, &symbol.name, symbol.symbol_type)
+            .scope_get_symbol(scope, &symbol.qualified_name, symbol.symbol_type)
             .is_some();
 
         let curr_scope = self.get_scope_mut(scope).ok_or("Scope does not exist")?;
 
         if exists {
-            return Err(format!("Duplicate symbol {:?}", symbol.name));
+            return Err(format!("Duplicate symbol {:?}", symbol.qualified_name));
         } else {
             curr_scope.symbols.push(symbol);
             Ok(curr_scope.symbols.len() - 1)

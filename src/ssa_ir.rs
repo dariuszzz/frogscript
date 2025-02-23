@@ -15,7 +15,7 @@ impl Default for SSAIR {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockParameter {
     pub name: String,
     pub ty: Type,
@@ -39,9 +39,30 @@ impl Default for Block {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct IRVariable {
+    pub name: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum IRValue {
     Literal(Literal),
-    Variable(Variable),
+    Variable(IRVariable),
+}
+
+impl IRValue {
+    pub fn ty(&self) -> Type {
+        match self {
+            IRValue::Variable(v) => v.ty.clone(),
+            IRValue::Literal(lit) => match lit {
+                Literal::String(_) => Type::String,
+                Literal::Int(_) => Type::Int,
+                Literal::Uint(_) => Type::Uint,
+                Literal::Float(_) => Type::Float,
+                Literal::Boolean(_) => Type::Boolean,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +75,8 @@ pub enum IRInstr {
     Goto(String, Vec<IRValue>),
     Return(IRValue),
     Label(String),
+
+    Unimplemented(String, String),
 }
 
 impl Display for SSAIR {
@@ -129,6 +152,8 @@ impl Display for IRInstr {
                     "if {val} goto {true_label}({true_args}) else goto {false_label}({false_args})"
                 ))
             }
+
+            IRInstr::Unimplemented(var, str) => f.write_fmt(format_args!("{var} = [[{str}]]")),
         }
     }
 }
@@ -137,7 +162,10 @@ impl Display for IRValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IRValue::Literal(literal) => f.write_fmt(format_args!("{literal:?}")),
-            IRValue::Variable(variable) => f.write_fmt(format_args!("{}", variable.name)),
+            IRValue::Variable(variable) => {
+                // f.write_fmt(format_args!("{}: {}", variable.name, variable.ty))
+                f.write_fmt(format_args!("{}", variable.name))
+            }
         }
     }
 }
