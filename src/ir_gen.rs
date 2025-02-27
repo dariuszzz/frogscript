@@ -600,35 +600,41 @@ impl IRGen {
 
         let block_copies = ssa.blocks.clone();
 
+        let get_og_name = |name: &str| {
+            let name = name.split("#").next().unwrap().to_string();
+            let name = name.split("@").next().unwrap().to_string();
+            name
+        };
+
         for idx in func_block_idx..len {
             let block = &mut ssa.blocks[idx];
             let mut local_vars = HashMap::new();
 
             for param in &block.parameters {
-                let og_name = param.name.split("#").next().unwrap().to_string();
+                let og_name = get_og_name(&param.name);
                 local_vars.insert(og_name, param.name.clone());
             }
 
             for instr in &mut block.instructions {
                 match instr {
                     IRInstr::Unimplemented(res, _) => {
-                        let og_name = res.split("#").next().unwrap().to_string();
+                        let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
                     }
                     IRInstr::Assign(res, irvalue) => {
-                        let og_name = res.split("#").next().unwrap().to_string();
+                        let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
                     }
                     IRInstr::BinOp(res, irvalue, irvalue1, _) => {
-                        let og_name = res.split("#").next().unwrap().to_string();
+                        let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
                     }
                     IRInstr::UnOp(res, irvalue, unary_operation) => {
-                        let og_name = res.split("#").next().unwrap().to_string();
+                        let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
                     }
                     IRInstr::Call(res, irvalue, args) => {
-                        let og_name = res.split("#").next().unwrap().to_string();
+                        let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
                     }
                     IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
@@ -637,7 +643,7 @@ impl IRGen {
                             block_copies.iter().find(|b| b.name == *true_label).unwrap();
 
                         for arg in &true_block.parameters {
-                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            let og_name = get_og_name(&arg.name);
                             let this_block_name = local_vars.get(&og_name).unwrap();
                             true_args.push(IRValue::Variable(IRVariable {
                                 name: this_block_name.to_string(),
@@ -651,7 +657,7 @@ impl IRGen {
                             .unwrap();
 
                         for arg in &false_block.parameters {
-                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            let og_name = get_og_name(&arg.name);
                             let this_block_name = local_vars.get(&og_name).unwrap();
                             false_args.push(IRValue::Variable(IRVariable {
                                 name: this_block_name.to_string(),
@@ -665,7 +671,7 @@ impl IRGen {
                         let block = block_copies.iter().find(|b| b.name == *label).unwrap();
 
                         for arg in &block.parameters {
-                            let og_name = arg.name.split("#").next().unwrap().to_string();
+                            let og_name = get_og_name(&arg.name);
                             println!("{og_name}, {local_vars:?}");
                             let this_block_name = local_vars.get(&og_name).unwrap();
                             args.push(IRValue::Variable(IRVariable {
