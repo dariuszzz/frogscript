@@ -23,10 +23,14 @@ fn test(val int) -> int =
 fn other_foo(val int) =
     mut bar = val
 
+
+    let f = fn(x int) return 2*x
+
+    bar = f(val)
     for i in 0..10:
         bar = bar + i
         if bar > 8:
-            bar = 20
+            let bar = 20
             break
 
         let a = val

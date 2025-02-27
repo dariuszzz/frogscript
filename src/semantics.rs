@@ -795,14 +795,16 @@ impl SemanticAnalyzer {
                 let symbol_idx = self.symbol_table.add_symbol_to_scope(
                     scope,
                     Symbol {
-                        original_name: og_name,
-                        qualified_name: unique_name,
+                        original_name: unique_name.clone(),
+                        qualified_name: unique_name.clone(),
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.var_type.clone(),
                         exported: false,
                         mutable: expr.is_mutable,
                     },
                 )?;
+
+                expr.var_name = unique_name;
 
                 expr.symbol_idx = (scope, symbol_idx);
             }

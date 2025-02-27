@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ptr::read};
 
 use crate::{
-    pond::Target,
+    pond::{Dependency, Target},
     ssa_ir::{Block, BlockParameter, IRInstr, IRValue, IRVariable, SSAIR},
     symbol_table::SymbolTable,
     Arena, BinaryOperation, CodeBlock, Expression, Literal, Program, Type, Variable, VariableDecl,
@@ -125,6 +125,7 @@ impl IRGen {
             .blocks
             .iter()
             .enumerate()
+            .skip(func_block_idx)
             .map(|(idx, b)| (b.name.clone(), idx - func_block_idx))
             .collect::<HashMap<String, usize>>();
 
@@ -294,6 +295,82 @@ impl IRGen {
         return (new_params, local_vars);
     }
 
+    fn resolve_cycle_block_params(
+        &mut self,
+        group: &Vec<usize>,
+        ssa: &mut SSAIR,
+        graph: &mut DependencyGraph,
+        ctx: &mut ParamContext,
+        func_block_idx: usize,
+        unresolved_vars: &mut Vec<BlockParameter>,
+        visits: &mut HashMap<usize, usize>,
+        block_idx: usize,
+    ) {
+        // man idk if this wont break
+        // idk if this should be times 2.
+        // maybe the minimum needed amount is just group.len(). I really dont know
+        if visits[&block_idx] > group.len() * 2 {
+            return;
+        }
+
+        // visit all nodes at least twice before ending
+        if visits.values().all(|c| *c >= 2) {
+            return;
+        }
+
+        // increment visits
+        let curr_v = visits[&block_idx];
+        let v = visits.get_mut(&block_idx).unwrap();
+        *v = curr_v + 1;
+
+        let (mut guaranteed_params, local_vars) =
+            self.find_params_from_uninitialized_vars(ssa, func_block_idx, block_idx);
+
+        unresolved_vars.retain(|var| !local_vars.contains(&var.name));
+
+        for param in &guaranteed_params {
+            if !unresolved_vars.contains(&param) {
+                unresolved_vars.push(param.clone());
+            }
+        }
+
+        for param in unresolved_vars.iter() {
+            if !guaranteed_params.contains(&param) {
+                guaranteed_params.push(param.clone());
+            }
+        }
+
+        // Add those params
+        let block = &mut ssa.blocks[func_block_idx + block_idx];
+        for param in guaranteed_params {
+            if !block.parameters.contains(&param) {
+                block.parameters.push(param);
+            }
+        }
+
+        let dnode = graph.get(block_idx).unwrap();
+        let dependencies = dnode.dependencies.clone();
+
+        println!("{dependencies:?}");
+        for dep in dependencies.iter() {
+            if !group.contains(&dep) {
+                continue;
+            }
+            println!("{dep}");
+            self.resolve_cycle_block_params(
+                group,
+                ssa,
+                graph,
+                ctx,
+                func_block_idx,
+                unresolved_vars,
+                // &mut local_unresolved_vars.clone(),
+                visits,
+                *dep,
+            );
+        }
+    }
+
     fn figure_out_block_params(
         &mut self,
         ssa: &mut SSAIR,
@@ -323,49 +400,25 @@ impl IRGen {
 
             let group = comps[group_idx].clone();
 
-            // determine all params of any node from the group
-            let mut all_possible_params = unresolved_vars.clone();
-            let mut local_vars_by_block_idx = HashMap::new();
+            let mut visits = HashMap::new();
             for block_idx in &group {
-                let (guaranteed_params, local_vars) =
-                    self.find_params_from_uninitialized_vars(ssa, func_block_idx, *block_idx);
-
-                for param in guaranteed_params {
-                    if !all_possible_params.contains(&param) {
-                        all_possible_params.push(param);
-                    }
-                }
-
-                local_vars_by_block_idx.insert(block_idx, local_vars);
+                visits.insert(*block_idx, 0);
             }
 
-            // THIS GENERATES EXTRA PARAMS? HOW TO FIX NEED TO GO IN CIRCLE OF GROUP? INSTEAD OF TRYING TO CHEESE
+            // let mut cycle_local_unresolved_vars = unresolved_vars.clone();
+            self.resolve_cycle_block_params(
+                &group,
+                ssa,
+                graph,
+                ctx,
+                func_block_idx,
+                &mut unresolved_vars.clone(),
+                &mut visits,
+                block_idx,
+            );
+
             for block_idx in &group {
-                // for each block get rid of the params that it resolved
-                let this_block_local_vars = local_vars_by_block_idx.get(&block_idx).unwrap();
-                let mut this_block_params = all_possible_params.clone();
-                this_block_params.retain(|var| !this_block_local_vars.contains(&var.name));
-
-                // resolve all vars from all blocks' local vars
-                unresolved_vars.retain(|var| !this_block_local_vars.contains(&var.name));
-
-                for param in &this_block_params {
-                    if !unresolved_vars.contains(&param) {
-                        unresolved_vars.push(param.clone());
-                    }
-                }
-
-                let block = &mut ssa.blocks[func_block_idx + block_idx];
-                for param in this_block_params {
-                    if !block.parameters.contains(&param) {
-                        block.parameters.push(param);
-                    }
-                }
-
-                let dnode = graph.get(*block_idx).unwrap();
-
                 // Visit all dependencies outside of this cyclic group
-                let dependencies = &dnode.dependencies.clone();
                 for dep in dependencies {
                     if group.contains(dep) {
                         continue;
@@ -415,7 +468,6 @@ impl IRGen {
 
             // Add those params
             let block = &mut ssa.blocks[func_block_idx + block_idx];
-            println!("{}, {:?}", block.name, unresolved_vars);
             for param in guaranteed_params {
                 if !block.parameters.contains(&param) {
                     block.parameters.push(param);
@@ -481,9 +533,12 @@ impl IRGen {
             scc.push(scc_v);
 
             if scc.len() > 1 {
-                comps.push(scc);
-                let node = graph.get_mut(v).unwrap();
-                node.strongly_connected = Some(comps.len() - 1);
+                comps.push(scc.clone());
+
+                for v in &scc {
+                    let node = graph.get_mut(*v).unwrap();
+                    node.strongly_connected = Some(comps.len() - 1);
+                }
             }
         }
     }
@@ -521,8 +576,6 @@ impl IRGen {
     fn figure_out_block_params_for_func(&mut self, ssa: &mut SSAIR, func_block_idx: usize) {
         let mut dependency_graph = self.build_fn_dependency_graph(ssa, func_block_idx);
         let strongly_connected_comps = self.find_strongly_connected(&mut dependency_graph);
-
-        println!("{strongly_connected_comps:?}");
 
         let last_block_idx = ssa.blocks.len() - func_block_idx - 1;
 
@@ -1138,8 +1191,12 @@ impl IRGen {
 
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions));
             }
-            Expression::Import(import) => todo!(),
-            Expression::Placeholder => todo!(),
+            Expression::Import(import) => {
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+            }
+            Expression::Placeholder => {
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+            }
             Expression::Break => {
                 instructions.push(IRInstr::Goto(loop_info.end_label.clone(), vec![]));
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions));
