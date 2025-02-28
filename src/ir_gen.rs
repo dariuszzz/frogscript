@@ -2,7 +2,7 @@ use std::{collections::HashMap, ptr::read};
 
 use crate::{
     pond::{Dependency, Target},
-    ssa_ir::{Block, BlockParameter, IRInstr, IRValue, IRVariable, SSAIR},
+    ssa_ir::{Block, BlockParameter, IRAddress, IRInstr, IRValue, IRVariable, SSAIR},
     symbol_table::SymbolTable,
     Arena, BinaryOperation, CodeBlock, Expression, Literal, Program, Type, Variable, VariableDecl,
 };
@@ -184,31 +184,24 @@ impl IRGen {
     ) -> (Vec<BlockParameter>, Vec<String>) {
         let block = &ssa.blocks[func_block_idx + block_idx];
 
-        // THIS SHOULD BE A HASHMAP LIKE IN THAT OTHER FUNCTION !!!!
-        // SO THAT A PARAMETER GETS RESOLVED IF THE BLOCK OVERWRITES THE VARIABLE
-        // BUT THEN WHAT ABOUT SOMETHING LIKE
-        //
-        // foo(bar#40: int):
-        //      bar#50 = bar#40
-        //      goto baz(bar#50)
-        //
-        // HERE IT SHOULD BE A PARAMETER EVEN THOUGH THE VARIABLE IS OVERWRITTEN
-        //
-        // foo():
-        //      bar#50 = Int(3)
-        //      goto baz(bar#50)
-        //
-        // HERE THE bar PARAMETER ISNT NEEDED
-
         let mut local_vars = vec![];
         let mut new_params = vec![];
 
-        // for param in &block.parameters {
-        //     local_vars.push(param.name.clone());
-        // }
-
         for instr in &block.instructions {
             match instr {
+                IRInstr::Load(res, _) => {
+                    local_vars.push(res.clone());
+                }
+                IRInstr::Store(_, val) => {
+                    if let IRValue::Variable(val) = val {
+                        if !local_vars.contains(&val.name) {
+                            new_params.push(BlockParameter {
+                                name: val.name.clone(),
+                                ty: val.ty.clone(),
+                            })
+                        }
+                    }
+                }
                 IRInstr::Unimplemented(res, _) => {
                     local_vars.push(res.clone());
                 }
@@ -617,6 +610,11 @@ impl IRGen {
 
             for instr in &mut block.instructions {
                 match instr {
+                    IRInstr::Load(res, _) => {
+                        let og_name = get_og_name(&res);
+                        local_vars.insert(og_name, res.clone());
+                    }
+                    IRInstr::Store(_, _) => {}
                     IRInstr::Unimplemented(res, _) => {
                         let og_name = get_og_name(&res);
                         local_vars.insert(og_name, res.clone());
@@ -1006,22 +1004,97 @@ impl IRGen {
             }
             Expression::ArrayLiteral(array_literal) => {
                 let res = self.get_next_unique_name("_");
+                let mut inner_ty = Type::Any;
+
+                let initial_offset = 0;
+                let mut offset = initial_offset;
+
+                for el in &array_literal.elements {
+                    let (el, mut el_instrs) = self.generate_ir_expr(
+                        scope,
+                        ssa,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &el,
+                    )?;
+
+                    inner_ty = el.ty();
+
+                    instructions.append(&mut el_instrs);
+                    instructions.push(IRInstr::Store(
+                        IRAddress {
+                            addr: "$stack$".to_string(),
+                            offset,
+                        },
+                        el,
+                    ));
+
+                    match inner_ty {
+                        Type::Int => offset += 4,
+                        _ => {}
+                    }
+                }
+
+                instructions.push(IRInstr::Assign(
+                    res.clone(),
+                    IRValue::Address(IRAddress {
+                        addr: "$stack$".to_string(),
+                        offset: 0,
+                    }),
+                ));
+
                 return Ok((
                     IRValue::Variable(IRVariable {
-                        name: res.clone(),
-                        ty: Type::Any,
+                        name: res,
+                        ty: Type::Array(Box::new(inner_ty)),
                     }),
-                    vec![IRInstr::Unimplemented(res, format!("Array literal"))],
+                    instructions,
                 ));
             }
             Expression::ArrayAccess(array_access) => {
                 let res = self.get_next_unique_name("_");
+                let expr_name = self.get_next_unique_name("_");
+                let idx_name = self.get_next_unique_name("_");
+
+                let (index, mut index_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &array_access.index,
+                )?;
+
+                let (expr, mut expr_instrs) = self.generate_ir_expr(
+                    scope,
+                    ssa,
+                    symbol_table,
+                    renamed_vars,
+                    loop_info,
+                    &array_access.expr,
+                )?;
+
+                instructions.append(&mut index_instrs);
+                instructions.append(&mut expr_instrs);
+
+                instructions.push(IRInstr::Assign(idx_name.clone(), index));
+                instructions.push(IRInstr::Assign(expr_name.clone(), expr));
+
+                instructions.push(IRInstr::Load(
+                    res.clone(),
+                    IRAddress {
+                        addr: format!("{expr_name} + {idx_name}"),
+                        offset: 0,
+                    },
+                ));
+
                 return Ok((
                     IRValue::Variable(IRVariable {
                         name: res.clone(),
                         ty: Type::Any,
                     }),
-                    vec![IRInstr::Unimplemented(res, format!("Array access"))],
+                    instructions,
                 ));
             }
             Expression::FieldAccess(field_access) => {

@@ -39,6 +39,12 @@ impl Default for Block {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct IRAddress {
+    pub addr: String,
+    pub offset: isize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct IRVariable {
     pub name: String,
     pub ty: Type,
@@ -48,11 +54,14 @@ pub struct IRVariable {
 pub enum IRValue {
     Literal(Literal),
     Variable(IRVariable),
+    Address(IRAddress),
 }
 
 impl IRValue {
     pub fn ty(&self) -> Type {
         match self {
+            // idk
+            IRValue::Address(v) => Type::Uint,
             IRValue::Variable(v) => v.ty.clone(),
             IRValue::Literal(lit) => match lit {
                 Literal::String(_) => Type::String,
@@ -73,6 +82,10 @@ pub enum IRInstr {
     Call(String, IRValue, Vec<IRValue>),
     If(IRValue, String, Vec<IRValue>, String, Vec<IRValue>),
     Goto(String, Vec<IRValue>),
+
+    Store(IRAddress, IRValue),
+    Load(String, IRAddress),
+
     Return(IRValue),
     Label(String),
 
@@ -110,6 +123,8 @@ impl Display for Block {
 impl Display for IRInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            IRInstr::Store(addr, val) => f.write_fmt(format_args!("store {addr} {val}")),
+            IRInstr::Load(var, addr) => f.write_fmt(format_args!("{var} = load {addr}")),
             IRInstr::Assign(var, irvalue) => f.write_fmt(format_args!("{var} = {irvalue}")),
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 f.write_fmt(format_args!("{var} = {irvalue} {op} {irvalue1}"))
@@ -161,11 +176,24 @@ impl Display for IRInstr {
 impl Display for IRValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            IRValue::Address(address) => f.write_fmt(format_args!("{address}")),
             IRValue::Literal(literal) => f.write_fmt(format_args!("{literal:?}")),
             IRValue::Variable(variable) => {
                 // f.write_fmt(format_args!("{}: {}", variable.name, variable.ty))
                 f.write_fmt(format_args!("{}", variable.name))
             }
+        }
+    }
+}
+
+impl Display for IRAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.offset == 0 {
+            f.write_fmt(format_args!("[{}]", self.addr))
+        } else if self.offset > 0 {
+            f.write_fmt(format_args!("[{}+{}]", self.addr, self.offset))
+        } else {
+            f.write_fmt(format_args!("[{}-{}]", self.addr, self.offset))
         }
     }
 }
