@@ -1,4 +1,4 @@
-fn assert(eq bool) = if !eq: @js("process.exit(1)")
+fn assert(eq bool) = if !eq: @instr("process.exit(1)")
 
 fn main =
     let a = 2

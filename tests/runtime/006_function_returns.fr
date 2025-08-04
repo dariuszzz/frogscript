@@ -2,12 +2,11 @@
 -- output: hello
 */
 
-fn print(x string) -> () = @js("console.log({x})")
+fn print(x string) -> () = @instr("console.log({x})")
 
 fn return_value -> string = return "hello"
 
-fn main = 
+fn main =
     let val = return_value()
 
     print(val)
-

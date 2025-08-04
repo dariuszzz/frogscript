@@ -4,4 +4,4 @@
 
 fn main =
     if true:
-        @js("console.log(true)")
+        @instr("console.log(true)")

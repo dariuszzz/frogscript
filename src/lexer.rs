@@ -102,7 +102,7 @@ pub enum TokenKind {
     Exclamation,
     MultEqual,
     DivEqual,
-    BuiltinJS,
+    BuiltinTarget,
     BuiltinType,
     Indentation(usize),
 
@@ -635,8 +635,8 @@ impl Lexer {
                 '$' => self.add_token(TokenKind::Dollar),
                 '#' => self.add_token(TokenKind::Hash),
                 '@' => {
-                    if self.match_word("js") {
-                        self.add_token(TokenKind::BuiltinJS)
+                    if self.match_word("instr") {
+                        self.add_token(TokenKind::BuiltinTarget)
                     } else if self.match_word("type") {
                         self.add_token(TokenKind::BuiltinType)
                     }

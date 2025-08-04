@@ -18,12 +18,12 @@ fn chars(str string) =
 
 fn substr(str string, _from int, to int) -> string =
     let str_chars = chars(str)
-    mut substr = ""
+    mut string = ""
 
     for i in _from..to:
-        substr += str_chars[i]
+        string += str_chars[i]
 
-    return substr
+    return string
 
 fn babies =
     let daddy = Person { name: "Blazej" }

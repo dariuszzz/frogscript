@@ -1,3 +1,4 @@
+/*
 type Foo =
     val int
 
@@ -6,8 +7,23 @@ fn get_4 = return 4
 fn test(val int) -> int =
     return val + (5 * get_4()) + val
 
-fn other_foo(val [int]) =
-    let a = val[1]
+fn other_foo(arr [int]) =
+
+    mut sum = 0
+
+    for i in arr:
+        sum += 1
+        if i > 2:
+            break
+
+    return sum
 
 fn main =
     other_foo([1, 2, 3])
+
+*/
+
+fn main =
+    @instr("mov x0, #0")
+    @instr("mov x16, #1")
+    @instr("svc #0")

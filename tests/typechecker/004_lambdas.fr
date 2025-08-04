@@ -6,7 +6,7 @@ fn(infer, int) -> uint
 fn() -> string
 */
 
-fn print(msg string) -> () = @js("console.log({msg})")
+fn print(msg string) -> () = @instr("console.log({msg})")
 
 fn main =
     print(@type(fn() return 2 ))

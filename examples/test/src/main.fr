@@ -5,3 +5,5 @@ fn main =
     //print("siema")
 
     let a = 23
+
+    core::print(a)

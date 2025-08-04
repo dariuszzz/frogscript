@@ -4,7 +4,7 @@ fn() -> infer
 fn(string) -> void
 */
 
-fn print(msg string) -> () = @js("console.log({msg})")
+fn print(msg string) -> () = @instr("console.log({msg})")
 
 fn main =
     print(@type(main))

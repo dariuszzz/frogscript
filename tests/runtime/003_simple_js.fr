@@ -3,4 +3,4 @@
 */
 
 fn main =
-    @js("console.log(2)")
+    @instr("console.log(2)")

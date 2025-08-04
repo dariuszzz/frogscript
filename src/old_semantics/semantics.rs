@@ -1,3 +1,4 @@
+use crate::symbol_table::{Scope, Symbol, SymbolTable, SymbolType};
 use std::{
     collections::{HashMap, HashSet},
     convert::identity,
@@ -8,7 +9,6 @@ use std::{
 use crate::{
     ast::{CodeBlock, Expression, FunctionCall, Variable, VariableDecl},
     parser::Program,
-    symbol_table::{Scope, Symbol, SymbolTable, SymbolType},
     Arena, BinaryOperation, CustomType, FStringPart, FunctionType, Import, Lambda, Literal, Module,
     NamedStruct, StructDef, StructField, Type, UnaryOp, UnaryOperation,
 };
@@ -494,7 +494,7 @@ impl SemanticAnalyzer {
 
                 return Ok(new_type);
             }
-            Expression::JS(expr) => {
+            Expression::BuiltinTarget(expr) => {
                 self.typecheck_expr(scope, expr)?;
 
                 return Ok(Type::Any);
@@ -795,7 +795,7 @@ impl SemanticAnalyzer {
                 let symbol_idx = self.symbol_table.add_symbol_to_scope(
                     scope,
                     Symbol {
-                        original_name: unique_name.clone(),
+                        name: unique_name.clone(),
                         qualified_name: unique_name.clone(),
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.var_type.clone(),
@@ -905,7 +905,7 @@ impl SemanticAnalyzer {
                         lambda_scope,
                         Symbol {
                             qualified_name: unique_name,
-                            original_name: og_name,
+                            name: og_name,
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
                             exported: false,
@@ -961,7 +961,7 @@ impl SemanticAnalyzer {
                     for_scope,
                     Symbol {
                         qualified_name: unique_name,
-                        original_name: og_name,
+                        name: og_name,
                         symbol_type: SymbolType::Identifier,
                         value_type: expr.binding_type.clone(),
                         exported: false,
@@ -978,7 +978,7 @@ impl SemanticAnalyzer {
                     shadowing,
                 )?;
             }
-            Expression::JS(expr) => {
+            Expression::BuiltinTarget(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
             }
             Expression::Placeholder => {}
@@ -1015,7 +1015,7 @@ impl SemanticAnalyzer {
                     module_scope,
                     Symbol {
                         qualified_name: format!("{}::{}", module.module_name, type_def.name),
-                        original_name: type_def.name.clone(),
+                        name: type_def.name.clone(),
                         symbol_type: SymbolType::Type,
                         value_type: type_def.underlying_ty.clone(),
                         exported: type_def.export,
@@ -1054,7 +1054,7 @@ impl SemanticAnalyzer {
                     module_scope,
                     Symbol {
                         qualified_name: format!("{}::{}", module.module_name, func_def.func_name),
-                        original_name: func_def.func_name.to_string(),
+                        name: func_def.func_name.to_string(),
                         symbol_type: SymbolType::Identifier,
                         value_type: func_type,
                         exported: func_def.export,
@@ -1071,7 +1071,7 @@ impl SemanticAnalyzer {
                         func_scope,
                         Symbol {
                             qualified_name: arg.arg_name.clone(),
-                            original_name: arg.arg_name.clone(),
+                            name: arg.arg_name.clone(),
                             symbol_type: SymbolType::Identifier,
                             value_type: arg.arg_type.clone(),
                             exported: false,
@@ -1308,7 +1308,7 @@ impl SemanticAnalyzer {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.iterator)?;
                 self.resolve_names_codeblock(curr_module_name, scope, &mut expr.body)?;
             }
-            Expression::JS(expr) => {
+            Expression::BuiltinTarget(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, expr)?;
             }
             Expression::Placeholder => {}

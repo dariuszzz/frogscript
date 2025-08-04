@@ -12,27 +12,28 @@ use gumdrop::Options;
 
 mod arena;
 mod ast;
-mod ir_gen;
+mod backend;
+mod js_backend;
 mod lexer;
+mod old_semantics;
 mod parser;
 mod pond;
 mod semantics;
-mod ssa_ir;
 mod symbol_table;
-mod transpiler;
 
 use arena::*;
 use ast::*;
-use ir_gen::IRGen;
+use backend::ir_gen::IRGen;
+use backend::ssa_ir;
+use js_backend::*;
 use lexer::*;
+use old_semantics::semantics::*;
 use parser::*;
 use pond::{find_pond_path, Pond, Target};
-use semantics::*;
-use symbol_table::SymbolTable;
-use transpiler::*;
+use symbol_table::*;
 
 #[derive(Debug, Options)]
-struct MyOptions {
+pub struct GenericOptions {
     #[options(command)]
     command: Option<Command>,
 
@@ -41,9 +42,12 @@ struct MyOptions {
 
     #[options(help = "print help message")]
     help: bool,
+
+    #[options(help = "use old semantics (broken)")]
+    old_sem: bool,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 enum Command {
     #[options(help = "run tests")]
     Test(TestOpts),
@@ -57,9 +61,11 @@ enum Command {
     Lex(LexOpts),
     #[options(help = "generate ssa ir")]
     GenIr(GenIrOpts),
+    #[options(help = "compile to yasm")]
+    CompileAsm(GenIrOpts),
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct GenIrOpts {
     #[options(help = "target to run (defaults to target 'main')")]
     target: Option<String>,
@@ -68,7 +74,7 @@ struct GenIrOpts {
     path: Vec<String>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct TestOpts {
     #[options(help = "show only failed tests")]
     failed: bool,
@@ -80,13 +86,13 @@ struct TestOpts {
     path: Vec<String>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct LexOpts {
     #[options(help = "file to lex")]
     file: String,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct ParseOpts {
     #[options(help = "file to dump the parsed ast to")]
     output: Option<String>,
@@ -95,7 +101,7 @@ struct ParseOpts {
     path: Vec<String>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct TranspileOpts {
     #[options(help = "target to transpile (defaults to target 'main')")]
     target: Option<String>,
@@ -110,7 +116,7 @@ struct TranspileOpts {
     path: Vec<String>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Options, Clone)]
 struct RunOpts {
     #[options(help = "target to run (defaults to target 'main')")]
     target: Option<String>,
@@ -302,10 +308,13 @@ fn transpile_project(
 }
 
 fn main() -> Result<(), String> {
-    let i_opts = MyOptions::parse_args_default_or_exit();
+    let i_opts = GenericOptions::parse_args_default_or_exit();
 
     let start = Instant::now();
-    match i_opts.command.expect("No command given") {
+
+    let command = i_opts.command.clone();
+
+    match command.expect("No command given") {
         Command::Lex(opts) => {
             let path = Path::new(&opts.file);
             let source_file = fs::read_to_string(path)
@@ -338,8 +347,12 @@ fn main() -> Result<(), String> {
 
             let mut program = parse_project(&pond, i_opts.perf)?;
 
-            let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
+            let symbol_table = if i_opts.old_sem {
+                let mut semantic = SemanticAnalyzer::default();
+                semantic.perform_analysis(&mut program, i_opts.perf)?
+            } else {
+                semantics::perform_analysis(&mut program, &i_opts)?
+            };
 
             if let Some(output) = opts.output {
                 println!(
@@ -372,8 +385,12 @@ fn main() -> Result<(), String> {
 
             let mut program = parse_project(&pond, i_opts.perf)?;
 
-            let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
+            let symbol_table = if i_opts.old_sem {
+                let mut semantic = SemanticAnalyzer::default();
+                semantic.perform_analysis(&mut program, i_opts.perf)?
+            } else {
+                semantics::perform_analysis(&mut program, &i_opts)?
+            };
 
             transpile_project(program, target, None, &symbol_table, i_opts.perf)?;
             if i_opts.perf {
@@ -456,12 +473,52 @@ fn main() -> Result<(), String> {
 
             let mut program = parse_project(&pond, i_opts.perf)?;
 
-            let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
+            let symbol_table = if i_opts.old_sem {
+                let mut semantic = SemanticAnalyzer::default();
+                semantic.perform_analysis(&mut program, i_opts.perf)?
+            } else {
+                semantics::perform_analysis(&mut program, &i_opts)?
+            };
 
             let mut ir_gen = IRGen::default();
-
             let ssa_ir = ir_gen.generate_ir(program, target, &symbol_table)?;
+
+            ir_gen.pretty_print_ssa(&ssa_ir);
+
+            if i_opts.perf {
+                println!(
+                    "Total: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
+            }
+        }
+        Command::CompileAsm(opts) => {
+            let path = if opts.path.len() == 1 {
+                let path = opts.path.get(0).unwrap();
+                PathBuf::from(&path)
+            } else {
+                std::env::current_dir().expect("Invalid cwd")
+            };
+
+            let target_name = opts.target.unwrap_or("main".to_string());
+            let pond = find_project(&path)?;
+            let target = pond.targets.get(&target_name).expect("Invalid target");
+
+            let mut program = parse_project(&pond, i_opts.perf)?;
+
+            let symbol_table = if i_opts.old_sem {
+                let mut semantic = SemanticAnalyzer::default();
+                semantic.perform_analysis(&mut program, i_opts.perf)?
+            } else {
+                semantics::perform_analysis(&mut program, &i_opts)?
+            };
+
+            let ssa_ir = backend::generate_ir(program, target, &symbol_table)?;
+
+            let mut asm = backend::arm64::ARM64Backend::default();
+            let out = asm.compile_ir(ssa_ir, &symbol_table)?;
+
+            println!("\n\n\n{out}");
 
             if i_opts.perf {
                 println!(
@@ -484,8 +541,12 @@ fn main() -> Result<(), String> {
 
             let mut program = parse_project(&pond, i_opts.perf)?;
 
-            let mut semantic = SemanticAnalyzer::default();
-            let symbol_table = semantic.perform_analysis(&mut program, i_opts.perf)?;
+            let symbol_table = if i_opts.old_sem {
+                let mut semantic = SemanticAnalyzer::default();
+                semantic.perform_analysis(&mut program, i_opts.perf)?
+            } else {
+                semantics::perform_analysis(&mut program, &i_opts)?
+            };
 
             transpile_project(program, target, opts.output, &symbol_table, i_opts.perf)?;
             if i_opts.perf {

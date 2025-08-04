@@ -1357,7 +1357,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Break)
             }
-            TokenKind::BuiltinJS => self.parse_js(indent),
+            TokenKind::BuiltinTarget => self.parse_builtin_target(indent),
             TokenKind::BuiltinType => self.parse_builtin_type(indent),
             TokenKind::CurlyLeft => self.parse_struct_literal(indent),
             TokenKind::Identifier(Identifier::Continue) => {
@@ -1506,28 +1506,28 @@ impl Parser {
         }
     }
 
-    pub fn parse_js(&mut self, indent: usize) -> Result<Expression, String> {
+    pub fn parse_builtin_target(&mut self, indent: usize) -> Result<Expression, String> {
         // consume JS token
         self.advance();
 
         if let TokenKind::ParenLeft = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find lparen after @js"));
+            return Err(format!("Couldnt find lparen after @instr"));
         }
 
         if let TokenKind::StartString = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find js source code after @js"));
+            return Err(format!("Couldnt find js source code after @instr"));
         }
 
         let expr = self.parse_string(indent)?;
 
         if let TokenKind::ParenRight = self.advance_skip_ws(indent).kind {
         } else {
-            return Err(format!("Couldnt find rparen after @js"));
+            return Err(format!("Couldnt find rparen after @instr"));
         }
 
-        Ok(Expression::JS(Box::new(expr)))
+        Ok(Expression::BuiltinTarget(Box::new(expr)))
     }
 
     pub fn parse_import_item(&mut self, indent: usize) -> Result<Import, String> {
@@ -1742,8 +1742,8 @@ impl Parser {
                     let expr = self.parse_expression(curr_indent)?;
                     current_module.toplevel_scope.expressions.push(expr);
                 }
-                TokenKind::BuiltinJS => {
-                    let expr = self.parse_js(curr_indent)?;
+                TokenKind::BuiltinTarget => {
+                    let expr = self.parse_builtin_target(curr_indent)?;
                     current_module.toplevel_scope.expressions.push(expr);
                 }
                 TokenKind::Identifier(iden) => match iden {

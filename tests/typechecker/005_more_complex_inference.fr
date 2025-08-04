@@ -4,7 +4,7 @@ fn(int) -> int
 [int]
 */
 
-fn print(msg string) -> () = @js("console.log({msg})")
+fn print(msg string) -> () = @instr("console.log({msg})")
 
 fn func_that_takes_lambda(f fn(int) -> int) -> int = return f(2)
 

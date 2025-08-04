@@ -5,7 +5,7 @@ use crate::{Arena, Import, SymbolIdx, Type};
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub qualified_name: String,
-    pub original_name: String,
+    pub name: String,
     pub symbol_type: SymbolType,
     pub value_type: Type,
     pub exported: bool,
@@ -41,9 +41,14 @@ impl Scope {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub table: Arena<Scope>,
+    pub module_to_scope: HashMap<String, usize>,
 }
 
 impl SymbolTable {
+    pub fn get_module_scope(&self, module: &str) -> Option<usize> {
+        self.module_to_scope.get(module).cloned()
+    }
+
     pub fn get_scope(&self, idx: usize) -> Option<&Scope> {
         self.table.get(idx)
     }
@@ -78,7 +83,7 @@ impl SymbolTable {
             .symbols
             .iter()
             .enumerate()
-            .filter(|(idx, s)| s.original_name == name && s.symbol_type == symbol_type)
+            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 
@@ -94,7 +99,7 @@ impl SymbolTable {
             .symbols
             .iter_mut()
             .enumerate()
-            .filter(|(idx, s)| s.original_name == name && s.symbol_type == symbol_type)
+            .filter(|(idx, s)| s.name == name && s.symbol_type == symbol_type)
             .next()
     }
 

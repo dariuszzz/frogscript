@@ -1,8 +1,8 @@
-export fn deep_copy(x any) -> any = @js("return structuredClone({x});")
-export fn print(x any) -> () = @js("console.log({x})")
+export fn deep_copy(x any) -> any = @instr("return structuredClone({x});")
+export fn print(x any) -> () = @instr("console.log({x})")
 export fn panic(msg string) =
     core::print("Panic: {msg}")
-    @js("process.exit(1)")
+    @instr("process.exit(1)")
 
 export fn assert(eq bool, msg string) -> bool =
     if !eq:
@@ -11,7 +11,7 @@ export fn assert(eq bool, msg string) -> bool =
     return eq
 
 export fn range(start int, end int) -> [any] =
-    return @js("
+    return @instr("
         (function*() \{
             for(let i = {start}; i < {end}; i++) \{
                 yield i;
@@ -20,18 +20,18 @@ export fn range(start int, end int) -> [any] =
     ")
 
 export fn len(x any) -> int =
-    return @js("{x}.length")
+    return @instr("{x}.length")
 
 module string =
     export fn at(str string, idx int) -> string =
-        return @js("{str}[{idx}]")
+        return @instr("{str}[{idx}]")
 
 module array =
     export fn push(arr [any], el any) -> () =
-        return @js("{arr}.push({el})")
+        return @instr("{arr}.push({el})")
 
     export fn pop(arr [any]) -> any =
-        return @js("{arr}.pop()")
+        return @instr("{arr}.pop()")
 
 
     export fn map(arr [any], f fn(any) -> any) -> () =
@@ -57,13 +57,13 @@ module map =
     type Map = any
 
     export fn new() -> Map =
-        return @js("new Map()")
+        return @instr("new Map()")
 
     export fn insert(map Map, key any, val any) -> Map =
-        @js("{map}.set({key}, {val})")
+        @instr("{map}.set({key}, {val})")
 
     export fn get(map Map, key any) -> any =
-        return @js("{map}.get({key})")
+        return @instr("{map}.get({key})")
 
     export fn keys(map Map) -> [any] =
-        return @js("{map}.keys()")
+        return @instr("{map}.keys()")

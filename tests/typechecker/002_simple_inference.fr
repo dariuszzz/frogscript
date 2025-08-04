@@ -11,7 +11,7 @@ Bar
 string
 */
 
-fn print(msg string) -> () = @js("console.log({msg})")
+fn print(msg string) -> () = @instr("console.log({msg})")
 
 fn return_string -> string = return "text"
 

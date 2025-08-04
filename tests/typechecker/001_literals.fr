@@ -13,7 +13,7 @@ boolean
 Bar
 */
 
-fn print(msg string) -> () = @js("console.log({msg})")
+fn print(msg string) -> () = @instr("console.log({msg})")
 
 type Bar =
     field bool

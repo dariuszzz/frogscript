@@ -1,22 +1,22 @@
-let fs = @js("require('node:fs')")
+let fs = @instr("require('node:fs')")
 
 fn read_file(path string) -> string =
-    let data = @js("{fs}.readFileSync({path}, 'utf8')")
+    let data = @instr("{fs}.readFileSync({path}, 'utf8')")
 
     return data
 
 fn split_str(text string, char string) -> [string] =
-    let split = @js("{text}.split({char})")
+    let split = @instr("{text}.split({char})")
 
     return split
 
 fn parse_int(num string) -> int =
-    let number = @js("parseInt({num})")
+    let number = @instr("parseInt({num})")
 
     return number
 
 fn trim_str(text string) -> string =
-    let trimmed = @js("{text}.trim()")
+    let trimmed = @instr("{text}.trim()")
 
     return trimmed
 

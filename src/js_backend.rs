@@ -3,15 +3,10 @@ use std::{
     io::Write,
 };
 
-use crate::{
-    ast::*,
-    parser::Program,
-    symbol_table::{SymbolTable, SymbolType},
-    FStringPart, Literal,
-};
+use crate::{ast::*, parser::Program, FStringPart, Literal, SymbolTable, SymbolType};
 
 pub trait ToJS {
-    fn to_js(&self) -> String;
+    fn to_js(&self, st: &SymbolTable) -> String;
 }
 
 pub struct Transpiler {
@@ -193,7 +188,7 @@ impl Transpiler {
                     }
                 }
             }
-            Expression::JS(expr) => {
+            Expression::BuiltinTarget(expr) => {
                 Transpiler::replace_names_in_expr(module_name, mapped_names, expr);
             }
         }
@@ -381,8 +376,8 @@ impl Transpiler {
                 *scope += 1;
                 Transpiler::ensure_pass_by_value_codeblock(&mut expr.body, symbol_table, scope);
             }
-            Expression::JS(expr) => {
-                // JS semantics in @js blocks
+            Expression::BuiltinTarget(expr) => {
+                // JS semantics in @instr blocks
                 // Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
             }
             Expression::Placeholder => {}
@@ -477,10 +472,10 @@ impl Transpiler {
             // println!("transpiling {:?}", module.module_name);
             _ = outfile.write(format!("\n // {} \n", module.module_name).as_bytes());
             for funcdef in &module.function_defs {
-                _ = outfile.write(funcdef.to_js().as_bytes());
+                _ = outfile.write(funcdef.to_js(symbol_table).as_bytes());
             }
 
-            _ = outfile.write(module.toplevel_scope.to_js().as_bytes());
+            _ = outfile.write(module.toplevel_scope.to_js(symbol_table).as_bytes());
         }
         Ok(())
     }

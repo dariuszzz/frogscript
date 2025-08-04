@@ -1,4 +1,4 @@
-fn print(x ()) = @js("console.log(" x ");")
+fn print(x ()) = @instr("console.log(" x ");")
 
 let val = 0
 

@@ -3,7 +3,7 @@ use std::{
     fmt::{Binary, Display},
 };
 
-use crate::{lexer::Literal, transpiler::ToJS, FStringPart};
+use crate::{js_backend::ToJS, lexer::Literal, symbol_table::SymbolTable, FStringPart};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum UnaryOperation {
@@ -188,7 +188,7 @@ pub struct VariableDecl {
 }
 
 impl ToJS for VariableDecl {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let VariableDecl {
             var_name,
             var_type,
@@ -200,7 +200,7 @@ impl ToJS for VariableDecl {
         } = self;
         let var_name = var_name.replace("::", "_");
         let keyword = if *is_mutable { "let" } else { "const" };
-        let value = var_value.to_js();
+        let value = var_value.to_js(st);
 
         format!("{keyword} {var_name} = {value};")
     }
@@ -213,7 +213,7 @@ pub struct FunctionCall {
 }
 
 impl ToJS for FunctionCall {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let FunctionCall {
             func_expr,
             arguments,
@@ -221,12 +221,12 @@ impl ToJS for FunctionCall {
 
         let func_expr = match func_expr.as_ref() {
             Expression::Variable(Variable { name, .. }) => name.replace("::", "_"),
-            expr => expr.to_js(),
+            expr => expr.to_js(st),
         };
 
         let args = arguments
             .into_iter()
-            .map(|arg| arg.to_js())
+            .map(|arg| arg.to_js(st))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -241,7 +241,7 @@ pub struct UnaryOp {
 }
 
 impl ToJS for UnaryOp {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let UnaryOp { op, operand } = self;
 
         let op = match op {
@@ -253,7 +253,7 @@ impl ToJS for UnaryOp {
             UnaryOperation::Negate => "!".to_owned(),
         };
 
-        let expr = operand.to_js();
+        let expr = operand.to_js(st);
 
         format!("({op}{expr})")
     }
@@ -267,7 +267,7 @@ pub struct BinaryOp {
 }
 
 impl ToJS for BinaryOp {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let BinaryOp { op, lhs, rhs } = self;
 
         let op = match op {
@@ -286,8 +286,8 @@ impl ToJS for BinaryOp {
             BinaryOperation::Or => "||".to_owned(),
         };
 
-        let lhs = lhs.to_js();
-        let rhs = rhs.to_js();
+        let lhs = lhs.to_js(st);
+        let rhs = rhs.to_js(st);
 
         format!("({lhs} {op} {rhs})")
     }
@@ -301,7 +301,7 @@ pub struct Variable {
 }
 
 impl ToJS for Variable {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let Variable { name, .. } = self;
         self.name.replace("::", "_")
     }
@@ -314,11 +314,11 @@ pub struct Assignment {
 }
 
 impl ToJS for Assignment {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let Assignment { lhs, rhs } = self;
 
-        let lhs = lhs.to_js();
-        let rhs = rhs.to_js();
+        let lhs = lhs.to_js(st);
+        let rhs = rhs.to_js(st);
 
         format!("{lhs} = {rhs}")
     }
@@ -332,17 +332,17 @@ pub struct If {
 }
 
 impl ToJS for If {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let If {
             cond,
             true_branch,
             else_branch,
         } = self;
-        let cond = cond.to_js();
-        let true_branch = true_branch.to_js();
+        let cond = cond.to_js(st);
+        let true_branch = true_branch.to_js(st);
 
         let else_branch = else_branch.clone().map_or(String::new(), |b| {
-            let branch = b.to_js();
+            let branch = b.to_js(st);
             format!(" else {{ {branch} }}")
         });
 
@@ -360,7 +360,7 @@ pub struct For {
 }
 
 impl ToJS for For {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let For {
             binding,
             binding_type,
@@ -369,8 +369,8 @@ impl ToJS for For {
             body,
         } = self;
 
-        let iterator = iterator.to_js();
-        let body = body.to_js();
+        let iterator = iterator.to_js(st);
+        let body = body.to_js(st);
         let binding = binding.replace("::", "_");
 
         format!("for (const {binding} of {iterator}) {{ {body} }}")
@@ -384,11 +384,11 @@ pub struct ArrayAccess {
 }
 
 impl ToJS for ArrayAccess {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let ArrayAccess { expr, index } = self;
 
-        let expr = expr.to_js();
-        let index = index.to_js();
+        let expr = expr.to_js(st);
+        let index = index.to_js(st);
 
         format!("{expr}[{index}]")
     }
@@ -400,11 +400,11 @@ pub struct ArrayLiteral {
 }
 
 impl ToJS for ArrayLiteral {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let elements = self
             .elements
             .iter()
-            .map(|elem| elem.to_js())
+            .map(|elem| elem.to_js(st))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -419,12 +419,12 @@ pub struct NamedStruct {
 }
 
 impl ToJS for NamedStruct {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let NamedStruct {
             casted_to,
             struct_literal,
         } = self;
-        let struct_expr = struct_literal.to_js();
+        let struct_expr = struct_literal.to_js(st);
 
         format!("{struct_expr}")
     }
@@ -436,13 +436,13 @@ pub struct AnonStruct {
 }
 
 impl ToJS for AnonStruct {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let AnonStruct { fields } = self;
 
         let fields = fields
             .into_iter()
             .map(|(field_name, field_val)| {
-                let val_expr = field_val.to_js();
+                let val_expr = field_val.to_js(st);
                 format!("{field_name}: {val_expr}")
             })
             .collect::<Vec<_>>()
@@ -460,7 +460,7 @@ pub struct Range {
 }
 
 impl ToJS for Range {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let Range {
             start,
             end,
@@ -480,10 +480,10 @@ pub struct FieldAccess {
 }
 
 impl ToJS for FieldAccess {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let FieldAccess { expr, field } = self;
 
-        let expr = expr.to_js();
+        let expr = expr.to_js(st);
 
         format!("{expr}.{field}")
     }
@@ -497,7 +497,7 @@ pub struct Lambda {
 }
 
 impl ToJS for Lambda {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let Lambda {
             argument_list,
             return_type,
@@ -510,7 +510,7 @@ impl ToJS for Lambda {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let body = function_body.to_js();
+        let body = function_body.to_js(st);
 
         format!("({args}) => {{ {body} }}\n")
     }
@@ -533,7 +533,7 @@ pub enum Expression {
     NamedStruct(NamedStruct),
     Lambda(Lambda),
     Range(Range),
-    JS(Box<Expression>),
+    BuiltinTarget(Box<Expression>),
     BuiltinType(Box<Expression>),
     If(If),
     For(For),
@@ -544,25 +544,25 @@ pub enum Expression {
 }
 
 impl ToJS for Expression {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         match self {
-            Self::VariableDecl(var_decl) => var_decl.to_js(),
-            Self::If(if_expr) => if_expr.to_js(),
-            Self::BinaryOp(bin_op) => bin_op.to_js(),
-            Self::UnaryOp(unary_op) => unary_op.to_js(),
-            Self::FunctionCall(func_call) => func_call.to_js(),
-            Self::Variable(var) => var.to_js(),
-            Self::Assignment(assignment) => assignment.to_js(),
-            Self::AnonStruct(struct_literal) => struct_literal.to_js(),
-            Self::ArrayLiteral(array_literal) => array_literal.to_js(),
-            Self::Lambda(lambda) => lambda.to_js(),
-            Self::ArrayAccess(array_access) => array_access.to_js(),
-            Self::FieldAccess(field_access) => field_access.to_js(),
-            Self::NamedStruct(cast_literal) => cast_literal.to_js(),
-            Self::Range(range) => range.to_js(),
-            Self::For(for_expr) => for_expr.to_js(),
+            Self::VariableDecl(var_decl) => var_decl.to_js(st),
+            Self::If(if_expr) => if_expr.to_js(st),
+            Self::BinaryOp(bin_op) => bin_op.to_js(st),
+            Self::UnaryOp(unary_op) => unary_op.to_js(st),
+            Self::FunctionCall(func_call) => func_call.to_js(st),
+            Self::Variable(var) => var.to_js(st),
+            Self::Assignment(assignment) => assignment.to_js(st),
+            Self::AnonStruct(struct_literal) => struct_literal.to_js(st),
+            Self::ArrayLiteral(array_literal) => array_literal.to_js(st),
+            Self::Lambda(lambda) => lambda.to_js(st),
+            Self::ArrayAccess(array_access) => array_access.to_js(st),
+            Self::FieldAccess(field_access) => field_access.to_js(st),
+            Self::NamedStruct(cast_literal) => cast_literal.to_js(st),
+            Self::Range(range) => range.to_js(st),
+            Self::For(for_expr) => for_expr.to_js(st),
             Self::Return(expr) => {
-                let expr = expr.to_js();
+                let expr = expr.to_js(st);
                 format!("return ({expr});")
             }
             Self::Break => {
@@ -584,7 +584,7 @@ impl ToJS for Expression {
                     for part in parts {
                         match part {
                             FStringPart::String(string) => str += string,
-                            FStringPart::Code(expr) => str += &format!("${{{}}}", expr.to_js()),
+                            FStringPart::Code(expr) => str += &format!("${{{}}}", expr.to_js(st)),
                         }
                     }
 
@@ -594,13 +594,13 @@ impl ToJS for Expression {
                 }
             },
             Self::Import(import) => format!("/* imported module {import:#?} */",),
-            Self::JS(code) => {
+            Self::BuiltinTarget(code) => {
                 if let Expression::Literal(Literal::String(parts)) = code.as_ref() {
                     let mut js = "".to_string();
                     for part in parts {
                         let text = match part {
                             // TODO: this doesnt work if expr is an if or a for since js doesnt support that
-                            FStringPart::Code(expr) => format!("({})", expr.to_js()),
+                            FStringPart::Code(expr) => format!("({})", expr.to_js(st)),
                             FStringPart::String(string) => string.clone().replace("\\", ""),
                         };
                         js += &text;
@@ -626,14 +626,14 @@ pub struct CodeBlock {
 }
 
 impl ToJS for CodeBlock {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let indentation = " ".repeat(self.indentation);
 
         let expressions = self
             .expressions
             .iter()
             .map(|expr| {
-                let expr = expr.to_js();
+                let expr = expr.to_js(st);
                 format!("{indentation}{expr}")
             })
             .collect::<Vec<_>>()
@@ -669,7 +669,7 @@ pub struct FunctionDef {
 }
 
 impl ToJS for FunctionDef {
-    fn to_js(&self) -> String {
+    fn to_js(&self, st: &SymbolTable) -> String {
         let FunctionDef {
             export,
             func_name,
@@ -688,7 +688,7 @@ impl ToJS for FunctionDef {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let body = function_body.to_js();
+        let body = function_body.to_js(st);
 
         format!("function {func_name}({args}) {{ {body} }}\n")
     }

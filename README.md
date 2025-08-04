@@ -154,10 +154,10 @@ foo()
 baz()
 
 // Injecting js
-@js("console.log(32)") // will transpile to "console.log(32)"
+@instr("console.log(32)") // will transpile to "console.log(32)"
 
 let num = 59
-@js("console.log({num})") // will transpile to console.log(num)
+@instr("console.log({num})") // will transpile to console.log(num)
 ```
 
 # Semantics

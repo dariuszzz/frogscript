@@ -31,7 +31,7 @@ fn main =
     .core::print()
 
     core::print("Create array filled with squares of numbers 1-10")
-    let push = fn(arr, x) @js(arr ".push(" x ")")
+    let push = fn(arr, x) @instr(arr ".push(" x ")")
 
     mut arr2 = []
     for i in 1..=10: arr2.push(i)

@@ -4,4 +4,4 @@
 
 fn main =
     let hello = "Hello world"
-    @js("console.log({hello})")
+    @instr("console.log({hello})")
