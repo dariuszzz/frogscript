@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinaryOperation, UnaryOp, UnaryOperation},
+    ast::{BinaryOperation, Type, UnaryOp, UnaryOperation},
     backend::ssa_ir::{self, IRData, IRDataLiteral, IRValue, IRVariable, InlineTargetPart, SSAIR},
     lexer::Literal,
     symbol_table::{self, SymbolTable},
@@ -7,10 +7,33 @@ use crate::{
 use ssa_ir::IRInstr;
 use std::{collections::HashMap, fmt::Write, thread::current};
 
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub enum RegisterType {
+    General,
+    Float32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Register {
+    pub ty: RegisterType,
+    pub num: usize,
+}
+
+impl std::fmt::Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prefix = match self.ty {
+            RegisterType::Float32 => "s",
+            RegisterType::General => "x",
+        };
+
+        f.write_fmt(format_args!("{prefix}{}", self.num))
+    }
+}
+
 #[derive(Debug)]
 pub struct ARM64Backend {
     ssa_ir: SSAIR,
-    used_registers: HashMap<usize, String>, // ir_var -> register
+    used_registers: HashMap<usize, Register>, // ir_var -> register
     register_counter: usize,
 }
 
@@ -28,13 +51,18 @@ impl ARM64Backend {
             IRValue::Address(addr) => todo!("idk"),
             IRValue::Variable(var_id) => {
                 let var_name = &self.ssa_ir.vars[*var_id].name;
-                self.used_registers.get(var_id).unwrap_or(var_name).clone()
+                let register = self.used_registers.get(var_id);
+                if let Some(register) = register {
+                    format!("{register}")
+                } else {
+                    var_name.clone()
+                }
             }
             IRValue::Literal(lit) => match lit {
-                Literal::Int(num) => format!("{num}"),
-                Literal::Uint(num) => format!("{num}"),
-                Literal::Boolean(true) => format!("1"),
-                Literal::Boolean(false) => format!("0"),
+                Literal::Int(num) => format!("#{num}"),
+                Literal::Uint(num) => format!("#{num}"),
+                Literal::Boolean(true) => format!("#1"),
+                Literal::Boolean(false) => format!("#0"),
                 Literal::Float(num) => unimplemented!("needs to be in the data section lol"),
                 Literal::String(num) => unimplemented!("needs to be in the data section lol"),
             },
@@ -42,10 +70,28 @@ impl ARM64Backend {
     }
 
     // probably change to lru before implementing graph coloring
-    pub fn alloc_register_var(&mut self, ir_var: usize) -> String {
-        let register = format!("x{}", self.register_counter);
+    pub fn get_free_or_existing_register(&mut self, ty: RegisterType, ir_var: usize) -> Register {
+        if let Some(reg) = self.used_registers.get(&ir_var) {
+            if reg.ty == ty {
+                return reg.clone();
+            }
+        }
+
+        let register = Register {
+            ty,
+            num: self.register_counter,
+        };
         self.register_counter += 1;
         self.used_registers.insert(ir_var, register.clone());
+        return register;
+    }
+
+    pub fn temp_register(&mut self, ty: RegisterType) -> Register {
+        let register = Register {
+            ty,
+            num: self.register_counter,
+        };
+        self.register_counter += 1;
         return register;
     }
 
@@ -79,10 +125,12 @@ impl ARM64Backend {
                         for reg in used_registers {
                             for (var_id, current_reg) in &currently_used_registers {
                                 // register is not empty
-                                if current_reg == reg {
+                                if format!("{current_reg}") == *reg {
                                     // move to new register
                                     self.used_registers.remove(var_id);
-                                    let register = self.alloc_register_var(*var_id);
+
+                                    let register =
+                                        self.get_free_or_existing_register(current_reg.ty, *var_id);
                                     write!(out, "\tmov {register}, {current_reg}\n").unwrap();
                                     registers_to_restore.push((*var_id, current_reg.clone()))
                                 }
@@ -93,14 +141,14 @@ impl ARM64Backend {
                         for part in parts {
                             match part {
                                 InlineTargetPart::String(text) => str += text,
-                                InlineTargetPart::SSA_IR_Var_Ref(var_id) => {
+                                InlineTargetPart::SSAIRVarRef(var_id) => {
                                     let reg = self
                                         .used_registers
                                         .get(var_id)
                                         // Todo: give better error msg
                                         .expect("Variable not allocated in any register");
 
-                                    str += reg;
+                                    str += &format!("{reg}");
                                 }
                             }
                         }
@@ -116,9 +164,17 @@ impl ARM64Backend {
                     }
 
                     IRInstr::Assign(var, val) => {
+                        let variable = &self.ssa_ir.vars[*var];
+                        let (instr, reg_ty) = {
+                            match variable.ty {
+                                Type::Float => ("fmov", RegisterType::Float32),
+                                _ => ("mov", RegisterType::General),
+                            }
+                        };
+
                         let ir_var_str = self.ir_value_to_asm(&val);
-                        let register = self.alloc_register_var(*var);
-                        write!(out, "\tmov {register}, {ir_var_str}\n").unwrap();
+                        let register = self.get_free_or_existing_register(reg_ty, *var);
+                        write!(out, "\t{instr} {register}, {ir_var_str}\n").unwrap();
                     }
                     IRInstr::Return(val) => {
                         let ir_var_str = self.ir_value_to_asm(&val);
@@ -128,29 +184,81 @@ impl ARM64Backend {
                         // Todo: pass in the arguments
                         let called_asm = self.ir_value_to_asm(&called);
                         write!(out, "\tbl {called_asm}\n").unwrap();
-                        self.used_registers.insert(*ret, "x0".to_string());
+                        self.used_registers.insert(
+                            *ret,
+                            Register {
+                                ty: RegisterType::General,
+                                num: 0,
+                            },
+                        );
                     }
                     IRInstr::BinOp(res, lhs, rhs, op) => {
-                        let register = self.alloc_register_var(*res);
-                        let rhs_str = self.ir_value_to_asm(&rhs);
-                        let lhs_str = self.ir_value_to_asm(&lhs);
+                        let ty = &self.ssa_ir.vars[*res].ty;
+                        let reg_type = match ty {
+                            Type::Float => RegisterType::Float32,
+                            _ => RegisterType::General,
+                        };
+
+                        let move_op = match reg_type {
+                            RegisterType::Float32 => "fmov",
+                            _ => "mov",
+                        };
+
+                        let register = self.get_free_or_existing_register(reg_type, *res);
+
+                        let mut lhs_str = self.ir_value_to_asm(&lhs);
+                        let mut rhs_str = self.ir_value_to_asm(&rhs);
+
+                        // eliminate the case where its `op lit reg` since its not allowed
+                        if matches!(lhs, IRValue::Literal(_)) {
+                            // turn it into `op reg lit`
+                            let tmp = lhs_str;
+                            lhs_str = rhs_str;
+                            rhs_str = tmp;
+
+                            // if its `op lit1 lit2` now then turn into
+                            // `mov temp_reg lit1`
+                            // `op temp_reg lit2`
+                            if matches!(rhs, IRValue::Literal(_)) {
+                                let temp_reg = self.temp_register(reg_type);
+
+                                write!(out, "\t{move_op} {temp_reg}, {lhs_str}\n").unwrap();
+                                lhs_str = format!("{temp_reg}");
+                            }
+                        }
 
                         match op {
                             BinaryOperation::Add => {
-                                write!(out, "\tadd {register}, {lhs_str}, {rhs_str}\n").unwrap();
+                                let op = match reg_type {
+                                    RegisterType::Float32 => "fadd",
+                                    _ => "add",
+                                };
+
+                                write!(out, "\t{op} {register}, {lhs_str}, {rhs_str}\n").unwrap();
                             }
                             BinaryOperation::Subtract => {
-                                write!(out, "\tsub {register}, {lhs_str}, {rhs_str}\n").unwrap();
+                                let op = match reg_type {
+                                    RegisterType::Float32 => "fsub",
+                                    _ => "sub",
+                                };
+
+                                write!(out, "\t{op} {register}, {lhs_str}, {rhs_str}\n").unwrap();
                             }
                             BinaryOperation::Multiply => {
-                                write!(out, "\tmov {register}, {rhs_str}\n").unwrap();
-                                write!(out, "\tmul {register}, {lhs_str}, {register}\n").unwrap();
+                                let op = match reg_type {
+                                    RegisterType::Float32 => "fmul",
+                                    _ => "mul",
+                                };
+
+                                write!(out, "\t{move_op} {register}, {rhs_str}\n").unwrap();
+                                write!(out, "\t{op} {register}, {lhs_str}, {register}\n").unwrap();
                             }
                             _ => unimplemented!(),
                         }
                     }
                     IRInstr::UnOp(res, operand, op) => {
-                        let register = self.alloc_register_var(*res);
+                        let register =
+                            self.get_free_or_existing_register(RegisterType::General, *res);
                         let ir_var_str = self.ir_value_to_asm(&operand);
 
                         match op {
@@ -172,11 +280,33 @@ impl ARM64Backend {
                         }
                     }
                     IRInstr::Load(res, addr) => {
-                        let register = self.alloc_register_var(*res);
                         let addr = &addr.addr;
 
-                        write!(out, "\tadrp {register}, {addr}@PAGE\n").unwrap();
-                        write!(out, "\tadd {register}, {register}, {addr}@PAGEOFF\n").unwrap();
+                        let accessed_data = self
+                            .ssa_ir
+                            .data
+                            .iter()
+                            .filter(|d| d.alias == *addr)
+                            .next()
+                            .unwrap();
+
+                        match &accessed_data.value {
+                            IRDataLiteral::String(_) => {
+                                let register =
+                                    self.get_free_or_existing_register(RegisterType::General, *res);
+                                write!(out, "\tadrp {register}, {addr}@PAGE\n").unwrap();
+                                write!(out, "\tadd {register}, {register}, {addr}@PAGEOFF\n")
+                                    .unwrap();
+                            }
+                            IRDataLiteral::Float(_) => {
+                                let temp_reg = self.temp_register(RegisterType::General);
+                                let register =
+                                    self.get_free_or_existing_register(RegisterType::Float32, *res);
+                                write!(out, "\tadrp {temp_reg}, {addr}@PAGE\n").unwrap();
+                                write!(out, "\tldr {register}, [{temp_reg}, {addr}@PAGEOFF]\n")
+                                    .unwrap();
+                            }
+                        }
                     }
                     instr => {
                         println!("{instr:?}");
@@ -197,7 +327,7 @@ impl ARM64Backend {
                     IRDataLiteral::String(str) => (".string", format!("\"{str}\"")),
                     _ => todo!(),
                 };
-                write!(out, "\t{}: {data_ty} {data_val}\n", data.alias).unwrap();
+                write!(out, ".balign 4\n{}: {data_ty} {data_val}\n", data.alias).unwrap();
             }
         }
 

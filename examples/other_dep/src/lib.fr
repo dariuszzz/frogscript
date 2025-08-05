@@ -27,8 +27,16 @@ fn foo =
     return 2
 
 fn main =
-    let a = "siema"
-    let b = -foo()
+    let a = "hello"
+    let b = -foo() + 2 * 53
+
+    let c = 2.593 * 4.20 - 20.0
+
+    let d = 0
+    // convert c to int and store in d
+    @instr("fcvtzs {d}, {c}")
+
+    d += b
 
     // print out `a`
     @instr("
@@ -39,9 +47,9 @@ fn main =
     | x0 x2 x16
     ")
 
-    // exit with code `b`
+    // exit with code `d`
     @instr("
-    mov x0, {b}
+    mov x0, {d}
     mov x16, 1
     svc 0
     | x0 x16

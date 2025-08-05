@@ -71,27 +71,10 @@ pub enum IRValue {
     Address(IRAddress),
 }
 
-impl IRValue {
-    pub fn ty(&self) -> Type {
-        match self {
-            // idk
-            IRValue::Address(v) => Type::Uint,
-            IRValue::Variable(v) => Type::Infer,
-            IRValue::Literal(lit) => match lit {
-                Literal::String(_) => Type::String,
-                Literal::Int(_) => Type::Int,
-                Literal::Uint(_) => Type::Uint,
-                Literal::Float(_) => Type::Float,
-                Literal::Boolean(_) => Type::Boolean,
-            },
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum InlineTargetPart {
     String(String),
-    SSA_IR_Var_Ref(usize),
+    SSAIRVarRef(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -151,8 +134,8 @@ impl IRGen {
             }
             IRInstr::Assign(var, irvalue) => {
                 let irvalue = self.pretty_print_irval(irvalue);
-                let var = &self.ssa_ir.vars[*var];
-                format!("{} = {irvalue}", var.name)
+                let variable = &self.ssa_ir.vars[*var];
+                format!("{} = {irvalue} ", variable.name)
             }
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);

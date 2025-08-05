@@ -52,6 +52,21 @@ impl IRGen {
     //     symbol_table.scope_get_symbol(scope, name, symbol_type)
     // }
 
+    fn ir_val_ty(&self, ir_val: &IRValue) -> Type {
+        match ir_val {
+            // idk
+            IRValue::Address(v) => Type::Uint,
+            IRValue::Variable(v) => self.ssa_ir.vars[*v].ty.clone(),
+            IRValue::Literal(lit) => match lit {
+                Literal::String(_) => Type::String,
+                Literal::Int(_) => Type::Int,
+                Literal::Uint(_) => Type::Uint,
+                Literal::Float(_) => Type::Float,
+                Literal::Boolean(_) => Type::Boolean,
+            },
+        }
+    }
+
     fn temp_var(&mut self, ty: Type) -> usize {
         let temp_name = self.make_name_unique("_");
         self.ssa_ir.vars.push(IRVariable {
@@ -885,7 +900,7 @@ impl IRGen {
                         }
                     }
                     Literal::Float(float) => {
-                        let var_id = self.temp_var(Type::String);
+                        let var_id = self.temp_var(Type::Float);
                         let alias = format!("fl{}", self.ssa_ir.data.len());
 
                         self.ssa_ir.data.push(IRData {
@@ -930,7 +945,8 @@ impl IRGen {
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
-                let var_id = self.temp_var(lhs.ty());
+                let var_id = self.temp_var(self.ir_val_ty(&lhs));
+
                 instructions.push(IRInstr::BinOp(var_id, lhs.clone(), rhs, binary_op.op));
 
                 return Ok((IRValue::Variable(var_id), instructions));
@@ -946,7 +962,7 @@ impl IRGen {
 
                 instructions.append(&mut operand_instrs);
 
-                let var_id = self.temp_var(operand.ty());
+                let var_id = self.temp_var(self.ir_val_ty(&operand));
                 instructions.push(IRInstr::UnOp(var_id, operand.clone(), unary_op.op));
 
                 return Ok((IRValue::Variable(var_id), instructions));
@@ -984,7 +1000,7 @@ impl IRGen {
                 }
 
                 // TODO: this should have the return type as type
-                let var_id = self.temp_var(func_expr.ty());
+                let var_id = self.temp_var(self.ir_val_ty(&func_expr));
                 instructions.push(IRInstr::Call(var_id, func_expr.clone(), args));
 
                 return Ok((IRValue::Variable(var_id), instructions));
@@ -1038,13 +1054,16 @@ impl IRGen {
                 instructions.append(&mut rhs_instrs);
 
                 if let IRValue::Variable(var) = lhs.clone() {
-                    let old_var_name = self.ssa_ir.vars[var].name.clone();
-                    let original_name = old_var_name.split("#").next().unwrap();
-                    let var_id = self.named_var(&original_name, lhs.ty());
-                    let new_var_name = self.ssa_ir.vars[var_id].name.clone();
+                    let var_name = self.ssa_ir.vars[var].name.clone();
+                    let var_id = if let Some(idx) =
+                        self.ssa_ir.vars.iter().position(|v| v.name == var_name)
+                    {
+                        idx
+                    } else {
+                        self.named_var(&var_name, self.ir_val_ty(&lhs))
+                    };
 
                     instructions.push(IRInstr::Assign(var_id, rhs));
-                    renamed_vars.insert(original_name.to_string(), new_var_name);
                 } else {
                     panic!("Assignment to literal?, {lhs:?}");
                 }
@@ -1068,7 +1087,7 @@ impl IRGen {
                     let (el, mut el_instrs) =
                         self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &el)?;
 
-                    inner_ty = el.ty();
+                    inner_ty = self.ir_val_ty(&el);
 
                     instructions.append(&mut el_instrs);
                     instructions.push(IRInstr::Store(
@@ -1116,8 +1135,8 @@ impl IRGen {
                 instructions.append(&mut index_instrs);
                 instructions.append(&mut expr_instrs);
 
-                let idx_var = self.temp_var(index.ty());
-                let expr_var = self.temp_var(expr.ty());
+                let idx_var = self.temp_var(self.ir_val_ty(&index));
+                let expr_var = self.temp_var(self.ir_val_ty(&expr));
                 let res_var = self.temp_var(Type::Uint);
 
                 let expr_name = &self.ssa_ir.vars[expr_var].name;
@@ -1182,7 +1201,7 @@ impl IRGen {
                                 )?;
 
                                 if let IRValue::Variable(var) = expr {
-                                    InlineTargetPart::SSA_IR_Var_Ref(var)
+                                    InlineTargetPart::SSAIRVarRef(var)
                                 } else {
                                     unreachable!()
                                 }
@@ -1196,19 +1215,22 @@ impl IRGen {
                 }
 
                 let mut used_registers = Vec::new();
-                let last_part = instrs_parts.last_mut().unwrap();
-                if let InlineTargetPart::String(end) = last_part {
+                let last_part = instrs_parts.last_mut();
+                if let Some(InlineTargetPart::String(end)) = last_part {
                     let split: Vec<_> = end.split("|").collect();
 
-                    let first_half = split[0].to_string();
-                    let used_regs_text = split[1];
+                    if split.len() >= 2 {
+                        let first_half = split[0].to_string();
+                        let used_regs_text = split[1];
 
-                    used_registers = used_regs_text
-                        .split(" ")
-                        .map(|s| s.trim().to_string())
-                        .collect();
+                        // todo: somehow there are "" registers counted here
+                        used_registers = used_regs_text
+                            .split(" ")
+                            .map(|s| s.trim().to_string())
+                            .collect();
 
-                    *end = first_half;
+                        *end = first_half;
+                    }
                 }
 
                 return Ok((
@@ -1299,7 +1321,7 @@ impl IRGen {
                 )?;
 
                 let binding_var_id =
-                    self.symbol_idx_to_var(&for_expr.symbol_idx, iterator_expr.ty());
+                    self.symbol_idx_to_var(&for_expr.symbol_idx, self.ir_val_ty(&iterator_expr));
                 let binding_var_name = self.ssa_ir.vars[binding_var_id].name.clone();
                 renamed_vars.insert(for_expr.binding.clone(), binding_var_name);
 
