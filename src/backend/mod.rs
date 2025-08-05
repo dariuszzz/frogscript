@@ -16,9 +16,9 @@ pub fn generate_ir(
     program: Program,
     target: &Target,
     symbol_table: &SymbolTable,
-) -> Result<(Vec<IRVariable>, SSAIR), String> {
+) -> Result<SSAIR, String> {
     let mut ir_gen = IRGen::default();
     let ssa_ir = ir_gen.generate_ir(program, target, symbol_table)?;
 
-    Ok((ir_gen.vars, ssa_ir))
+    Ok(ssa_ir)
 }

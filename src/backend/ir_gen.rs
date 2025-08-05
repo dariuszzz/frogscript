@@ -3,7 +3,7 @@ use std::{collections::HashMap, ptr::read};
 
 use crate::{
     ast::{FunctionType, SymbolIdx},
-    backend::ssa_ir::InlineTargetPart,
+    backend::ssa_ir::{IRData, IRDataLiteral, InlineTargetPart},
     lexer::FStringPart,
     pond::{Dependency, Target},
     ssa_ir::{Block, IRAddress, IRInstr, IRValue, IRVariable, VariableID, SSAIR},
@@ -20,8 +20,7 @@ pub struct LoopInfo {
 #[derive(Default)]
 pub struct IRGen {
     pub var_counter: u32,
-
-    pub vars: Vec<IRVariable>,
+    pub ssa_ir: SSAIR,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -55,12 +54,12 @@ impl IRGen {
 
     fn temp_var(&mut self, ty: Type) -> usize {
         let temp_name = self.make_name_unique("_");
-        self.vars.push(IRVariable {
+        self.ssa_ir.vars.push(IRVariable {
             name: temp_name,
             ty,
         });
 
-        return self.vars.len() - 1;
+        return self.ssa_ir.vars.len() - 1;
     }
 
     fn symbol_idx_to_name(symbol_idx: &SymbolIdx) -> String {
@@ -69,18 +68,18 @@ impl IRGen {
 
     fn symbol_idx_to_var(&mut self, symbol_idx: &SymbolIdx, ty: Type) -> usize {
         let name = Self::symbol_idx_to_name(symbol_idx);
-        self.vars.push(IRVariable { name, ty });
+        self.ssa_ir.vars.push(IRVariable { name, ty });
 
-        return self.vars.len() - 1;
+        return self.ssa_ir.vars.len() - 1;
     }
 
     fn named_var(&mut self, name: &str, ty: Type) -> usize {
-        self.vars.push(IRVariable {
+        self.ssa_ir.vars.push(IRVariable {
             name: name.to_string(),
             ty,
         });
 
-        return self.vars.len() - 1;
+        return self.ssa_ir.vars.len() - 1;
     }
 
     pub fn generate_ir(
@@ -89,7 +88,6 @@ impl IRGen {
         target: &Target,
         symbol_table: &SymbolTable,
     ) -> Result<SSAIR, String> {
-        let mut ssa_ir = SSAIR::default();
         let mut scope = 0;
 
         for module in &program.modules {
@@ -100,7 +98,7 @@ impl IRGen {
 
                 let name = Self::symbol_idx_to_name(&func.symbol_idx);
 
-                self.vars.push(IRVariable {
+                self.ssa_ir.vars.push(IRVariable {
                     name: name.clone(),
                     ty: Type::Function(FunctionType {
                         env_args: vec![],
@@ -115,21 +113,20 @@ impl IRGen {
 
                 for arg in &func.argument_list {
                     let arg_id = self.symbol_idx_to_var(&arg.symbol_idx, arg.arg_type.clone());
-                    let var_name = self.vars[arg_id].name.clone();
+                    let var_name = self.ssa_ir.vars[arg_id].name.clone();
                     parameters.push(arg_id);
                     renamed_vars.insert(arg.arg_name.clone(), var_name);
                 }
 
-                ssa_ir.blocks.push(Block {
+                self.ssa_ir.blocks.push(Block {
                     name,
                     parameters,
                     instructions: vec![],
                 });
-                let block_idx = ssa_ir.blocks.len() - 1;
+                let block_idx = self.ssa_ir.blocks.len() - 1;
 
                 let instructions = self.generate_ir_codeblock(
                     &mut scope,
-                    &mut ssa_ir,
                     symbol_table,
                     &mut renamed_vars,
                     &LoopInfo::default(),
@@ -137,30 +134,27 @@ impl IRGen {
                 )?;
 
                 // these are the instructions before any label
-                let remaining_instrs = Self::split_labels_into_blocks(&mut ssa_ir, instructions);
-                let block = ssa_ir.blocks.get_mut(block_idx).unwrap();
+                let remaining_instrs = self.split_labels_into_blocks(instructions);
+                let block = self.ssa_ir.blocks.get_mut(block_idx).unwrap();
                 block.instructions = remaining_instrs;
 
                 // Deletes unreachable instructions in all blocks belonging to this func
-                self.prune_all_instructions_after_first_branch(&mut ssa_ir, block_idx);
+                self.prune_all_instructions_after_first_branch(block_idx);
 
-                self.figure_out_block_params_for_func(&mut ssa_ir, block_idx);
+                self.figure_out_block_params_for_func(block_idx);
             }
 
             scope += 1;
         }
 
-        Ok(ssa_ir)
+        Ok(self.ssa_ir.clone())
     }
 
-    fn build_fn_dependency_graph(
-        &mut self,
-        ssa: &mut SSAIR,
-        func_block_idx: usize,
-    ) -> DependencyGraph {
+    fn build_fn_dependency_graph(&mut self, func_block_idx: usize) -> DependencyGraph {
         let mut graph: DependencyGraph = Arena::new();
 
-        let blocks_by_name = ssa
+        let blocks_by_name = self
+            .ssa_ir
             .blocks
             .iter()
             .enumerate()
@@ -168,7 +162,7 @@ impl IRGen {
             .map(|(idx, b)| (b.name.clone(), idx - func_block_idx))
             .collect::<HashMap<String, usize>>();
 
-        let len = ssa.blocks.len();
+        let len = self.ssa_ir.blocks.len();
         // Create nodes
         for i in func_block_idx..len {
             let node = DTreeNode::default();
@@ -177,7 +171,7 @@ impl IRGen {
 
         // Fill in dependees and dependencies
         for i in func_block_idx..len {
-            let block = &ssa.blocks[i];
+            let block = &self.ssa_ir.blocks[i];
             let curr_idx = i - func_block_idx;
 
             for instr in &block.instructions {
@@ -217,12 +211,11 @@ impl IRGen {
 
     fn find_block_variables(
         &mut self,
-        ssa: &mut SSAIR,
         func_block_idx: usize,
         block_idx: usize,
         // Foreign, Locals
     ) -> (Vec<VariableID>, Vec<VariableID>) {
-        let block = &ssa.blocks[func_block_idx + block_idx];
+        let block = &self.ssa_ir.blocks[func_block_idx + block_idx];
 
         let mut local_vars = vec![];
         let mut new_params = vec![];
@@ -255,10 +248,10 @@ impl IRGen {
                 }
                 IRInstr::Store(_, val) => {
                     if let IRValue::Variable(val) = val {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
@@ -270,10 +263,10 @@ impl IRGen {
                 IRInstr::Assign(res, irvalue) => {
                     local_vars.push(res.clone());
                     if let IRValue::Variable(val) = irvalue {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
@@ -282,20 +275,20 @@ impl IRGen {
                 IRInstr::BinOp(res, irvalue, irvalue1, _) => {
                     local_vars.push(res.clone());
                     if let IRValue::Variable(val) = irvalue {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
                     }
 
                     if let IRValue::Variable(val) = irvalue1 {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
@@ -304,10 +297,10 @@ impl IRGen {
                 IRInstr::UnOp(res, irvalue, unary_operation) => {
                     local_vars.push(res.clone());
                     if let IRValue::Variable(val) = irvalue {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
@@ -317,10 +310,11 @@ impl IRGen {
                     local_vars.push(res.clone());
                     for arg in args {
                         if let IRValue::Variable(val) = arg {
-                            let contained = contains_named_var(&self.vars, &local_vars, &val);
+                            let contained =
+                                contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                             if !contained {
-                                // let name = self.vars[*val].name.clone();
-                                // let ty = self.vars[*val].ty.clone();
+                                // let name = self.ssa_ir.vars[*val].name.clone();
+                                // let ty = self.ssa_ir.vars[*val].ty.clone();
                                 // let param_id = self.named_var(&name, ty);
                                 new_params.push(*val);
                             }
@@ -329,10 +323,10 @@ impl IRGen {
                 }
                 IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
                     if let IRValue::Variable(val) = irvalue {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
@@ -341,16 +335,16 @@ impl IRGen {
                 IRInstr::Goto(label, args) => {}
                 IRInstr::Return(irvalue) => {
                     if let IRValue::Variable(val) = irvalue {
-                        let contained = contains_named_var(&self.vars, &local_vars, &val);
+                        let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
-                            // let name = self.vars[*val].name.clone();
-                            // let ty = self.vars[*val].ty.clone();
+                            // let name = self.ssa_ir.vars[*val].name.clone();
+                            // let ty = self.ssa_ir.vars[*val].ty.clone();
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
                     }
                 }
-                IRInstr::InlineTarget(_) => {}
+                IRInstr::InlineTarget(_, _) => {}
                 IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
             }
         }
@@ -359,7 +353,7 @@ impl IRGen {
         //     block.name,
         //     new_params
         //         .iter()
-        //         .map(|param| self.vars[*param].name.clone())
+        //         .map(|param| self.ssa_ir.vars[*param].name.clone())
         //         .collect::<Vec<_>>()
         //         .join(", ")
         // );
@@ -369,7 +363,7 @@ impl IRGen {
         //     block.name,
         //     local_vars
         //         .iter()
-        //         .map(|param| self.vars[*param].name.clone())
+        //         .map(|param| self.ssa_ir.vars[*param].name.clone())
         //         .collect::<Vec<_>>()
         //         .join(", ")
         // );
@@ -380,7 +374,6 @@ impl IRGen {
     fn resolve_cycle_block_params(
         &mut self,
         group: &Vec<usize>,
-        ssa: &mut SSAIR,
         graph: &mut DependencyGraph,
         ctx: &mut ParamContext,
         func_block_idx: usize,
@@ -405,13 +398,12 @@ impl IRGen {
         let v = visits.get_mut(&block_idx).unwrap();
         *v = curr_v + 1;
 
-        let (mut foreign_vars, local_vars) =
-            self.find_block_variables(ssa, func_block_idx, block_idx);
+        let (mut foreign_vars, local_vars) = self.find_block_variables(func_block_idx, block_idx);
 
         unresolved_vars.retain(|var| {
-            let var_name = &self.vars[*var].name;
+            let var_name = &self.ssa_ir.vars[*var].name;
             for local in &local_vars {
-                let name = &self.vars[*local].name;
+                let name = &self.ssa_ir.vars[*local].name;
                 if var_name == name {
                     //contained
                     return false;
@@ -430,7 +422,7 @@ impl IRGen {
         *unresolved_vars = foreign_vars.clone();
 
         // Add those params
-        let block = &mut ssa.blocks[func_block_idx + block_idx];
+        let block = &mut self.ssa_ir.blocks[func_block_idx + block_idx];
         for param in foreign_vars {
             if !block.parameters.contains(&param) {
                 block.parameters.push(param);
@@ -448,7 +440,6 @@ impl IRGen {
             // println!("{dep}");
             self.resolve_cycle_block_params(
                 group,
-                ssa,
                 graph,
                 ctx,
                 func_block_idx,
@@ -462,7 +453,6 @@ impl IRGen {
 
     fn figure_out_block_params(
         &mut self,
-        ssa: &mut SSAIR,
         graph: &mut DependencyGraph,
         ctx: &mut ParamContext,
         func_block_idx: usize,
@@ -497,7 +487,6 @@ impl IRGen {
             let mut cycle_local_unresolved_vars = unresolved_vars.clone();
             self.resolve_cycle_block_params(
                 &group,
-                ssa,
                 graph,
                 ctx,
                 func_block_idx,
@@ -514,7 +503,6 @@ impl IRGen {
                     }
 
                     self.figure_out_block_params(
-                        ssa,
                         graph,
                         ctx,
                         func_block_idx,
@@ -539,13 +527,13 @@ impl IRGen {
 
             // Figure out which params are needed from uninit vars
             let (mut foreign_vars, local_vars) =
-                self.find_block_variables(ssa, func_block_idx, block_idx);
+                self.find_block_variables(func_block_idx, block_idx);
 
             // Get remove newly discovered variables from unresolved_vars
             unresolved_vars.retain(|var| {
-                let var_name = &self.vars[*var].name;
+                let var_name = &self.ssa_ir.vars[*var].name;
                 for local in &local_vars {
-                    let name = &self.vars[*local].name;
+                    let name = &self.ssa_ir.vars[*local].name;
                     if *var_name == *name {
                         //contained
                         return false;
@@ -564,7 +552,7 @@ impl IRGen {
             *unresolved_vars = foreign_vars.clone();
 
             // Add those params
-            let block = &mut ssa.blocks[func_block_idx + block_idx];
+            let block = &mut self.ssa_ir.blocks[func_block_idx + block_idx];
             for param in foreign_vars {
                 if !block.parameters.contains(&param) {
                     block.parameters.push(param);
@@ -574,7 +562,6 @@ impl IRGen {
             // Visit dependencies
             for dep in dependencies {
                 self.figure_out_block_params(
-                    ssa,
                     graph,
                     ctx,
                     func_block_idx,
@@ -670,16 +657,15 @@ impl IRGen {
         comps
     }
 
-    fn figure_out_block_params_for_func(&mut self, ssa: &mut SSAIR, func_block_idx: usize) {
-        let mut dependency_graph = self.build_fn_dependency_graph(ssa, func_block_idx);
+    fn figure_out_block_params_for_func(&mut self, func_block_idx: usize) {
+        let mut dependency_graph = self.build_fn_dependency_graph(func_block_idx);
         let strongly_connected_comps = self.find_strongly_connected(&mut dependency_graph);
 
-        let last_block_idx = ssa.blocks.len() - func_block_idx - 1;
+        let last_block_idx = self.ssa_ir.blocks.len() - func_block_idx - 1;
 
         let mut ctx = ParamContext::default();
 
         self.figure_out_block_params(
-            ssa,
             &mut dependency_graph,
             &mut ctx,
             func_block_idx,
@@ -689,16 +675,16 @@ impl IRGen {
             last_block_idx,
         );
 
-        self.fix_passing_parameters_by_gotos(ssa, func_block_idx);
+        self.fix_passing_parameters_by_gotos(func_block_idx);
     }
 
-    fn fix_passing_parameters_by_gotos(&mut self, ssa: &mut SSAIR, func_block_idx: usize) {
-        let len = ssa.blocks.len();
+    fn fix_passing_parameters_by_gotos(&mut self, func_block_idx: usize) {
+        let len = self.ssa_ir.blocks.len();
 
-        let block_copies = ssa.blocks.clone();
+        let block_copies = self.ssa_ir.blocks.clone();
 
         for idx in func_block_idx..len {
-            let block = &mut ssa.blocks[idx];
+            let block = &mut self.ssa_ir.blocks[idx];
             let mut local_vars = Vec::new();
 
             for param in &block.parameters {
@@ -757,21 +743,17 @@ impl IRGen {
                         }
                     }
                     IRInstr::Return(irvalue) => {}
-                    IRInstr::InlineTarget(_) => {}
+                    IRInstr::InlineTarget(_, _) => {}
                     IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
                 }
             }
         }
     }
 
-    fn prune_all_instructions_after_first_branch(
-        &mut self,
-        ssa: &mut SSAIR,
-        func_block_idx: usize,
-    ) {
-        let len = ssa.blocks.len();
+    fn prune_all_instructions_after_first_branch(&mut self, func_block_idx: usize) {
+        let len = self.ssa_ir.blocks.len();
         for block_idx in func_block_idx..len {
-            let block = &mut ssa.blocks[block_idx];
+            let block = &mut self.ssa_ir.blocks[block_idx];
             let mut instructions = Vec::new();
 
             for instr in block.instructions.clone() {
@@ -788,7 +770,7 @@ impl IRGen {
         }
     }
 
-    fn split_labels_into_blocks(ssa: &mut SSAIR, instructions: Vec<IRInstr>) -> Vec<IRInstr> {
+    fn split_labels_into_blocks(&mut self, instructions: Vec<IRInstr>) -> Vec<IRInstr> {
         let mut ret_instrs = vec![];
         let mut curr_block = None;
 
@@ -796,7 +778,7 @@ impl IRGen {
             match instr {
                 IRInstr::Label(label) => {
                     if let Some(curr_block) = curr_block {
-                        ssa.blocks.push(curr_block);
+                        self.ssa_ir.blocks.push(curr_block);
                     }
 
                     curr_block = Some(Block {
@@ -816,7 +798,7 @@ impl IRGen {
         }
 
         if let Some(curr_block) = curr_block {
-            ssa.blocks.push(curr_block);
+            self.ssa_ir.blocks.push(curr_block);
         }
 
         return ret_instrs;
@@ -825,7 +807,6 @@ impl IRGen {
     pub fn generate_ir_codeblock(
         &mut self,
         scope: &mut usize,
-        ssa: &mut SSAIR,
         symbol_table: &SymbolTable,
         renamed_vars: &mut HashMap<String, String>,
         loop_info: &LoopInfo,
@@ -835,7 +816,7 @@ impl IRGen {
 
         for expr in &codeblock.expressions {
             let (res_var, mut instrs) =
-                self.generate_ir_expr(scope, ssa, symbol_table, renamed_vars, loop_info, &expr)?;
+                self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &expr)?;
             instructions.append(&mut instrs);
         }
 
@@ -845,7 +826,6 @@ impl IRGen {
     pub fn generate_ir_expr(
         &mut self,
         scope: &mut usize,
-        ssa: &mut SSAIR,
         symbol_table: &SymbolTable,
         renamed_vars: &mut HashMap<String, String>,
         loop_info: &LoopInfo,
@@ -857,11 +837,10 @@ impl IRGen {
             Expression::VariableDecl(variable_decl) => {
                 let var_id = self
                     .symbol_idx_to_var(&variable_decl.symbol_idx, variable_decl.var_type.clone());
-                let var_name = self.vars[var_id].name.clone();
+                let var_name = self.ssa_ir.vars[var_id].name.clone();
 
                 let (value, mut instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -878,8 +857,56 @@ impl IRGen {
             }
             Expression::Literal(literal) => {
                 let value = match literal {
-                    Literal::String(vec) => IRValue::Literal(Literal::Int(0)),
-                    lit => IRValue::Literal(lit.clone()),
+                    Literal::String(parts) => {
+                        if parts.len() != 1 {
+                            unimplemented!("FStrings not supported yet")
+                        }
+
+                        if let FStringPart::String(str) = &parts[0] {
+                            let var_id = self.temp_var(Type::String);
+                            let alias = format!("str{}", self.ssa_ir.data.len());
+
+                            self.ssa_ir.data.push(IRData {
+                                alias: alias.clone(),
+                                value: IRDataLiteral::String(str.clone()),
+                            });
+
+                            instructions.push(IRInstr::Load(
+                                var_id,
+                                IRAddress {
+                                    addr: alias,
+                                    offset: 0,
+                                },
+                            ));
+
+                            IRValue::Variable(var_id)
+                        } else {
+                            unimplemented!("FStrings not supported yet")
+                        }
+                    }
+                    Literal::Float(float) => {
+                        let var_id = self.temp_var(Type::String);
+                        let alias = format!("fl{}", self.ssa_ir.data.len());
+
+                        self.ssa_ir.data.push(IRData {
+                            alias: alias.clone(),
+                            value: IRDataLiteral::Float(*float),
+                        });
+
+                        instructions.push(IRInstr::Load(
+                            var_id,
+                            IRAddress {
+                                addr: alias,
+                                offset: 0,
+                            },
+                        ));
+
+                        IRValue::Variable(var_id)
+                    }
+                    lit @ Literal::Int(_) | lit @ Literal::Uint(_) | lit @ Literal::Boolean(_) => {
+                        IRValue::Literal(lit.clone())
+                    }
+                    _ => unimplemented!(),
                 };
 
                 return Ok((value, instructions));
@@ -887,7 +914,6 @@ impl IRGen {
             Expression::BinaryOp(binary_op) => {
                 let (lhs, mut lhs_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -895,7 +921,6 @@ impl IRGen {
                 )?;
                 let (rhs, mut rhs_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -913,7 +938,6 @@ impl IRGen {
             Expression::UnaryOp(unary_op) => {
                 let (operand, mut operand_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -930,7 +954,6 @@ impl IRGen {
             Expression::FunctionCall(function_call) => {
                 let (mut func_expr, mut func_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -952,14 +975,8 @@ impl IRGen {
 
                 let mut args = vec![];
                 for arg in &function_call.arguments {
-                    let (arg_expr, mut arg_instrs) = self.generate_ir_expr(
-                        scope,
-                        ssa,
-                        symbol_table,
-                        renamed_vars,
-                        loop_info,
-                        &arg,
-                    )?;
+                    let (arg_expr, mut arg_instrs) =
+                        self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &arg)?;
 
                     instructions.append(&mut arg_instrs);
 
@@ -979,7 +996,7 @@ impl IRGen {
                     &Self::symbol_idx_to_name(&variable.symbol_idx)
                 };
 
-                for (idx, var) in self.vars.iter().enumerate() {
+                for (idx, var) in self.ssa_ir.vars.iter().enumerate() {
                     if var.name == *name_to_find {
                         return Ok((IRValue::Variable(idx), instructions));
                     }
@@ -990,7 +1007,6 @@ impl IRGen {
             Expression::Return(expression) => {
                 let (ret_expr, mut ret_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1005,7 +1021,6 @@ impl IRGen {
             Expression::Assignment(assignment) => {
                 let (lhs, mut lhs_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1013,7 +1028,6 @@ impl IRGen {
                 )?;
                 let (rhs, mut rhs_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1024,10 +1038,10 @@ impl IRGen {
                 instructions.append(&mut rhs_instrs);
 
                 if let IRValue::Variable(var) = lhs.clone() {
-                    let old_var_name = self.vars[var].name.clone();
+                    let old_var_name = self.ssa_ir.vars[var].name.clone();
                     let original_name = old_var_name.split("#").next().unwrap();
                     let var_id = self.named_var(&original_name, lhs.ty());
-                    let new_var_name = self.vars[var_id].name.clone();
+                    let new_var_name = self.ssa_ir.vars[var_id].name.clone();
 
                     instructions.push(IRInstr::Assign(var_id, rhs));
                     renamed_vars.insert(original_name.to_string(), new_var_name);
@@ -1051,14 +1065,8 @@ impl IRGen {
                 let mut offset = initial_offset;
 
                 for el in &array_literal.elements {
-                    let (el, mut el_instrs) = self.generate_ir_expr(
-                        scope,
-                        ssa,
-                        symbol_table,
-                        renamed_vars,
-                        loop_info,
-                        &el,
-                    )?;
+                    let (el, mut el_instrs) =
+                        self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &el)?;
 
                     inner_ty = el.ty();
 
@@ -1091,7 +1099,6 @@ impl IRGen {
             Expression::ArrayAccess(array_access) => {
                 let (index, mut index_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1100,7 +1107,6 @@ impl IRGen {
 
                 let (expr, mut expr_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1114,8 +1120,8 @@ impl IRGen {
                 let expr_var = self.temp_var(expr.ty());
                 let res_var = self.temp_var(Type::Uint);
 
-                let expr_name = &self.vars[expr_var].name;
-                let idx_name = &self.vars[idx_var].name;
+                let expr_name = &self.ssa_ir.vars[expr_var].name;
+                let idx_name = &self.ssa_ir.vars[idx_var].name;
 
                 instructions.push(IRInstr::Assign(idx_var, index));
                 instructions.push(IRInstr::Assign(expr_var, expr));
@@ -1169,7 +1175,6 @@ impl IRGen {
                             FStringPart::Code(expr) => {
                                 let (expr, mut instrs) = self.generate_ir_expr(
                                     scope,
-                                    ssa,
                                     symbol_table,
                                     renamed_vars,
                                     loop_info,
@@ -1190,12 +1195,29 @@ impl IRGen {
                     }
                 }
 
+                let mut used_registers = Vec::new();
+                let last_part = instrs_parts.last_mut().unwrap();
+                if let InlineTargetPart::String(end) = last_part {
+                    let split: Vec<_> = end.split("|").collect();
+
+                    let first_half = split[0].to_string();
+                    let used_regs_text = split[1];
+
+                    used_registers = used_regs_text
+                        .split(" ")
+                        .map(|s| s.trim().to_string())
+                        .collect();
+
+                    *end = first_half;
+                }
+
                 return Ok((
                     IRValue::Variable(res),
-                    vec![IRInstr::InlineTarget(instrs_parts)],
+                    vec![IRInstr::InlineTarget(instrs_parts, used_registers)],
                 ));
             }
             Expression::BuiltinType(expression) => {
+                unreachable!("I think");
                 let res = self.temp_var(Type::Any);
                 return Ok((
                     IRValue::Variable(res),
@@ -1205,7 +1227,6 @@ impl IRGen {
             Expression::If(if_stmt) => {
                 let (cond_expr, mut cond_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1235,7 +1256,6 @@ impl IRGen {
 
                 let mut true_branch_instrs = self.generate_ir_codeblock(
                     scope,
-                    ssa,
                     symbol_table,
                     &mut renamed_vars.clone(),
                     loop_info,
@@ -1250,7 +1270,6 @@ impl IRGen {
 
                     let mut false_branch_instrs = self.generate_ir_codeblock(
                         scope,
-                        ssa,
                         symbol_table,
                         &mut renamed_vars.clone(),
                         loop_info,
@@ -1273,7 +1292,6 @@ impl IRGen {
 
                 let (iterator_expr, mut iterator_instrs) = self.generate_ir_expr(
                     scope,
-                    ssa,
                     symbol_table,
                     renamed_vars,
                     loop_info,
@@ -1282,7 +1300,7 @@ impl IRGen {
 
                 let binding_var_id =
                     self.symbol_idx_to_var(&for_expr.symbol_idx, iterator_expr.ty());
-                let binding_var_name = self.vars[binding_var_id].name.clone();
+                let binding_var_name = self.ssa_ir.vars[binding_var_id].name.clone();
                 renamed_vars.insert(for_expr.binding.clone(), binding_var_name);
 
                 instructions.append(&mut iterator_instrs);
@@ -1301,7 +1319,6 @@ impl IRGen {
 
                 let mut loop_body = self.generate_ir_codeblock(
                     scope,
-                    ssa,
                     symbol_table,
                     &mut renamed_vars.clone(),
                     &LoopInfo {

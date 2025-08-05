@@ -514,10 +514,10 @@ fn main() -> Result<(), String> {
                 semantics::perform_analysis(&mut program, &i_opts)?
             };
 
-            let (ir_vars, ssa_ir) = backend::generate_ir(program, target, &symbol_table)?;
+            let ssa_ir = backend::generate_ir(program, target, &symbol_table)?;
 
-            let mut backend = backend::arm64::ARM64Backend::new(ir_vars);
-            let asm = backend.compile_ir(ssa_ir, &symbol_table)?;
+            let mut backend = backend::arm64::ARM64Backend::new(ssa_ir);
+            let asm = backend.compile_ir(&symbol_table)?;
 
             let out_path = target.outpath.join("out.asm");
 

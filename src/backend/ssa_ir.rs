@@ -6,13 +6,17 @@ use super::ir_gen::IRGen;
 
 #[derive(Debug, Clone)]
 pub struct SSAIR {
+    pub vars: Vec<IRVariable>,
     pub blocks: Vec<Block>,
+    pub data: Vec<IRData>,
 }
 
 impl Default for SSAIR {
     fn default() -> Self {
         Self {
             blocks: Vec::default(),
+            vars: Vec::default(),
+            data: Vec::default(),
         }
     }
 }
@@ -34,6 +38,18 @@ impl Default for Block {
             instructions: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IRData {
+    pub alias: String,
+    pub value: IRDataLiteral,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IRDataLiteral {
+    String(String),
+    Float(f32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,7 +109,7 @@ pub enum IRInstr {
     Return(IRValue),
     Label(String),
 
-    InlineTarget(Vec<InlineTargetPart>),
+    InlineTarget(Vec<InlineTargetPart>, Vec<String>), //Target parts, used registers
 
     Unimplemented(VariableID, String),
 }
@@ -114,7 +130,7 @@ impl IRGen {
             IRValue::Address(address) => self.pretty_print_address(address),
             IRValue::Literal(literal) => format!("{literal:?}"),
             IRValue::Variable(variable) => {
-                let var = &self.vars[*variable];
+                let var = &self.ssa_ir.vars[*variable];
 
                 format!("{}", var.name)
             }
@@ -130,23 +146,23 @@ impl IRGen {
             }
             IRInstr::Load(var, addr) => {
                 let addr = self.pretty_print_address(addr);
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = load {addr}", var.name)
             }
             IRInstr::Assign(var, irvalue) => {
                 let irvalue = self.pretty_print_irval(irvalue);
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = {irvalue}", var.name)
             }
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
                 let irvalue1 = self.pretty_print_irval(irvalue1);
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = {irvalue} {op} {irvalue1}", var.name)
             }
             IRInstr::UnOp(var, irvalue, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = {op}{irvalue}", var.name)
             }
             IRInstr::Call(var, func, vec) => {
@@ -157,7 +173,7 @@ impl IRGen {
                 let params = params.join(", ");
 
                 let func = self.pretty_print_irval(func);
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = call {func}({params})", var.name)
             }
             IRInstr::Return(val) => {
@@ -192,24 +208,31 @@ impl IRGen {
                     "if {val} goto {true_label}({true_args}) else goto {false_label}({false_args})"
                 )
             }
-            IRInstr::InlineTarget(expr) => {
-                format!("Inline (...)")
+            IRInstr::InlineTarget(expr, registers) => {
+                format!("Inline (...), {registers:?}")
             }
 
             IRInstr::Unimplemented(var, str) => {
-                let var = &self.vars[*var];
+                let var = &self.ssa_ir.vars[*var];
                 format!("{} = [[{str}]]", var.name)
             }
         }
     }
 
     pub fn pretty_print_ssa(&self, ssa: &SSAIR) {
+        if !ssa.data.is_empty() {
+            println!("data:");
+            for data in &ssa.data {
+                println!("\t{}: {:?}", data.alias, data.value);
+            }
+        }
+
         for block in &ssa.blocks {
             let params = block
                 .parameters
                 .iter()
                 .map(|param| {
-                    let param = &self.vars[*param];
+                    let param = &self.ssa_ir.vars[*param];
                     format!("{}: {}", param.name, param.ty)
                 })
                 .collect::<Vec<_>>();

@@ -27,10 +27,22 @@ fn foo =
     return 2
 
 fn main =
-    let b = 6
-    let a = -foo() + b * 3
+    let a = "siema"
+    let b = -foo()
 
-    // exit with value of `a`
-    @instr("mov x0, {a}")
-    @instr("mov x16, #1")
-    @instr("svc #0")
+    // print out `a`
+    @instr("
+    mov x0, 1
+    mov x2, 5
+    mov x16, 4
+    svc 0
+    | x0 x2 x16
+    ")
+
+    // exit with code `b`
+    @instr("
+    mov x0, {b}
+    mov x16, 1
+    svc 0
+    | x0 x16
+    ")
