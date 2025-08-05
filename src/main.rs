@@ -5,6 +5,7 @@ use std::{
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
+    process::ExitStatus,
     time::Instant,
 };
 
@@ -292,7 +293,7 @@ fn transpile_project(
     let out_path = if let Some(output_path) = output {
         PathBuf::from(output_path)
     } else {
-        target.outfile.clone()
+        target.outpath.join(format!("out.js"))
     };
 
     let transp_start = Instant::now();
@@ -402,7 +403,7 @@ fn main() -> Result<(), String> {
             println!("-- Running `{}`, target `{}`", pond.name, target_name);
 
             let mut handle = std::process::Command::new("node")
-                .args([target.outfile.to_str().unwrap()])
+                .args([target.outpath.join("out.js").to_str().unwrap()])
                 .spawn()
                 .expect("Failed to run program");
 
@@ -513,12 +514,58 @@ fn main() -> Result<(), String> {
                 semantics::perform_analysis(&mut program, &i_opts)?
             };
 
-            let ssa_ir = backend::generate_ir(program, target, &symbol_table)?;
+            let (ir_vars, ssa_ir) = backend::generate_ir(program, target, &symbol_table)?;
 
-            let mut asm = backend::arm64::ARM64Backend::default();
-            let out = asm.compile_ir(ssa_ir, &symbol_table)?;
+            let mut backend = backend::arm64::ARM64Backend::new(ir_vars);
+            let asm = backend.compile_ir(ssa_ir, &symbol_table)?;
 
-            println!("\n\n\n{out}");
+            let out_path = target.outpath.join("out.asm");
+
+            std::fs::create_dir_all(out_path.parent().unwrap()).expect("Failed to create out dir");
+            let mut outfile = std::fs::File::create(&out_path)
+                .map_err(|_| format!("Cannot open out file {:?}", out_path))?;
+
+            _ = outfile.write(asm.as_bytes());
+
+            if i_opts.perf {
+                println!(
+                    "Generating asm: {}ms",
+                    Instant::now().duration_since(start).as_millis()
+                );
+            }
+
+            println!("Assembling");
+            let assemble_out = std::process::Command::new("as")
+                .args([out_path.to_string_lossy().to_string()])
+                .current_dir(out_path.parent().unwrap())
+                .output()
+                .expect("Failed to assemble");
+
+            if !assemble_out.status.success() {
+                println!("{}", String::from_utf8(assemble_out.stderr).unwrap())
+            }
+
+            println!("Linking");
+            let link_out = std::process::Command::new("ld")
+                .args([
+                    out_path
+                        .parent()
+                        .unwrap()
+                        .join("out.o")
+                        .to_string_lossy()
+                        .to_string(),
+                    "-arch".to_string(),
+                    "arm64".to_string(),
+                    "-macos_version_min".to_string(),
+                    "15.0".to_string(),
+                ])
+                .current_dir(out_path.parent().unwrap())
+                .output()
+                .expect("Failed to link");
+
+            if !link_out.status.success() {
+                println!("{}", String::from_utf8(link_out.stderr).unwrap())
+            }
 
             if i_opts.perf {
                 println!(

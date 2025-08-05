@@ -23,7 +23,14 @@ fn main =
 
 */
 
+fn foo =
+    return 2
+
 fn main =
-    @instr("mov x0, #0")
+    let b = 6
+    let a = -foo() + b * 3
+
+    // exit with value of `a`
+    @instr("mov x0, {a}")
     @instr("mov x16, #1")
     @instr("svc #0")

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable};
+use crate::{ast::Expression, BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable};
 
 use super::ir_gen::IRGen;
 
@@ -73,6 +73,12 @@ impl IRValue {
 }
 
 #[derive(Debug, Clone)]
+pub enum InlineTargetPart {
+    String(String),
+    SSA_IR_Var_Ref(usize),
+}
+
+#[derive(Debug, Clone)]
 pub enum IRInstr {
     Assign(VariableID, IRValue),
     BinOp(VariableID, IRValue, IRValue, BinaryOperation),
@@ -87,7 +93,7 @@ pub enum IRInstr {
     Return(IRValue),
     Label(String),
 
-    InlineTarget(String),
+    InlineTarget(Vec<InlineTargetPart>),
 
     Unimplemented(VariableID, String),
 }
@@ -186,8 +192,8 @@ impl IRGen {
                     "if {val} goto {true_label}({true_args}) else goto {false_label}({false_args})"
                 )
             }
-            IRInstr::InlineTarget(instr) => {
-                format!("Inline ({instr})")
+            IRInstr::InlineTarget(expr) => {
+                format!("Inline (...)")
             }
 
             IRInstr::Unimplemented(var, str) => {

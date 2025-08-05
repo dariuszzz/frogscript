@@ -3,6 +3,7 @@ use std::{collections::HashMap, ptr::read};
 
 use crate::{
     ast::{FunctionType, SymbolIdx},
+    backend::ssa_ir::InlineTargetPart,
     lexer::FStringPart,
     pond::{Dependency, Target},
     ssa_ir::{Block, IRAddress, IRInstr, IRValue, IRVariable, VariableID, SSAIR},
@@ -1160,10 +1161,10 @@ impl IRGen {
             Expression::BuiltinTarget(expr) => {
                 let res = self.temp_var(Type::Any);
 
-                let mut instrs = "".to_string();
+                let mut instrs_parts = Vec::new();
                 if let Expression::Literal(Literal::String(parts)) = expr.as_ref() {
                     for part in parts {
-                        let text = match part {
+                        let part = match part {
                             // TODO: this doesnt work if expr is an if or a for since js doesnt support that
                             FStringPart::Code(expr) => {
                                 let (expr, mut instrs) = self.generate_ir_expr(
@@ -1176,18 +1177,23 @@ impl IRGen {
                                 )?;
 
                                 if let IRValue::Variable(var) = expr {
-                                    self.vars[var].name.clone()
+                                    InlineTargetPart::SSA_IR_Var_Ref(var)
                                 } else {
                                     unreachable!()
                                 }
                             }
-                            FStringPart::String(string) => string.clone().replace("\\", ""),
+                            FStringPart::String(string) => {
+                                InlineTargetPart::String(string.clone().replace("\\", ""))
+                            }
                         };
-                        instrs += &text;
+                        instrs_parts.push(part);
                     }
                 }
 
-                return Ok((IRValue::Variable(res), vec![IRInstr::InlineTarget(instrs)]));
+                return Ok((
+                    IRValue::Variable(res),
+                    vec![IRInstr::InlineTarget(instrs_parts)],
+                ));
             }
             Expression::BuiltinType(expression) => {
                 let res = self.temp_var(Type::Any);

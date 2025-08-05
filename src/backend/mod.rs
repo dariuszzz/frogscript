@@ -1,5 +1,8 @@
 use crate::{
-    backend::{ir_gen::IRGen, ssa_ir::SSAIR},
+    backend::{
+        ir_gen::IRGen,
+        ssa_ir::{IRVariable, SSAIR},
+    },
     parser::Program,
     pond::Target,
     symbol_table::SymbolTable,
@@ -13,9 +16,9 @@ pub fn generate_ir(
     program: Program,
     target: &Target,
     symbol_table: &SymbolTable,
-) -> Result<SSAIR, String> {
+) -> Result<(Vec<IRVariable>, SSAIR), String> {
     let mut ir_gen = IRGen::default();
     let ssa_ir = ir_gen.generate_ir(program, target, symbol_table)?;
 
-    Ok(ssa_ir)
+    Ok((ir_gen.vars, ssa_ir))
 }

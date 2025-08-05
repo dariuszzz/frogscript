@@ -22,7 +22,7 @@ pub struct Dependency {
 #[derive(Debug, Clone)]
 pub struct Target {
     pub file: PathBuf,
-    pub outfile: PathBuf,
+    pub outpath: PathBuf,
     pub func: String,
 }
 
@@ -116,8 +116,8 @@ impl Pond {
                         .map(|f| f.value().as_string().unwrap().to_string())
                         .unwrap_or_else(|| "main".to_string());
 
-                    let outfile = target
-                        .get("outfile")
+                    let outpath = target
+                        .get("outpath")
                         .map(|f| {
                             let mut path =
                                 PathBuf::from(f.value().as_string().unwrap().to_string());
@@ -127,12 +127,7 @@ impl Pond {
 
                             path
                         })
-                        .unwrap_or_else(|| {
-                            pond_path
-                                .parent()
-                                .unwrap()
-                                .join(format!("out/{pond_name}.js"))
-                        });
+                        .unwrap_or_else(|| pond_path.parent().unwrap().join(format!("out")));
 
                     if targets.contains_key(&name) {
                         return Err(format!("Duplicate target {name}"));
@@ -142,7 +137,7 @@ impl Pond {
                         name,
                         Target {
                             file,
-                            outfile,
+                            outpath,
                             func,
                         },
                     );
