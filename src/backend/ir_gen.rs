@@ -113,6 +113,10 @@ impl IRGen {
 
                 let name = Self::symbol_idx_to_name(&func.symbol_idx);
 
+                if func.func_name == target.func {
+                    self.ssa_ir.entry_block = name.clone();
+                }
+
                 self.ssa_ir.vars.push(IRVariable {
                     name: name.clone(),
                     ty: Type::Function(FunctionType {
@@ -191,7 +195,7 @@ impl IRGen {
 
             for instr in &block.instructions {
                 match instr {
-                    IRInstr::If(_, true_block, _, false_block, _) => {
+                    IRInstr::If(_, _, true_block, _, false_block, _) => {
                         let true_block_id = blocks_by_name.get(true_block).unwrap();
                         let false_block_id = blocks_by_name.get(false_block).unwrap();
 
@@ -336,7 +340,7 @@ impl IRGen {
                         }
                     }
                 }
-                IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
+                IRInstr::If(cond, irvalue, true_label, true_args, false_label, false_args) => {
                     if let IRValue::Variable(val) = irvalue {
                         let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
@@ -727,7 +731,7 @@ impl IRGen {
                     IRInstr::Call(res, irvalue, args) => {
                         local_vars.push(res);
                     }
-                    IRInstr::If(irvalue, true_label, true_args, false_label, false_args) => {
+                    IRInstr::If(cond, irvalue, true_label, true_args, false_label, false_args) => {
                         // add all params of branches
                         let true_block =
                             block_copies.iter().find(|b| b.name == *true_label).unwrap();
@@ -773,7 +777,7 @@ impl IRGen {
 
             for instr in block.instructions.clone() {
                 match instr {
-                    instr @ IRInstr::Goto(_, _) | instr @ IRInstr::If(_, _, _, _, _) => {
+                    instr @ IRInstr::Goto(_, _) | instr @ IRInstr::If(_, _, _, _, _, _) => {
                         instructions.push(instr);
                         break;
                     }
@@ -874,9 +878,8 @@ impl IRGen {
                 let value = match literal {
                     Literal::String(parts) => {
                         if parts.len() != 1 {
-                            unimplemented!("FStrings not supported yet")
+                            unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
                         }
-
                         if let FStringPart::String(str) = &parts[0] {
                             let var_id = self.temp_var(Type::String);
                             let alias = format!("str{}", self.ssa_ir.data.len());
@@ -1223,9 +1226,9 @@ impl IRGen {
                         let first_half = split[0].to_string();
                         let used_regs_text = split[1];
 
-                        // todo: somehow there are "" registers counted here
                         used_registers = used_regs_text
                             .split(" ")
+                            .filter(|l| !l.is_empty())
                             .map(|s| s.trim().to_string())
                             .collect();
 
@@ -1263,6 +1266,7 @@ impl IRGen {
 
                 // here if instr
                 instructions.push(IRInstr::If(
+                    if_stmt.cond.clone(),
                     cond_expr,
                     true_branch_label_name.clone(),
                     vec![],
@@ -1331,6 +1335,7 @@ impl IRGen {
                 //
                 //  ---
                 instructions.push(IRInstr::If(
+                    for_expr.iterator.clone(),
                     iterator_expr,
                     loop_body_label.clone(),
                     vec![],
@@ -1374,7 +1379,7 @@ impl IRGen {
     }
 
     fn make_name_unique(&mut self, smth: &str) -> String {
-        let res = format!("{smth}#{}", self.var_counter);
+        let res = format!("{smth}_{}", self.var_counter);
         self.var_counter += 1;
 
         return res;

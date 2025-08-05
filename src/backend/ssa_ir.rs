@@ -9,6 +9,7 @@ pub struct SSAIR {
     pub vars: Vec<IRVariable>,
     pub blocks: Vec<Block>,
     pub data: Vec<IRData>,
+    pub entry_block: String,
 }
 
 impl Default for SSAIR {
@@ -17,6 +18,7 @@ impl Default for SSAIR {
             blocks: Vec::default(),
             vars: Vec::default(),
             data: Vec::default(),
+            entry_block: "main".to_string(),
         }
     }
 }
@@ -83,7 +85,14 @@ pub enum IRInstr {
     BinOp(VariableID, IRValue, IRValue, BinaryOperation),
     UnOp(VariableID, IRValue, UnaryOperation),
     Call(VariableID, IRValue, Vec<IRValue>),
-    If(IRValue, String, Vec<IRValue>, String, Vec<IRValue>),
+    If(
+        Box<Expression>,
+        IRValue,
+        String,
+        Vec<IRValue>,
+        String,
+        Vec<IRValue>,
+    ),
     Goto(String, Vec<IRValue>),
 
     Store(IRAddress, IRValue),
@@ -173,7 +182,7 @@ impl IRGen {
 
                 format!("goto {label}({args})")
             }
-            IRInstr::If(val, true_label, true_args, false_label, false_args) => {
+            IRInstr::If(cond, val, true_label, true_args, false_label, false_args) => {
                 let true_args = true_args
                     .iter()
                     .map(|param| self.pretty_print_irval(param))

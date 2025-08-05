@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinaryOperation, Type, UnaryOp, UnaryOperation},
+    ast::{BinaryOp, BinaryOperation, Expression, Type, UnaryOp, UnaryOperation},
     backend::ssa_ir::{self, IRData, IRDataLiteral, IRValue, IRVariable, InlineTargetPart, SSAIR},
     lexer::Literal,
     symbol_table::{self, SymbolTable},
@@ -112,9 +112,12 @@ impl ARM64Backend {
         // }
 
         write!(out, "_main:\n").unwrap();
-
         let blocks = self.ssa_ir.blocks.clone();
-        for block in blocks.iter().rev() {
+
+        let main_block = &blocks.last().unwrap().name;
+        write!(out, "\tb {}\n", self.ssa_ir.entry_block).unwrap();
+
+        for block in blocks.iter() {
             write!(out, "{}:\n", block.name).unwrap();
 
             for instr in &block.instructions {
@@ -193,7 +196,7 @@ impl ARM64Backend {
                         );
                     }
                     IRInstr::BinOp(res, lhs, rhs, op) => {
-                        let ty = &self.ssa_ir.vars[*res].ty;
+                        let ty = self.ssa_ir.vars[*res].ty.clone();
                         let reg_type = match ty {
                             Type::Float => RegisterType::Float32,
                             _ => RegisterType::General,
@@ -203,8 +206,6 @@ impl ARM64Backend {
                             RegisterType::Float32 => "fmov",
                             _ => "mov",
                         };
-
-                        let register = self.get_free_or_existing_register(reg_type, *res);
 
                         let mut lhs_str = self.ir_value_to_asm(&lhs);
                         let mut rhs_str = self.ir_value_to_asm(&rhs);
@@ -219,6 +220,7 @@ impl ARM64Backend {
                             // if its `op lit1 lit2` now then turn into
                             // `mov temp_reg lit1`
                             // `op temp_reg lit2`
+                            // fixme: this is stupid sometimes i think
                             if matches!(rhs, IRValue::Literal(_)) {
                                 let temp_reg = self.temp_register(reg_type);
 
@@ -233,6 +235,7 @@ impl ARM64Backend {
                                     RegisterType::Float32 => "fadd",
                                     _ => "add",
                                 };
+                                let register = self.get_free_or_existing_register(reg_type, *res);
 
                                 write!(out, "\t{op} {register}, {lhs_str}, {rhs_str}\n").unwrap();
                             }
@@ -241,6 +244,7 @@ impl ARM64Backend {
                                     RegisterType::Float32 => "fsub",
                                     _ => "sub",
                                 };
+                                let register = self.get_free_or_existing_register(reg_type, *res);
 
                                 write!(out, "\t{op} {register}, {lhs_str}, {rhs_str}\n").unwrap();
                             }
@@ -249,12 +253,78 @@ impl ARM64Backend {
                                     RegisterType::Float32 => "fmul",
                                     _ => "mul",
                                 };
+                                let register = self.get_free_or_existing_register(reg_type, *res);
 
                                 write!(out, "\t{move_op} {register}, {rhs_str}\n").unwrap();
                                 write!(out, "\t{op} {register}, {lhs_str}, {register}\n").unwrap();
                             }
+                            BinaryOperation::Divide => {
+                                let op = match reg_type {
+                                    RegisterType::Float32 => "fdiv",
+                                    _ => todo!("Figure out how to do non float division"),
+                                };
+                                let register = self.get_free_or_existing_register(reg_type, *res);
+
+                                write!(out, "\t{op} {register}, {lhs_str}, {rhs_str}\n").unwrap();
+                            }
+                            // idk
+                            BinaryOperation::Equal
+                            | BinaryOperation::NotEqual
+                            | BinaryOperation::Greater
+                            | BinaryOperation::GreaterEqual
+                            | BinaryOperation::Less
+                            | BinaryOperation::LessEqual => {
+                                let op = match ty {
+                                    Type::Int => {
+                                        write!(out, "\tcmp {lhs_str}, {rhs_str}\n").unwrap();
+                                    }
+                                    _ => todo!("Other comparisons not implented"),
+                                };
+                            }
                             _ => unimplemented!(),
                         }
+                    }
+                    IRInstr::If(cond, irval, true_label, true_args, false_label, false_args) => {
+                        match **cond {
+                            Expression::BinaryOp(BinaryOp { op, .. }) => {
+                                let true_instr = match op {
+                                    BinaryOperation::NotEqual => "b.ne",
+                                    BinaryOperation::Equal => "b.eq",
+                                    BinaryOperation::Less => "b.lt",
+                                    BinaryOperation::LessEqual => "b.le",
+                                    BinaryOperation::Greater => "b.gt",
+                                    BinaryOperation::GreaterEqual => "b.ge",
+                                    _ => unreachable!("tf"),
+                                };
+                                write!(out, "\t{true_instr} {true_label}\n").unwrap();
+                                write!(out, "\tb {false_label}\n").unwrap();
+                            }
+                            // FIXME: These probably shouldnt be hardcoded?
+                            Expression::UnaryOp(UnaryOp { op, ref operand }) => match op {
+                                UnaryOperation::Negate => match **operand {
+                                    Expression::Literal(Literal::Boolean(boolean)) => {
+                                        if !boolean {
+                                            write!(out, "\tb {true_label}\n").unwrap();
+                                        } else {
+                                            write!(out, "\tb {false_label}\n").unwrap();
+                                        }
+                                    }
+                                    _ => unimplemented!("co"),
+                                },
+                                _ => unimplemented!("co2"),
+                            },
+                            Expression::Literal(Literal::Boolean(boolean)) => {
+                                if boolean {
+                                    write!(out, "\tb {true_label}\n").unwrap();
+                                } else {
+                                    write!(out, "\tb {false_label}\n").unwrap();
+                                }
+                            }
+                            _ => unimplemented!("Idk"),
+                        };
+                    }
+                    IRInstr::Goto(label, args) => {
+                        write!(out, "\tb {label}\n").unwrap();
                     }
                     IRInstr::UnOp(res, operand, op) => {
                         let register =
@@ -308,8 +378,9 @@ impl ARM64Backend {
                             }
                         }
                     }
+
                     instr => {
-                        println!("{instr:?}");
+                        println!("whatt: {instr:?}");
                         write!(out, "\n").unwrap();
                     }
                 }
