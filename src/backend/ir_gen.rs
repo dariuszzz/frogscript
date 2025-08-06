@@ -3,7 +3,7 @@ use std::{collections::HashMap, ptr::read};
 
 use crate::{
     ast::{FunctionType, SymbolIdx},
-    backend::ssa_ir::{IRData, IRDataLiteral, InlineTargetPart},
+    backend::ssa_ir::{IRAddressOffset, IRAddressType, IRData, IRDataLiteral, InlineTargetPart},
     lexer::FStringPart,
     pond::{Dependency, Target},
     ssa_ir::{Block, IRAddress, IRInstr, IRValue, IRVariable, VariableID, SSAIR},
@@ -138,6 +138,7 @@ impl IRGen {
                 }
 
                 self.ssa_ir.blocks.push(Block {
+                    is_func: true,
                     name,
                     parameters,
                     instructions: vec![],
@@ -801,6 +802,7 @@ impl IRGen {
                     }
 
                     curr_block = Some(Block {
+                        is_func: false,
                         name: label,
                         parameters: vec![],
                         instructions: vec![],
@@ -892,8 +894,9 @@ impl IRGen {
                             instructions.push(IRInstr::Load(
                                 var_id,
                                 IRAddress {
-                                    addr: alias,
-                                    offset: 0,
+                                    addr: IRAddressType::Data(alias),
+                                    stored_data_type: Type::String,
+                                    offset: IRAddressOffset::Literal(0),
                                 },
                             ));
 
@@ -914,8 +917,9 @@ impl IRGen {
                         instructions.push(IRInstr::Load(
                             var_id,
                             IRAddress {
-                                addr: alias,
-                                offset: 0,
+                                addr: IRAddressType::Data(alias),
+                                stored_data_type: Type::Float,
+                                offset: IRAddressOffset::Literal(0),
                             },
                         ));
 
@@ -1083,7 +1087,9 @@ impl IRGen {
             Expression::ArrayLiteral(array_literal) => {
                 let mut inner_ty = Type::Any;
 
-                let initial_offset = 0;
+                let offset_size = 8;
+
+                let initial_offset = -offset_size;
                 let mut offset = initial_offset;
 
                 for el in &array_literal.elements {
@@ -1095,24 +1101,29 @@ impl IRGen {
                     instructions.append(&mut el_instrs);
                     instructions.push(IRInstr::Store(
                         IRAddress {
-                            addr: "$stack$".to_string(),
-                            offset,
+                            addr: IRAddressType::Register("fp".to_string()),
+                            stored_data_type: inner_ty.clone(),
+                            offset: IRAddressOffset::Literal(offset),
                         },
                         el,
                     ));
 
                     match inner_ty {
-                        Type::Int => offset += 4,
+                        Type::Int => offset -= offset_size,
                         _ => {}
                     }
                 }
 
-                let var_id = self.temp_var(Type::Array(Box::new(inner_ty)));
+                let array_type = Type::Array(Box::new(inner_ty.clone()));
+
+                let var_id = self.temp_var(array_type.clone());
+
                 instructions.push(IRInstr::Assign(
                     var_id,
                     IRValue::Address(IRAddress {
-                        addr: "$stack$".to_string(),
-                        offset: 0,
+                        addr: IRAddressType::Register("fp".to_string()),
+                        stored_data_type: array_type,
+                        offset: IRAddressOffset::Literal(-offset_size),
                     }),
                 ));
 
@@ -1138,25 +1149,49 @@ impl IRGen {
                 instructions.append(&mut index_instrs);
                 instructions.append(&mut expr_instrs);
 
-                let idx_var = self.temp_var(self.ir_val_ty(&index));
-                let expr_var = self.temp_var(self.ir_val_ty(&expr));
-                let res_var = self.temp_var(Type::Uint);
+                let array_type = self.ir_val_ty(&expr);
 
-                let expr_name = &self.ssa_ir.vars[expr_var].name;
-                let idx_name = &self.ssa_ir.vars[idx_var].name;
+                if let Type::Array(inner) = array_type.clone() {
+                    let idx_var = self.temp_var(self.ir_val_ty(&index));
+                    let expr_var = self.temp_var(array_type);
+                    let res_var = self.temp_var(*inner.clone());
 
-                instructions.push(IRInstr::Assign(idx_var, index));
-                instructions.push(IRInstr::Assign(expr_var, expr));
+                    let expr_name = &self.ssa_ir.vars[expr_var].name;
+                    let idx_name = &self.ssa_ir.vars[idx_var].name;
 
-                instructions.push(IRInstr::Load(
-                    res_var,
-                    IRAddress {
-                        addr: format!("{expr_name} + {idx_name}"),
-                        offset: 0,
-                    },
-                ));
+                    instructions.push(IRInstr::Assign(idx_var, index));
+                    instructions.push(IRInstr::Assign(expr_var, expr));
 
-                return Ok((IRValue::Variable(res_var), instructions));
+                    let el_size = 8;
+
+                    // Multiply the index by the size of each element as we are addressing in bytes
+                    instructions.push(IRInstr::BinOp(
+                        idx_var,
+                        IRValue::Variable(idx_var),
+                        IRValue::Literal(Literal::Uint(el_size)),
+                        BinaryOperation::Multiply,
+                    ));
+
+                    // instructions.push(IRInstr::BinOp(
+                    //     idx_var,
+                    //     IRValue::Variable(idx_var),
+                    //     IRValue::Literal(Literal::Uint(el_size)),
+                    //     BinaryOperation::Add,
+                    // ));
+
+                    instructions.push(IRInstr::Load(
+                        res_var,
+                        IRAddress {
+                            addr: IRAddressType::Register("fp".to_string()),
+                            stored_data_type: *inner,
+                            offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
+                        },
+                    ));
+
+                    return Ok((IRValue::Variable(res_var), instructions));
+                } else {
+                    unreachable!("Tried to access non-array type?")
+                }
             }
             Expression::FieldAccess(field_access) => {
                 let res = self.temp_var(Type::Any);

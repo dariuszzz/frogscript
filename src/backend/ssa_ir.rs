@@ -27,6 +27,7 @@ pub type VariableID = usize;
 
 #[derive(Debug, Clone)]
 pub struct Block {
+    pub is_func: bool,
     pub name: String,
     pub parameters: Vec<VariableID>,
     pub instructions: Vec<IRInstr>,
@@ -35,6 +36,7 @@ pub struct Block {
 impl Default for Block {
     fn default() -> Self {
         Self {
+            is_func: false,
             name: String::new(),
             parameters: Vec::new(),
             instructions: Vec::new(),
@@ -56,8 +58,45 @@ pub enum IRDataLiteral {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IRAddress {
-    pub addr: String,
-    pub offset: isize,
+    pub addr: IRAddressType,
+    pub stored_data_type: Type,
+    pub offset: IRAddressOffset,
+}
+
+impl std::fmt::Display for IRAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let offset = match &self.offset {
+            IRAddressOffset::Literal(offset) => format!("{offset}"),
+            IRAddressOffset::IRVariable(offset_var) => format!("${offset_var}$"),
+        };
+
+        match &self.addr {
+            IRAddressType::Data(addr)
+            | IRAddressType::RawAddr(addr)
+            | IRAddressType::Register(addr) => {
+                if offset == "0" {
+                    f.write_fmt(format_args!("[{addr}]"))
+                } else if offset.starts_with("-") {
+                    f.write_fmt(format_args!("[{addr}{offset}]"))
+                } else {
+                    f.write_fmt(format_args!("[{addr}+{offset}]"))
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IRAddressOffset {
+    Literal(isize),
+    IRVariable(usize),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IRAddressType {
+    RawAddr(String),
+    Register(String),
+    Data(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -107,19 +146,9 @@ pub enum IRInstr {
 }
 
 impl IRGen {
-    pub fn pretty_print_address(&self, addr: &IRAddress) -> String {
-        if addr.offset == 0 {
-            format!("[{}]", addr.addr)
-        } else if addr.offset > 0 {
-            format!("[{}+{}]", addr.addr, addr.offset)
-        } else {
-            format!("[{}-{}]", addr.addr, addr.offset)
-        }
-    }
-
     pub fn pretty_print_irval(&self, irval: &IRValue) -> String {
         match irval {
-            IRValue::Address(address) => self.pretty_print_address(address),
+            IRValue::Address(address) => format!("{address}"),
             IRValue::Literal(literal) => format!("{literal:?}"),
             IRValue::Variable(variable) => {
                 let var = &self.ssa_ir.vars[*variable];
@@ -132,30 +161,28 @@ impl IRGen {
     pub fn pretty_print_instr(&self, instr: &IRInstr) -> String {
         match instr {
             IRInstr::Store(addr, val) => {
-                let addr = self.pretty_print_address(addr);
                 let val = self.pretty_print_irval(val);
                 format!("store {addr} {val}")
             }
             IRInstr::Load(var, addr) => {
-                let addr = self.pretty_print_address(addr);
-                let var = &self.ssa_ir.vars[*var];
-                format!("{} = load {addr}", var.name)
+                let variable = &self.ssa_ir.vars[*var];
+                format!("{} ({var}) = load {addr}", variable.name)
             }
             IRInstr::Assign(var, irvalue) => {
                 let irvalue = self.pretty_print_irval(irvalue);
                 let variable = &self.ssa_ir.vars[*var];
-                format!("{} = {irvalue} ", variable.name)
+                format!("{} ({var}) = {irvalue} ", variable.name)
             }
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
                 let irvalue1 = self.pretty_print_irval(irvalue1);
-                let var = &self.ssa_ir.vars[*var];
-                format!("{} = {irvalue} {op} {irvalue1}", var.name)
+                let variable = &self.ssa_ir.vars[*var];
+                format!("{} ({var}) = {irvalue} {op} {irvalue1}", variable.name)
             }
             IRInstr::UnOp(var, irvalue, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
-                let var = &self.ssa_ir.vars[*var];
-                format!("{} = {op}{irvalue}", var.name)
+                let variable = &self.ssa_ir.vars[*var];
+                format!("{} ({var}) = {op}{irvalue}", variable.name)
             }
             IRInstr::Call(var, func, vec) => {
                 let params = vec
@@ -165,8 +192,8 @@ impl IRGen {
                 let params = params.join(", ");
 
                 let func = self.pretty_print_irval(func);
-                let var = &self.ssa_ir.vars[*var];
-                format!("{} = call {func}({params})", var.name)
+                let variable = &self.ssa_ir.vars[*var];
+                format!("{} ({var}) = call {func}({params})", variable.name)
             }
             IRInstr::Return(val) => {
                 let val = self.pretty_print_irval(val);

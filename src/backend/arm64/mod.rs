@@ -1,6 +1,9 @@
 use crate::{
     ast::{BinaryOp, BinaryOperation, Expression, Type, UnaryOp, UnaryOperation},
-    backend::ssa_ir::{self, IRData, IRDataLiteral, IRValue, IRVariable, InlineTargetPart, SSAIR},
+    backend::ssa_ir::{
+        self, IRAddress, IRAddressOffset, IRAddressType, IRData, IRDataLiteral, IRValue,
+        IRVariable, InlineTargetPart, SSAIR,
+    },
     lexer::Literal,
     symbol_table::{self, SymbolTable},
 };
@@ -46,16 +49,50 @@ impl ARM64Backend {
         }
     }
 
-    pub fn ir_value_to_asm(&self, ir_value: &IRValue) -> String {
+    pub fn offset_calc_asm(&mut self, out: &mut String, addr: &IRAddress) -> String {
+        let offset = match &addr.offset {
+            IRAddressOffset::Literal(offset) => format!("#{offset}"),
+            IRAddressOffset::IRVariable(offset_var) => {
+                let register = self.used_registers.get(offset_var);
+
+                if let Some(register) = register {
+                    format!("{register}")
+                } else {
+                    let var_name = &self.ssa_ir.vars[*offset_var].name;
+                    format!("`unalloc var {var_name}`")
+                }
+            }
+        };
+
+        match &addr.addr {
+            IRAddressType::Data(addr) => unimplemented!("Need to figure this out"),
+            IRAddressType::RawAddr(addr) => {
+                unimplemented!("Will implement once it shows up somewhere")
+            }
+            IRAddressType::Register(addr) => {
+                if offset == "0" {
+                    format!("{addr}") // offset doesnt do anything for now
+                } else {
+                    // general register is fine here since its an address (uint)
+                    let temp_reg = self.temp_register(RegisterType::General);
+                    write!(out, "\tadd {temp_reg}, {addr}, {offset}\n").unwrap();
+                    format!("{temp_reg}")
+                }
+            }
+        }
+    }
+
+    pub fn ir_value_to_asm(&mut self, out: &mut String, ir_value: &IRValue) -> String {
         match ir_value {
-            IRValue::Address(addr) => todo!("idk"),
+            IRValue::Address(addr) => self.offset_calc_asm(out, addr),
             IRValue::Variable(var_id) => {
-                let var_name = &self.ssa_ir.vars[*var_id].name;
                 let register = self.used_registers.get(var_id);
                 if let Some(register) = register {
                     format!("{register}")
                 } else {
-                    var_name.clone()
+                    let var_name = &self.ssa_ir.vars[*var_id].name;
+                    format!("`unalloc var {var_name}`")
+                    // unreachable!("variable is not in any register");
                 }
             }
             IRValue::Literal(lit) => match lit {
@@ -120,6 +157,18 @@ impl ARM64Backend {
         for block in blocks.iter() {
             write!(out, "{}:\n", block.name).unwrap();
 
+            let stack_space = 160; // arbitrary for now?
+
+            if block.is_func {
+                // setup stack frame
+
+                write!(out, "\tstp fp, lr, [sp,#-16]!\n").unwrap();
+                write!(out, "\tmov fp, sp\n").unwrap();
+                write!(out, "\tsub sp, sp, #{stack_space}\n").unwrap();
+
+                // todo: read off func params
+            }
+
             for instr in &block.instructions {
                 match instr {
                     IRInstr::InlineTarget(parts, used_registers) => {
@@ -175,17 +224,24 @@ impl ARM64Backend {
                             }
                         };
 
-                        let ir_var_str = self.ir_value_to_asm(&val);
+                        let ir_var_str = self.ir_value_to_asm(&mut out, &val);
                         let register = self.get_free_or_existing_register(reg_ty, *var);
                         write!(out, "\t{instr} {register}, {ir_var_str}\n").unwrap();
                     }
                     IRInstr::Return(val) => {
-                        let ir_var_str = self.ir_value_to_asm(&val);
-                        write!(out, "\tmov x0, {ir_var_str}\n\tret\n").unwrap();
+                        let ir_var_str = self.ir_value_to_asm(&mut out, &val);
+                        // Put return value in x0
+                        write!(out, "\tmov x0, {ir_var_str}\n").unwrap();
+
+                        // destroy stack frame and return
+                        write!(out, "\tmov sp, fp\n").unwrap();
+                        write!(out, "\tldp fp, lr, [sp], #{stack_space}\n").unwrap();
+                        write!(out, "\tret\n").unwrap();
                     }
                     IRInstr::Call(ret, called, args) => {
                         // Todo: pass in the arguments
-                        let called_asm = self.ir_value_to_asm(&called);
+
+                        let called_asm = self.ir_value_to_asm(&mut out, &called);
                         write!(out, "\tbl {called_asm}\n").unwrap();
                         self.used_registers.insert(
                             *ret,
@@ -207,8 +263,8 @@ impl ARM64Backend {
                             _ => "mov",
                         };
 
-                        let mut lhs_str = self.ir_value_to_asm(&lhs);
-                        let mut rhs_str = self.ir_value_to_asm(&rhs);
+                        let mut lhs_str = self.ir_value_to_asm(&mut out, &lhs);
+                        let mut rhs_str = self.ir_value_to_asm(&mut out, &rhs);
 
                         // eliminate the case where its `op lit reg` since its not allowed
                         if matches!(lhs, IRValue::Literal(_)) {
@@ -254,9 +310,10 @@ impl ARM64Backend {
                                     _ => "mul",
                                 };
                                 let register = self.get_free_or_existing_register(reg_type, *res);
+                                let temp_reg = self.temp_register(reg_type);
 
-                                write!(out, "\t{move_op} {register}, {rhs_str}\n").unwrap();
-                                write!(out, "\t{op} {register}, {lhs_str}, {register}\n").unwrap();
+                                write!(out, "\t{move_op} {temp_reg}, {rhs_str}\n").unwrap();
+                                write!(out, "\t{op} {register}, {lhs_str}, {temp_reg}\n").unwrap();
                             }
                             BinaryOperation::Divide => {
                                 let op = match reg_type {
@@ -329,7 +386,7 @@ impl ARM64Backend {
                     IRInstr::UnOp(res, operand, op) => {
                         let register =
                             self.get_free_or_existing_register(RegisterType::General, *res);
-                        let ir_var_str = self.ir_value_to_asm(&operand);
+                        let ir_var_str = self.ir_value_to_asm(&mut out, &operand);
 
                         match op {
                             UnaryOperation::Negate => {
@@ -349,33 +406,103 @@ impl ARM64Backend {
                             _ => unimplemented!(),
                         }
                     }
+                    IRInstr::Store(addr, ir_val) => {
+                        let val_asm = self.ir_value_to_asm(&mut out, &ir_val);
+
+                        let offset = match &addr.offset {
+                            IRAddressOffset::Literal(offset) => format!("#{offset}"),
+                            IRAddressOffset::IRVariable(offset_reg) => format!("{offset_reg}"),
+                        };
+
+                        let addr = match &addr.addr {
+                            IRAddressType::Data(addr) => unimplemented!("FIX THIS"),
+                            IRAddressType::RawAddr(addr) => {
+                                unimplemented!("Will implement once it shows up somewhere")
+                            }
+                            IRAddressType::Register(addr) => {
+                                if offset == "0" {
+                                    format!("[{addr}]")
+                                } else {
+                                    format!("[{addr},{offset}]")
+                                }
+                            }
+                        };
+
+                        // Can always be general since its an address
+                        let temp_reg = self.temp_register(RegisterType::General);
+                        write!(out, "\tmov {temp_reg}, {val_asm}\n").unwrap();
+                        write!(out, "\tstr {temp_reg}, {addr}\n").unwrap();
+                    }
                     IRInstr::Load(res, addr) => {
+                        let offset = &addr.offset;
                         let addr = &addr.addr;
 
-                        let accessed_data = self
-                            .ssa_ir
-                            .data
-                            .iter()
-                            .filter(|d| d.alias == *addr)
-                            .next()
-                            .unwrap();
+                        match addr {
+                            IRAddressType::Data(addr) => {
+                                let accessed_data = self
+                                    .ssa_ir
+                                    .data
+                                    .iter()
+                                    .filter(|d| d.alias == *addr)
+                                    .next()
+                                    .unwrap();
 
-                        match &accessed_data.value {
-                            IRDataLiteral::String(_) => {
+                                match &accessed_data.value {
+                                    IRDataLiteral::String(_) => {
+                                        let register = self.get_free_or_existing_register(
+                                            RegisterType::General,
+                                            *res,
+                                        );
+                                        write!(out, "\tadrp {register}, {addr}@PAGE\n").unwrap();
+                                        write!(
+                                            out,
+                                            "\tadd {register}, {register}, {addr}@PAGEOFF\n"
+                                        )
+                                        .unwrap();
+                                    }
+                                    IRDataLiteral::Float(_) => {
+                                        let temp_reg = self.temp_register(RegisterType::General);
+                                        let register = self.get_free_or_existing_register(
+                                            RegisterType::Float32,
+                                            *res,
+                                        );
+                                        write!(out, "\tadrp {temp_reg}, {addr}@PAGE\n").unwrap();
+                                        write!(
+                                            out,
+                                            "\tldr {register}, [{temp_reg}, {addr}@PAGEOFF]\n"
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                            }
+                            IRAddressType::Register(addr) => {
                                 let register =
                                     self.get_free_or_existing_register(RegisterType::General, *res);
-                                write!(out, "\tadrp {register}, {addr}@PAGE\n").unwrap();
-                                write!(out, "\tadd {register}, {register}, {addr}@PAGEOFF\n")
-                                    .unwrap();
+
+                                // include offset
+                                let offset = match &offset {
+                                    IRAddressOffset::Literal(offset) => format!("#{offset}"),
+                                    IRAddressOffset::IRVariable(offset_var) => {
+                                        let register = self.used_registers.get(offset_var);
+
+                                        if let Some(register) = register {
+                                            format!("{register}")
+                                        } else {
+                                            let var_name = &self.ssa_ir.vars[*offset_var].name;
+                                            format!("`unalloc var {var_name}`")
+                                        }
+                                    }
+                                };
+
+                                let addr = if offset == "0" {
+                                    format!("[{addr}]")
+                                } else {
+                                    format!("[{addr},{offset}]")
+                                };
+
+                                write!(out, "\tldr {register}, {addr}\n").unwrap();
                             }
-                            IRDataLiteral::Float(_) => {
-                                let temp_reg = self.temp_register(RegisterType::General);
-                                let register =
-                                    self.get_free_or_existing_register(RegisterType::Float32, *res);
-                                write!(out, "\tadrp {temp_reg}, {addr}@PAGE\n").unwrap();
-                                write!(out, "\tldr {register}, [{temp_reg}, {addr}@PAGEOFF]\n")
-                                    .unwrap();
-                            }
+                            IRAddressType::RawAddr(addr) => unimplemented!(),
                         }
                     }
 

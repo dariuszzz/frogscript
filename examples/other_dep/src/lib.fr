@@ -27,18 +27,18 @@ fn foo =
     return 2
 
 fn main =
+    @instr("// array")
+    let message = [4, 6]
+
+
+    @instr("// access")
+
+    let out = message[1]
+
+    @instr("// print")
 
     @instr("
-    mov x0, 1
-    mov x1, {message}
-    mov x2, 3
-    mov x16, 4
-    svc 0
-    | x0 x1 x2 x16
-    ")
-
-    @instr("
-    mov x0, 0
+    mov x0, {out}
     mov x16, 1
     svc 0
     | x0 x16
@@ -47,4 +47,16 @@ fn main =
 /*
     // convert c to int and store in d
     @instr("fcvtzs {d}, {c}")
+*/
+
+/*
+    // print message
+    @instr("
+    mov x0, 1
+    mov x1, {message}
+    mov x2, 5
+    mov x16, 4
+    svc 0
+    | x0 x1 x2 x16
+    ")
 */
