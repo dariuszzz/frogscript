@@ -100,6 +100,29 @@ pub enum Type {
     Structural(Box<Type>),
 }
 
+impl Type {
+    pub fn size(&self) -> usize {
+        use Type::*;
+        match self {
+            Int => 8,
+            Uint => 8,
+            Float => 4,
+            String => unimplemented!(),
+            Boolean => 8,
+            Void => 0,
+            Any => unimplemented!(),
+            Array(_) => 8,
+            Function(_) => unimplemented!(),
+            Struct(_) => unimplemented!(),
+            Reference(_) => 8,
+            Pointer(_) => 8,
+            Structural(_) => unimplemented!(),
+            Infer => unimplemented!(),
+            Custom(_) => unimplemented!(),
+        }
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

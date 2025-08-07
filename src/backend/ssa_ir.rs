@@ -10,6 +10,7 @@ pub struct SSAIR {
     pub blocks: Vec<Block>,
     pub data: Vec<IRData>,
     pub entry_block: String,
+    pub stack_vars: HashMap<usize, IRAddress>,
 }
 
 impl Default for SSAIR {
@@ -18,6 +19,7 @@ impl Default for SSAIR {
             blocks: Vec::default(),
             vars: Vec::default(),
             data: Vec::default(),
+            stack_vars: HashMap::default(),
             entry_block: "main".to_string(),
         }
     }
@@ -168,10 +170,10 @@ impl IRGen {
                 let variable = &self.ssa_ir.vars[*var];
                 format!("{} ({var}) = load {addr}", variable.name)
             }
-            IRInstr::Assign(var, irvalue) => {
-                let irvalue = self.pretty_print_irval(irvalue);
-                let variable = &self.ssa_ir.vars[*var];
-                format!("{} ({var}) = {irvalue} ", variable.name)
+            IRInstr::Assign(lhs, rhs) => {
+                let rhs = self.pretty_print_irval(rhs);
+                let variable = &self.ssa_ir.vars[*lhs];
+                format!("{} ({lhs}) = {rhs} ", variable.name)
             }
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);

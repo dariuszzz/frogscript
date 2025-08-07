@@ -836,8 +836,8 @@ impl IRGen {
         let mut instructions = Vec::new();
 
         for expr in &codeblock.expressions {
-            let (res_var, mut instrs) =
-                self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &expr)?;
+            let (res_var, mut instrs, _) =
+                self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &expr, None)?;
             instructions.append(&mut instrs);
         }
 
@@ -851,7 +851,9 @@ impl IRGen {
         renamed_vars: &mut HashMap<String, String>,
         loop_info: &LoopInfo,
         expr: &Expression,
-    ) -> Result<(IRValue, Vec<IRInstr>), String> {
+        curr_var: Option<usize>,
+        // expr result, new instructions, already assigned?
+    ) -> Result<(IRValue, Vec<IRInstr>, bool), String> {
         let mut instructions = Vec::new();
 
         match expr {
@@ -860,30 +862,44 @@ impl IRGen {
                     .symbol_idx_to_var(&variable_decl.symbol_idx, variable_decl.var_type.clone());
                 let var_name = self.ssa_ir.vars[var_id].name.clone();
 
-                let (value, mut instrs) = self.generate_ir_expr(
+                let (value, mut instrs, alr_assigned) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &variable_decl.var_value,
+                    Some(var_id),
                 )?;
 
                 renamed_vars.insert(variable_decl.var_name.clone(), var_name.clone());
 
                 instructions.append(&mut instrs);
 
-                instructions.push(IRInstr::Assign(var_id, value));
+                if !alr_assigned {
+                    // Similar thing as in Expr::Assign
+                    match value {
+                        rhs @ IRValue::Variable(_) | rhs @ IRValue::Literal(_) => {
+                            instructions.push(IRInstr::Assign(var_id, rhs))
+                        }
+                        IRValue::Address(addr) => instructions.push(IRInstr::Load(var_id, addr)),
+                    }
+                }
 
-                return Ok((IRValue::Variable(var_id), instructions));
+                return Ok((IRValue::Variable(var_id), instructions, true));
             }
             Expression::Literal(literal) => {
-                let value = match literal {
+                let (value, alr_assigned) = match literal {
                     Literal::String(parts) => {
                         if parts.len() != 1 {
                             unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
                         }
                         if let FStringPart::String(str) = &parts[0] {
-                            let var_id = self.temp_var(Type::String);
+                            let var_id = if let Some(curr_var) = curr_var {
+                                curr_var
+                            } else {
+                                self.temp_var(Type::String)
+                            };
+
                             let alias = format!("str{}", self.ssa_ir.data.len());
 
                             self.ssa_ir.data.push(IRData {
@@ -900,19 +916,24 @@ impl IRGen {
                                 },
                             ));
 
-                            IRValue::Variable(var_id)
+                            (IRValue::Variable(var_id), curr_var.is_some())
                         } else {
                             unimplemented!("FStrings not supported yet")
                         }
                     }
                     Literal::Float(float) => {
-                        let var_id = self.temp_var(Type::Float);
                         let alias = format!("fl{}", self.ssa_ir.data.len());
 
                         self.ssa_ir.data.push(IRData {
                             alias: alias.clone(),
                             value: IRDataLiteral::Float(*float),
                         });
+
+                        let var_id = if let Some(curr_var) = curr_var {
+                            curr_var
+                        } else {
+                            self.temp_var(Type::Float)
+                        };
 
                         instructions.push(IRInstr::Load(
                             var_id,
@@ -923,64 +944,85 @@ impl IRGen {
                             },
                         ));
 
-                        IRValue::Variable(var_id)
+                        (IRValue::Variable(var_id), curr_var.is_some())
                     }
                     lit @ Literal::Int(_) | lit @ Literal::Uint(_) | lit @ Literal::Boolean(_) => {
-                        IRValue::Literal(lit.clone())
+                        (IRValue::Literal(lit.clone()), false)
                     }
                     _ => unimplemented!(),
                 };
 
-                return Ok((value, instructions));
+                return Ok((value, instructions, alr_assigned));
             }
             Expression::BinaryOp(binary_op) => {
-                let (lhs, mut lhs_instrs) = self.generate_ir_expr(
+                let (lhs, mut lhs_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &binary_op.lhs,
+                    None,
                 )?;
-                let (rhs, mut rhs_instrs) = self.generate_ir_expr(
+                let (rhs, mut rhs_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &binary_op.rhs,
+                    None,
                 )?;
+
+                // let idx_var = if let IRValue::Variable(var) = index {
+                //     var
+                // } else {
+                //     let temp = self.temp_var(self.ir_val_ty(&index));
+                //     instructions.push(IRInstr::Assign(temp, index));
+                //     temp
+                // };
 
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
-                let var_id = self.temp_var(self.ir_val_ty(&lhs));
+                let var_id = if let Some(curr_var) = curr_var {
+                    curr_var
+                } else {
+                    self.temp_var(self.ir_val_ty(&lhs))
+                };
 
                 instructions.push(IRInstr::BinOp(var_id, lhs.clone(), rhs, binary_op.op));
 
-                return Ok((IRValue::Variable(var_id), instructions));
+                return Ok((IRValue::Variable(var_id), instructions, curr_var.is_some()));
             }
             Expression::UnaryOp(unary_op) => {
-                let (operand, mut operand_instrs) = self.generate_ir_expr(
+                let (operand, mut operand_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &unary_op.operand,
+                    None,
                 )?;
 
                 instructions.append(&mut operand_instrs);
 
-                let var_id = self.temp_var(self.ir_val_ty(&operand));
+                let var_id = if let Some(curr_var) = curr_var {
+                    curr_var
+                } else {
+                    self.temp_var(self.ir_val_ty(&operand))
+                };
+
                 instructions.push(IRInstr::UnOp(var_id, operand.clone(), unary_op.op));
 
-                return Ok((IRValue::Variable(var_id), instructions));
+                return Ok((IRValue::Variable(var_id), instructions, curr_var.is_some()));
             }
             Expression::FunctionCall(function_call) => {
-                let (mut func_expr, mut func_instrs) = self.generate_ir_expr(
+                let (mut func_expr, mut func_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &function_call.func_expr,
+                    None,
                 )?;
 
                 // if let IRValue::IRVariable(func) = &mut func_expr {
@@ -998,19 +1040,29 @@ impl IRGen {
 
                 let mut args = vec![];
                 for arg in &function_call.arguments {
-                    let (arg_expr, mut arg_instrs) =
-                        self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &arg)?;
+                    let (arg_expr, mut arg_instrs, _) = self.generate_ir_expr(
+                        scope,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &arg,
+                        None,
+                    )?;
 
                     instructions.append(&mut arg_instrs);
 
                     args.push(arg_expr);
                 }
 
-                // TODO: this should have the return type as type
-                let var_id = self.temp_var(self.ir_val_ty(&func_expr));
+                let var_id = if let Some(curr_var) = curr_var {
+                    curr_var
+                } else {
+                    // TODO: this should have the return type as type
+                    self.temp_var(self.ir_val_ty(&func_expr))
+                };
                 instructions.push(IRInstr::Call(var_id, func_expr.clone(), args));
 
-                return Ok((IRValue::Variable(var_id), instructions));
+                return Ok((IRValue::Variable(var_id), instructions, curr_var.is_some()));
             }
             Expression::Variable(variable) => {
                 let name_to_find = if let Some(replaced_name) = renamed_vars.get(&variable.name) {
@@ -1021,67 +1073,96 @@ impl IRGen {
 
                 for (idx, var) in self.ssa_ir.vars.iter().enumerate() {
                     if var.name == *name_to_find {
-                        return Ok((IRValue::Variable(idx), instructions));
+                        return Ok((IRValue::Variable(idx), instructions, curr_var.is_some()));
                     }
                 }
 
                 unreachable!("{name_to_find}, {}", variable.name)
             }
             Expression::Return(expression) => {
-                let (ret_expr, mut ret_instrs) = self.generate_ir_expr(
+                let (ret_expr, mut ret_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &expression,
+                    None,
                 )?;
 
                 instructions.append(&mut ret_instrs);
                 instructions.push(IRInstr::Return(ret_expr));
 
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::Assignment(assignment) => {
-                let (lhs, mut lhs_instrs) = self.generate_ir_expr(
+                let (lhs, mut lhs_instrs, lhs_assigned) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &assignment.lhs,
+                    None,
                 )?;
-                let (rhs, mut rhs_instrs) = self.generate_ir_expr(
+
+                let ty = self.ir_val_ty(&lhs);
+
+                // This is so we assign rhs directly to lhs if lhs is a variable
+                let lhs_var = if let IRValue::Variable(var_id) = lhs.clone() {
+                    Some(var_id)
+                } else {
+                    None
+                };
+
+                let (rhs, mut rhs_instrs, rhs_assigned) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &assignment.rhs,
+                    lhs_var,
                 )?;
 
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
-                if let IRValue::Variable(var) = lhs.clone() {
-                    let var_name = self.ssa_ir.vars[var].name.clone();
-                    let var_id = if let Some(idx) =
-                        self.ssa_ir.vars.iter().position(|v| v.name == var_name)
-                    {
-                        idx
-                    } else {
-                        self.named_var(&var_name, self.ir_val_ty(&lhs))
+                if !rhs_assigned {
+                    // var = addr -> load to lhs
+                    // addr = var -> store rhs
+                    // var = var -> mov rhs to lhs
+                    // addr = addr -> load rhs to temp, store temp to lhs
+
+                    use IRValue::*;
+
+                    // Soo many unneccessary allocs lol, but i think this is the cleanest way
+                    let mut instrs = match (lhs, rhs) {
+                        (Variable(lhs), rhs @ Variable(_) | rhs @ Literal(_)) => {
+                            vec![IRInstr::Assign(lhs, rhs)]
+                        }
+                        (Variable(lhs), Address(rhs)) => vec![IRInstr::Load(lhs, rhs)],
+                        (Address(lhs), rhs @ Variable(_) | rhs @ Literal(_)) => {
+                            vec![IRInstr::Store(lhs, rhs)]
+                        }
+                        (Address(lhs), Address(rhs)) => {
+                            let temp = self.temp_var(ty);
+                            vec![
+                                IRInstr::Load(temp, rhs),
+                                IRInstr::Store(lhs, IRValue::Variable(temp)),
+                            ]
+                        }
+                        _ => unreachable!("Assigning to a literal is not allowed duh"),
                     };
 
-                    instructions.push(IRInstr::Assign(var_id, rhs));
-                } else {
-                    panic!("Assignment to literal?, {lhs:?}");
+                    instructions.append(&mut instrs);
                 }
 
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::AnonStruct(anon_struct) => {
                 let var_id = self.temp_var(Type::Any);
                 return Ok((
                     IRValue::Variable(var_id),
                     vec![IRInstr::Unimplemented(var_id, format!("Anon struct"))],
+                    true,
                 ));
             }
             Expression::ArrayLiteral(array_literal) => {
@@ -1089,12 +1170,17 @@ impl IRGen {
 
                 let offset_size = 8;
 
-                let initial_offset = -offset_size;
-                let mut offset = initial_offset;
+                let mut offset = -offset_size;
 
                 for el in &array_literal.elements {
-                    let (el, mut el_instrs) =
-                        self.generate_ir_expr(scope, symbol_table, renamed_vars, loop_info, &el)?;
+                    let (el, mut el_instrs, _) = self.generate_ir_expr(
+                        scope,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &el,
+                        None,
+                    )?;
 
                     inner_ty = self.ir_val_ty(&el);
 
@@ -1110,40 +1196,48 @@ impl IRGen {
 
                     match inner_ty {
                         Type::Int => offset -= offset_size,
-                        _ => {}
+                        Type::Float => offset -= offset_size,
+                        _ => unimplemented!(),
                     }
                 }
 
                 let array_type = Type::Array(Box::new(inner_ty.clone()));
 
-                let var_id = self.temp_var(array_type.clone());
+                let var_id = if let Some(curr_var) = curr_var {
+                    curr_var
+                } else {
+                    self.temp_var(array_type.clone())
+                };
 
-                instructions.push(IRInstr::Assign(
-                    var_id,
-                    IRValue::Address(IRAddress {
-                        addr: IRAddressType::Register("fp".to_string()),
-                        stored_data_type: array_type,
-                        offset: IRAddressOffset::Literal(-offset_size),
-                    }),
-                ));
+                let arr_addr = IRAddress {
+                    addr: IRAddressType::Register("fp".to_string()),
+                    stored_data_type: array_type,
+                    offset: IRAddressOffset::Literal(-offset_size),
+                };
 
-                return Ok((IRValue::Variable(var_id), instructions));
+                self.ssa_ir.stack_vars.insert(var_id, arr_addr.clone());
+
+                instructions.push(IRInstr::Assign(var_id, IRValue::Address(arr_addr)));
+
+                return Ok((IRValue::Variable(var_id), instructions, true));
             }
             Expression::ArrayAccess(array_access) => {
-                let (index, mut index_instrs) = self.generate_ir_expr(
+                let (index, mut index_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &array_access.index,
+                    None,
                 )?;
 
-                let (expr, mut expr_instrs) = self.generate_ir_expr(
+                let (expr, mut expr_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &array_access.expr,
+                    None,
                 )?;
 
                 instructions.append(&mut index_instrs);
@@ -1152,15 +1246,42 @@ impl IRGen {
                 let array_type = self.ir_val_ty(&expr);
 
                 if let Type::Array(inner) = array_type.clone() {
-                    let idx_var = self.temp_var(self.ir_val_ty(&index));
-                    let expr_var = self.temp_var(array_type);
-                    let res_var = self.temp_var(*inner.clone());
+                    let idx_var = if let IRValue::Variable(var) = index {
+                        var
+                    } else {
+                        let temp = self.temp_var(self.ir_val_ty(&index));
+                        instructions.push(IRInstr::Assign(temp, index));
+                        temp
+                    };
+
+                    let expr_var = if let IRValue::Variable(var) = expr {
+                        var
+                    } else {
+                        let temp = self.temp_var(array_type);
+                        instructions.push(IRInstr::Assign(temp, expr));
+                        temp
+                    };
+
+                    let res_var = if let Some(curr_var) = curr_var {
+                        curr_var
+                    } else {
+                        self.temp_var(*inner.clone())
+                    };
 
                     let expr_name = &self.ssa_ir.vars[expr_var].name;
                     let idx_name = &self.ssa_ir.vars[idx_var].name;
 
-                    instructions.push(IRInstr::Assign(idx_var, index));
-                    instructions.push(IRInstr::Assign(expr_var, expr));
+                    let expr_addr = &self
+                        .ssa_ir
+                        .stack_vars
+                        .get(&expr_var)
+                        .expect("FAILED TO FIND STACK VARIABLE IN ARRAY ACCESS FIX")
+                        .clone();
+
+                    let expr_addr_offset = match expr_addr.offset {
+                        IRAddressOffset::Literal(lit) => lit,
+                        IRAddressOffset::IRVariable(_) => unreachable!("prob not gonna happen?"),
+                    };
 
                     let el_size = 8;
 
@@ -1168,27 +1289,28 @@ impl IRGen {
                     instructions.push(IRInstr::BinOp(
                         idx_var,
                         IRValue::Variable(idx_var),
-                        IRValue::Literal(Literal::Uint(el_size)),
+                        IRValue::Literal(Literal::Int(-el_size)),
                         BinaryOperation::Multiply,
                     ));
 
-                    // instructions.push(IRInstr::BinOp(
-                    //     idx_var,
-                    //     IRValue::Variable(idx_var),
-                    //     IRValue::Literal(Literal::Uint(el_size)),
-                    //     BinaryOperation::Add,
-                    // ));
-
-                    instructions.push(IRInstr::Load(
-                        res_var,
-                        IRAddress {
-                            addr: IRAddressType::Register("fp".to_string()),
-                            stored_data_type: *inner,
-                            offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
-                        },
+                    // Shift to expr addr offset
+                    instructions.push(IRInstr::BinOp(
+                        idx_var,
+                        IRValue::Variable(idx_var),
+                        IRValue::Literal(Literal::Int(expr_addr_offset)),
+                        BinaryOperation::Add,
                     ));
 
-                    return Ok((IRValue::Variable(res_var), instructions));
+                    // instructions.push(IRInstr::Load(
+                    //     res_var,
+                    let final_addr = IRAddress {
+                        addr: expr_addr.addr.clone(),
+                        stored_data_type: *inner,
+                        offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
+                    };
+                    // ));
+
+                    return Ok((IRValue::Address(final_addr), instructions, false));
                 } else {
                     unreachable!("Tried to access non-array type?")
                 }
@@ -1198,6 +1320,7 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::Unimplemented(res, format!("Field access"))],
+                    true,
                 ));
             }
             Expression::NamedStruct(named_struct) => {
@@ -1205,6 +1328,7 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::Unimplemented(res, format!("Named struct"))],
+                    true,
                 ));
             }
             Expression::Lambda(lambda) => {
@@ -1212,6 +1336,7 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::Unimplemented(res, format!("Lambda"))],
+                    true,
                 ));
             }
             Expression::Range(range) => {
@@ -1219,10 +1344,15 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::Unimplemented(res, format!("Range"))],
+                    true,
                 ));
             }
             Expression::BuiltinTarget(expr) => {
-                let res = self.temp_var(Type::Any);
+                let res = if let Some(curr_var) = curr_var {
+                    curr_var
+                } else {
+                    self.temp_var(Type::Any)
+                };
 
                 let mut instrs_parts = Vec::new();
                 if let Expression::Literal(Literal::String(parts)) = expr.as_ref() {
@@ -1230,12 +1360,13 @@ impl IRGen {
                         let part = match part {
                             // TODO: this doesnt work if expr is an if or a for since js doesnt support that
                             FStringPart::Code(expr) => {
-                                let (expr, mut instrs) = self.generate_ir_expr(
+                                let (expr, mut instrs, _) = self.generate_ir_expr(
                                     scope,
                                     symbol_table,
                                     renamed_vars,
                                     loop_info,
                                     &expr,
+                                    None,
                                 )?;
 
                                 if let IRValue::Variable(var) = expr {
@@ -1274,6 +1405,7 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::InlineTarget(instrs_parts, used_registers)],
+                    true,
                 ));
             }
             Expression::BuiltinType(expression) => {
@@ -1282,15 +1414,17 @@ impl IRGen {
                 return Ok((
                     IRValue::Variable(res),
                     vec![IRInstr::Unimplemented(res, format!("@type"))],
+                    true,
                 ));
             }
             Expression::If(if_stmt) => {
-                let (cond_expr, mut cond_instrs) = self.generate_ir_expr(
+                let (cond_expr, mut cond_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &if_stmt.cond,
+                    None,
                 )?;
 
                 instructions.append(&mut cond_instrs);
@@ -1342,7 +1476,7 @@ impl IRGen {
                 }
                 instructions.push(IRInstr::Label(after_if_label_name));
 
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::For(for_expr) => {
                 let loop_cond_label = self.make_name_unique("loop_cond");
@@ -1351,12 +1485,13 @@ impl IRGen {
                 instructions.push(IRInstr::Goto(loop_cond_label.clone(), vec![]));
                 instructions.push(IRInstr::Label(loop_cond_label.clone()));
 
-                let (iterator_expr, mut iterator_instrs) = self.generate_ir_expr(
+                let (iterator_expr, mut iterator_instrs, _) = self.generate_ir_expr(
                     scope,
                     symbol_table,
                     renamed_vars,
                     loop_info,
                     &for_expr.iterator,
+                    None,
                 )?;
 
                 let binding_var_id =
@@ -1394,21 +1529,21 @@ impl IRGen {
                 instructions.push(IRInstr::Goto(loop_cond_label.clone(), vec![]));
                 instructions.push(IRInstr::Label(loop_end_label.clone()));
 
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::Import(import) => {
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::Placeholder => {
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::Break => {
                 instructions.push(IRInstr::Goto(loop_info.end_label.clone(), vec![]));
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
             Expression::Continue => {
                 instructions.push(IRInstr::Goto(loop_info.start_label.clone(), vec![]));
-                return Ok((IRValue::Literal(Literal::Int(0)), instructions));
+                return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
         }
     }

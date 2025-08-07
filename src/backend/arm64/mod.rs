@@ -157,14 +157,12 @@ impl ARM64Backend {
         for block in blocks.iter() {
             write!(out, "{}:\n", block.name).unwrap();
 
-            let stack_space = 160; // arbitrary for now?
-
             if block.is_func {
                 // setup stack frame
 
                 write!(out, "\tstp fp, lr, [sp,#-16]!\n").unwrap();
                 write!(out, "\tmov fp, sp\n").unwrap();
-                write!(out, "\tsub sp, sp, #{stack_space}\n").unwrap();
+                write!(out, "\tsub sp, sp, #16\n").unwrap();
 
                 // todo: read off func params
             }
@@ -235,7 +233,7 @@ impl ARM64Backend {
 
                         // destroy stack frame and return
                         write!(out, "\tmov sp, fp\n").unwrap();
-                        write!(out, "\tldp fp, lr, [sp], #{stack_space}\n").unwrap();
+                        write!(out, "\tldp fp, lr, [sp], #16\n").unwrap();
                         write!(out, "\tret\n").unwrap();
                     }
                     IRInstr::Call(ret, called, args) => {
@@ -335,7 +333,7 @@ impl ARM64Backend {
                                     Type::Int => {
                                         write!(out, "\tcmp {lhs_str}, {rhs_str}\n").unwrap();
                                     }
-                                    _ => todo!("Other comparisons not implented"),
+                                    _ => todo!("Other comparisons not implemented"),
                                 };
                             }
                             _ => unimplemented!(),
@@ -377,7 +375,7 @@ impl ARM64Backend {
                                     write!(out, "\tb {false_label}\n").unwrap();
                                 }
                             }
-                            _ => unimplemented!("Idk"),
+                            ref cond => unimplemented!("{cond:?}"),
                         };
                     }
                     IRInstr::Goto(label, args) => {
@@ -411,10 +409,19 @@ impl ARM64Backend {
 
                         let offset = match &addr.offset {
                             IRAddressOffset::Literal(offset) => format!("#{offset}"),
-                            IRAddressOffset::IRVariable(offset_reg) => format!("{offset_reg}"),
+                            IRAddressOffset::IRVariable(offset_var) => {
+                                let register = self.used_registers.get(offset_var);
+
+                                if let Some(register) = register {
+                                    format!("{register}")
+                                } else {
+                                    let var_name = &self.ssa_ir.vars[*offset_var].name;
+                                    format!("`unalloc var {var_name}`")
+                                }
+                            }
                         };
 
-                        let addr = match &addr.addr {
+                        let full_addr = match &addr.addr {
                             IRAddressType::Data(addr) => unimplemented!("FIX THIS"),
                             IRAddressType::RawAddr(addr) => {
                                 unimplemented!("Will implement once it shows up somewhere")
@@ -428,16 +435,22 @@ impl ARM64Backend {
                             }
                         };
 
+                        let (instr, reg_ty) = {
+                            match addr.stored_data_type {
+                                Type::Float => ("fmov", RegisterType::Float32),
+                                _ => ("mov", RegisterType::General),
+                            }
+                        };
+
                         // Can always be general since its an address
-                        let temp_reg = self.temp_register(RegisterType::General);
-                        write!(out, "\tmov {temp_reg}, {val_asm}\n").unwrap();
-                        write!(out, "\tstr {temp_reg}, {addr}\n").unwrap();
+                        let temp_reg = self.temp_register(reg_ty);
+                        write!(out, "\t{instr} {temp_reg}, {val_asm}\n").unwrap();
+                        write!(out, "\tstr {temp_reg}, {full_addr}\n").unwrap();
                     }
                     IRInstr::Load(res, addr) => {
                         let offset = &addr.offset;
-                        let addr = &addr.addr;
 
-                        match addr {
+                        match &addr.addr {
                             IRAddressType::Data(addr) => {
                                 let accessed_data = self
                                     .ssa_ir
@@ -475,9 +488,13 @@ impl ARM64Backend {
                                     }
                                 }
                             }
-                            IRAddressType::Register(addr) => {
-                                let register =
-                                    self.get_free_or_existing_register(RegisterType::General, *res);
+                            IRAddressType::Register(address) => {
+                                let reg_type = match addr.stored_data_type {
+                                    Type::Float => RegisterType::Float32,
+                                    _ => RegisterType::General,
+                                };
+
+                                let register = self.get_free_or_existing_register(reg_type, *res);
 
                                 // include offset
                                 let offset = match &offset {
@@ -495,9 +512,9 @@ impl ARM64Backend {
                                 };
 
                                 let addr = if offset == "0" {
-                                    format!("[{addr}]")
+                                    format!("[{address}]")
                                 } else {
-                                    format!("[{addr},{offset}]")
+                                    format!("[{address},{offset}]")
                                 };
 
                                 write!(out, "\tldr {register}, {addr}\n").unwrap();

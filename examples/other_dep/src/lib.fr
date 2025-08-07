@@ -27,22 +27,23 @@ fn foo =
     return 2
 
 fn main =
-    @instr("// array")
-    let message = [4, 6]
+    mut arr = [4.42, 6.23]
 
+    arr[0] = 2.59
+    let out_f = arr[0]
+    let out = 0
 
-    @instr("// access")
+    // convert to int
+    @instr("fcvtzs {out}, {out_f}")
 
-    let out = message[1]
-
-    @instr("// print")
-
+    // print
     @instr("
     mov x0, {out}
     mov x16, 1
     svc 0
     | x0 x16
     ")
+
 
 /*
     // convert c to int and store in d
