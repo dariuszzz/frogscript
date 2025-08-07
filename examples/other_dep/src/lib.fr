@@ -23,20 +23,34 @@ fn main =
 
 */
 
-fn foo =
-    return 2
+fn foo(a int) =
+    let ret_val = 2 * a
+    return ret_val
 
 fn main =
-    mut arr = [4.42, 6.23]
+    //mut arr = ["siema", "czesc"]
 
-    arr[0] = 2.59
-    let out_f = arr[0]
-    let out = 0
+    let val = 100
+    let out = foo(val)
 
-    // convert to int
-    @instr("fcvtzs {out}, {out_f}")
+    //let msg = @type(arr)
 
-    // print
+    //let len = 15
+
+    // print message
+    /*
+    @instr("
+    mov x0, 1
+    mov x1, {msg}
+    mov x2, {len}
+    mov x16, 4
+    svc 0
+    | x0 x1 x2 x16
+    ")
+    */
+
+
+
     @instr("
     mov x0, {out}
     mov x16, 1

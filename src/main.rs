@@ -516,7 +516,7 @@ fn main() -> Result<(), String> {
 
             let ssa_ir = backend::generate_ir(program, target, &symbol_table)?;
 
-            let mut backend = backend::arm64::ARM64Backend::new(ssa_ir);
+            let mut backend = backend::arm64::ARM64Backend::new(&ssa_ir);
             let asm = backend.compile_ir(&symbol_table)?;
 
             let out_path = target.outpath.join("out.asm");

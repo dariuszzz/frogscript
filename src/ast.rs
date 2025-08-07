@@ -107,7 +107,7 @@ impl Type {
             Int => 8,
             Uint => 8,
             Float => 4,
-            String => unimplemented!(),
+            String => 8,
             Boolean => 8,
             Void => 0,
             Any => unimplemented!(),

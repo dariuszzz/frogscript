@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use crate::{Expression, Range};
+use crate::{ast::Type, Expression, Range};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FStringPart {
@@ -22,6 +22,18 @@ pub enum Literal {
     Uint(usize),
     Float(f32),
     Boolean(bool),
+}
+
+impl Literal {
+    pub fn ty(&self) -> Type {
+        match self {
+            Literal::Boolean(_) => Type::Boolean,
+            Literal::Int(_) => Type::Int,
+            Literal::Uint(_) => Type::Uint,
+            Literal::String(_) => Type::String,
+            Literal::Float(_) => Type::Float,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

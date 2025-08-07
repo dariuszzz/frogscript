@@ -1167,10 +1167,8 @@ impl IRGen {
             }
             Expression::ArrayLiteral(array_literal) => {
                 let mut inner_ty = Type::Any;
-
-                let offset_size = 8;
-
-                let mut offset = -offset_size;
+                let mut offset_size = 0;
+                let mut offset = 0;
 
                 for el in &array_literal.elements {
                     let (el, mut el_instrs, _) = self.generate_ir_expr(
@@ -1184,6 +1182,9 @@ impl IRGen {
 
                     inner_ty = self.ir_val_ty(&el);
 
+                    offset_size = inner_ty.size() as isize;
+                    offset -= offset_size;
+
                     instructions.append(&mut el_instrs);
                     instructions.push(IRInstr::Store(
                         IRAddress {
@@ -1193,12 +1194,6 @@ impl IRGen {
                         },
                         el,
                     ));
-
-                    match inner_ty {
-                        Type::Int => offset -= offset_size,
-                        Type::Float => offset -= offset_size,
-                        _ => unimplemented!(),
-                    }
                 }
 
                 let array_type = Type::Array(Box::new(inner_ty.clone()));
