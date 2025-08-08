@@ -13,6 +13,7 @@ use gumdrop::Options;
 
 mod arena;
 mod ast;
+mod ast_graphviz;
 mod backend;
 mod js_backend;
 mod lexer;
@@ -32,6 +33,8 @@ use old_semantics::semantics::*;
 use parser::*;
 use pond::{find_pond_path, Pond, Target};
 use symbol_table::*;
+
+use crate::ast_graphviz::ASTGraphvizExporter;
 
 #[derive(Debug, Options)]
 pub struct GenericOptions {
@@ -100,6 +103,12 @@ struct ParseOpts {
 
     #[options(free, help = "path to parse (defaults to cwd)")]
     path: Vec<String>,
+
+    #[options(help = "dump a dot graph of the ast")]
+    graph: Option<String>,
+
+    #[options(help = "uses symbol data when constructing graph, use with --graph")]
+    use_symbol_data: bool,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -109,9 +118,6 @@ struct TranspileOpts {
 
     #[options(help = "output")]
     output: Option<String>,
-
-    #[options(help = "create a dot graph of the ast")]
-    graph: bool,
 
     #[options(free, help = "path to project (defaults to cwd)")]
     path: Vec<String>,
@@ -354,6 +360,23 @@ fn main() -> Result<(), String> {
             } else {
                 semantics::perform_analysis(&mut program, &i_opts)?
             };
+
+            if let Some(output) = opts.graph {
+                println!(
+                    "dumping graphviz graph to {:?}",
+                    std::env::current_dir().unwrap().join(&output)
+                );
+                let mut outfile =
+                    std::fs::File::create(output).map_err(|_| format!("Cannot open out file"))?;
+
+                // Clone is okay since this is like a debug feature
+                let mut exporter = ASTGraphvizExporter::default();
+                exporter.use_symbol_data(opts.use_symbol_data);
+
+                let graph = exporter.export_modules(&program.modules);
+
+                _ = outfile.write(format!("{}", graph).as_bytes());
+            }
 
             if let Some(output) = opts.output {
                 println!(

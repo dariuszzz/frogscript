@@ -24,16 +24,24 @@ fn main =
 */
 
 fn foo(a int) =
-    let ret_val = 2 * a
+    mut ret_val = 2 * a
+
+    if a > 4:
+        return 25 + ret_val
+    else
+        ret_val -= 4
+
     return ret_val
 
 fn main =
-    //mut arr = ["siema", "czesc"]
+    mut arr = ["siema", "czesc"]
 
-    let val = 100
+    mut val = 100
+    val = 10
+
     let out = foo(val)
 
-    //let msg = @type(arr)
+    let msg = @type(arr)
 
     //let len = 15
 
