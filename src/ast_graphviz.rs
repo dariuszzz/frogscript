@@ -167,7 +167,7 @@ impl ASTGraphvizExporter {
         let name = format!("cluster_{uniq}");
         *out += &format!("\tsubgraph {name} {{\n");
         *out += &format!("\t\tlabel = \"{label}\"\n");
-        *out += &format!("\t\tcolor = black\n");
+        *out += &format!("\t\tcolor = gray\n");
         *out += &format!("\t\tstyle = rounded\n");
 
         name
@@ -332,7 +332,7 @@ impl ASTGraphvizExporter {
                     self.connect_label(
                         out,
                         &arg_val,
-                        &func_val[0],
+                        &this_node,
                         &format!("arg{count}"),
                         ConnStyle::Input,
                     );
