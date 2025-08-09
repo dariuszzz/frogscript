@@ -26,10 +26,12 @@ fn main =
 fn foo(a int) =
     mut ret_val = 2 * a
 
-    if a > 4:
-        return 25 + ret_val
-    else
-        ret_val -= 4
+    for i in [1,2,3]:
+        if i == 2:
+            continue
+
+
+        let b = 25 + ret_val
 
     return ret_val
 
@@ -43,22 +45,6 @@ fn main =
 
     let msg = @type(arr)
 
-    //let len = 15
-
-    // print message
-    /*
-    @instr("
-    mov x0, 1
-    mov x1, {msg}
-    mov x2, {len}
-    mov x16, 4
-    svc 0
-    | x0 x1 x2 x16
-    ")
-    */
-
-
-
     @instr("
     mov x0, {out}
     mov x16, 1
@@ -68,6 +54,16 @@ fn main =
 
 
 /*
+    // print message
+    @instr("
+    mov x0, 1
+    mov x1, {msg}
+    mov x2, {len}
+    mov x16, 4
+    svc 0
+    | x0 x1 x2 x16
+    ")
+
     // convert c to int and store in d
     @instr("fcvtzs {d}, {c}")
 */
