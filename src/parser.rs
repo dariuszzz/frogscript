@@ -1495,8 +1495,15 @@ impl Parser {
             TokenKind::Identifier(Identifier::Return) => {
                 // consume return
                 self.advance();
-                let expr = self.parse_expression(indent)?;
-                Ok(Expression::Return(Box::new(expr)))
+                let ret_expr = match self.peek_skip_ws(indent)?.kind {
+                    TokenKind::Newline | TokenKind::Indentation(_) => None,
+                    _ => {
+                        let expr = self.parse_expression(indent)?;
+                        Some(Box::new(expr))
+                    }
+                };
+
+                Ok(Expression::Return(ret_expr))
             }
             // Caret for dereferencing
             TokenKind::Identifier(Identifier::Custom(_)) | TokenKind::Caret => {

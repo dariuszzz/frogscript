@@ -87,7 +87,7 @@ impl ASTGraphvizExporter {
                 let start = self.get_unique_name();
                 self.named_node(&mut out, &start, "START", NodeStyle::Stmt);
 
-                // This is ugly
+                // This is ugly (lines across the entire graph, and some functions dont connect anway, unreadable)
                 // self.symbol_to_node.insert(func.symbol_idx, start.clone());
 
                 self.start_cluster(&mut out, "params");
@@ -404,10 +404,12 @@ impl ASTGraphvizExporter {
                 self.output_one(this_node)
             }
             Expression::Return(ret) => {
-                let (_, operand_val) = self.expr_to_graphviz(out, &ret);
                 let this_node = self.get_unique_name();
                 self.named_node(out, &this_node, "return", NodeStyle::Stmt);
-                self.connect(&operand_val, &this_node, ConnStyle::Input);
+                if let Some(ret) = ret {
+                    let (_, operand_val) = self.expr_to_graphviz(out, &ret);
+                    self.connect(&operand_val, &this_node, ConnStyle::Input);
+                }
 
                 (vec![this_node], vec![])
             }
@@ -532,6 +534,7 @@ impl ASTGraphvizExporter {
             Expression::For(for_expr) => {
                 let this_node = self.get_unique_name();
                 self.named_node(out, &this_node, "check loop", NodeStyle::Cond);
+                let (_, iterator_out) = self.expr_to_graphviz(out, &for_expr.iterator);
 
                 self.start_cluster(out, "loop body");
 
@@ -544,8 +547,6 @@ impl ASTGraphvizExporter {
                 );
                 self.symbol_to_node
                     .insert(for_expr.symbol_idx, binding.clone());
-
-                let (_, iterator_out) = self.expr_to_graphviz(out, &for_expr.iterator);
 
                 self.last_loop = this_node.clone();
 

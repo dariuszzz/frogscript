@@ -23,13 +23,13 @@ fn main =
 
 */
 
+
 fn foo(a int) =
     mut ret_val = 2 * a
 
     for i in [1,2,3]:
         if i == 2:
-            continue
-
+            let wdawd = 29
 
         let b = 25 + ret_val
 

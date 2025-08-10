@@ -257,7 +257,9 @@ impl<'a> SymbolTablePopulator<'a> {
                 }
             }
             Expression::Return(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
+                if let Some(expr) = expr {
+                    self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
+                }
             }
             Expression::Assignment(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.lhs, shadowing)?;

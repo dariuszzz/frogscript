@@ -24,13 +24,19 @@ pub struct IRGen {
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct DTreeNode {
+pub struct CFGraphNode {
     pub dependencies: Vec<usize>,
     pub dependees: Vec<usize>,
     pub strongly_connected: Option<usize>,
+
+    pub block_idx: usize,
 }
 
-type DependencyGraph = Arena<DTreeNode>;
+#[derive(Default, Debug, Clone)]
+pub struct CFGraph {
+    pub nodes: Arena<CFGraphNode>,
+    pub strongly_conn: Vec<Vec<usize>>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphFragment {
@@ -138,7 +144,7 @@ impl IRGen {
                 }
 
                 self.ssa_ir.blocks.push(Block {
-                    is_func: true,
+                    func_name: Some(func.func_name.clone()),
                     name,
                     parameters,
                     instructions: vec![],
@@ -167,11 +173,17 @@ impl IRGen {
             scope += 1;
         }
 
+        let mut cf_graph = self.build_partial_cf_graph(0);
+        _ = self.find_strongly_connected(&mut cf_graph);
+
+        self.ssa_ir.cf_graph = cf_graph;
+
         Ok(self.ssa_ir.clone())
     }
 
-    fn build_fn_dependency_graph(&mut self, func_block_idx: usize) -> DependencyGraph {
-        let mut graph: DependencyGraph = Arena::new();
+    fn build_partial_cf_graph(&mut self, func_block_idx: usize) -> CFGraph {
+        let mut cf_graph = CFGraph::default();
+        let graph = &mut cf_graph.nodes;
 
         let blocks_by_name = self
             .ssa_ir
@@ -185,7 +197,8 @@ impl IRGen {
         let len = self.ssa_ir.blocks.len();
         // Create nodes
         for i in func_block_idx..len {
-            let node = DTreeNode::default();
+            let mut node = CFGraphNode::default();
+            node.block_idx = i - func_block_idx;
             graph.insert(node);
         }
 
@@ -225,8 +238,9 @@ impl IRGen {
                 }
             }
         }
+        self.find_strongly_connected(&mut cf_graph);
 
-        return graph;
+        return cf_graph;
     }
 
     fn find_block_variables(
@@ -354,7 +368,7 @@ impl IRGen {
                 }
                 IRInstr::Goto(label, args) => {}
                 IRInstr::Return(irvalue) => {
-                    if let IRValue::Variable(val) = irvalue {
+                    if let Some(IRValue::Variable(val)) = irvalue {
                         let contained = contains_named_var(&self.ssa_ir.vars, &local_vars, &val);
                         if !contained {
                             // let name = self.ssa_ir.vars[*val].name.clone();
@@ -394,13 +408,14 @@ impl IRGen {
     fn resolve_cycle_block_params(
         &mut self,
         group: &Vec<usize>,
-        graph: &mut DependencyGraph,
+        cf_graph: &mut CFGraph,
         ctx: &mut ParamContext,
         func_block_idx: usize,
         unresolved_vars: &mut Vec<VariableID>,
         visits: &mut HashMap<usize, usize>,
         block_idx: usize,
     ) {
+        let graph = &mut cf_graph.nodes;
         // man idk if this wont break
         // idk if this should be times 2.
         // maybe the minimum needed amount is just group.len(). I really dont know
@@ -408,7 +423,7 @@ impl IRGen {
             return;
         }
 
-        // visit all nodes at least twice before endin
+        // visit all nodes at least twice before ending
         if visits.values().all(|c| *c >= 2) {
             return;
         }
@@ -460,7 +475,7 @@ impl IRGen {
             // println!("{dep}");
             self.resolve_cycle_block_params(
                 group,
-                graph,
+                cf_graph,
                 ctx,
                 func_block_idx,
                 unresolved_vars,
@@ -473,14 +488,14 @@ impl IRGen {
 
     fn figure_out_block_params(
         &mut self,
-        graph: &mut DependencyGraph,
+        cf_graph: &mut CFGraph,
         ctx: &mut ParamContext,
         func_block_idx: usize,
         prev_node: i32,
         unresolved_vars: &mut Vec<VariableID>,
-        comps: &Vec<Vec<usize>>,
         block_idx: usize,
     ) {
+        let graph = &mut cf_graph.nodes;
         let dnode = graph.get(block_idx).unwrap();
         let cyclic = dnode.strongly_connected.clone();
         let dependencies = &dnode.dependencies.clone();
@@ -497,23 +512,24 @@ impl IRGen {
             ctx.visits
                 .push((GraphFragment::CyclicGroup(group_idx), prev_node));
 
-            let group = comps[group_idx].clone();
+            let group = cf_graph.strongly_conn[group_idx].clone();
 
             let mut visits = HashMap::new();
             for block_idx in &group {
                 visits.insert(*block_idx, 0);
             }
 
-            let mut cycle_local_unresolved_vars = unresolved_vars.clone();
             self.resolve_cycle_block_params(
                 &group,
-                graph,
+                cf_graph,
                 ctx,
                 func_block_idx,
                 &mut unresolved_vars.clone(),
                 &mut visits,
                 block_idx,
             );
+
+            let cycle_local_unresolved_vars = unresolved_vars.clone();
 
             for block_idx in &group {
                 // Visit all dependencies outside of this cyclic group
@@ -522,15 +538,25 @@ impl IRGen {
                         continue;
                     }
 
+                    let mut unresolved_copy = unresolved_vars.clone();
                     self.figure_out_block_params(
-                        graph,
+                        cf_graph,
                         ctx,
                         func_block_idx,
                         *block_idx as i32,
-                        &mut unresolved_vars.clone(),
-                        comps,
+                        &mut unresolved_copy,
                         *dep,
                     );
+
+                    let curr_block = &mut self.ssa_ir.blocks[func_block_idx + block_idx];
+                    for unresolved in &cycle_local_unresolved_vars {
+                        if !unresolved_copy.contains(unresolved) {
+                            // prob unneeded if
+                            if !curr_block.parameters.contains(&unresolved) {
+                                curr_block.parameters.push(*unresolved);
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -582,12 +608,11 @@ impl IRGen {
             // Visit dependencies
             for dep in dependencies {
                 self.figure_out_block_params(
-                    graph,
+                    cf_graph,
                     ctx,
                     func_block_idx,
                     block_idx as i32,
                     &mut unresolved_vars.clone(),
-                    comps,
                     *dep,
                 );
             }
@@ -603,7 +628,7 @@ impl IRGen {
         s: &mut Vec<usize>,
         i: &mut i32,
         comps: &mut Vec<Vec<usize>>,
-        graph: &mut DependencyGraph,
+        cf_graph: &mut CFGraph,
         v: usize,
     ) {
         num[v] = *i;
@@ -612,11 +637,11 @@ impl IRGen {
         visited[v] = true;
         s.push(v);
 
-        let node = graph.get(v).unwrap();
+        let node = cf_graph.nodes.get(v).unwrap();
         let successors = node.dependees.clone();
         for u in successors {
             if !visited[u] {
-                Self::strong_connect(num, lowest, visited, processed, s, i, comps, graph, u);
+                Self::strong_connect(num, lowest, visited, processed, s, i, comps, cf_graph, u);
                 lowest[v] = lowest[v].min(lowest[u]);
             } else if !processed[u] {
                 lowest[v] = lowest[v].min(num[u]);
@@ -640,14 +665,15 @@ impl IRGen {
                 comps.push(scc.clone());
 
                 for v in &scc {
-                    let node = graph.get_mut(*v).unwrap();
+                    let node = cf_graph.nodes.get_mut(*v).unwrap();
                     node.strongly_connected = Some(comps.len() - 1);
                 }
             }
         }
     }
 
-    fn find_strongly_connected(&mut self, graph: &mut DependencyGraph) -> Vec<Vec<usize>> {
+    fn find_strongly_connected(&mut self, cf_graph: &mut CFGraph) {
+        let graph = &mut cf_graph.nodes;
         let mut num = vec![-1; graph.vec.len()];
         let mut lowest = vec![-1; graph.vec.len()];
         let mut visited = vec![false; graph.vec.len()];
@@ -668,18 +694,17 @@ impl IRGen {
                     &mut s,
                     &mut i,
                     &mut comps,
-                    graph,
+                    cf_graph,
                     v,
                 );
             }
         }
 
-        comps
+        cf_graph.strongly_conn = comps;
     }
 
     fn figure_out_block_params_for_func(&mut self, func_block_idx: usize) {
-        let mut dependency_graph = self.build_fn_dependency_graph(func_block_idx);
-        let strongly_connected_comps = self.find_strongly_connected(&mut dependency_graph);
+        let mut dependency_graph = self.build_partial_cf_graph(func_block_idx);
 
         let last_block_idx = self.ssa_ir.blocks.len() - func_block_idx - 1;
 
@@ -691,7 +716,6 @@ impl IRGen {
             func_block_idx,
             -1,
             &mut vec![],
-            &strongly_connected_comps,
             last_block_idx,
         );
 
@@ -758,8 +782,12 @@ impl IRGen {
                         let block = block_copies.iter().find(|b| b.name == *label).unwrap();
 
                         for arg in &block.parameters {
-                            let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
-                            args.push(IRValue::Variable(**var_in_this_block));
+                            let var_in_this_block = local_vars.iter().find(|v| **v == arg);
+                            if var_in_this_block.is_none() {
+                                self.ssa_ir.pretty_print_ssa();
+                                panic!("Cant find {arg}");
+                            }
+                            args.push(IRValue::Variable(**var_in_this_block.unwrap()));
                         }
                     }
                     IRInstr::Return(irvalue) => {}
@@ -802,7 +830,7 @@ impl IRGen {
                     }
 
                     curr_block = Some(Block {
-                        is_func: false,
+                        func_name: None,
                         name: label,
                         parameters: vec![],
                         instructions: vec![],
@@ -1080,17 +1108,23 @@ impl IRGen {
                 unreachable!("{name_to_find}, {}", variable.name)
             }
             Expression::Return(expression) => {
-                let (ret_expr, mut ret_instrs, _) = self.generate_ir_expr(
-                    scope,
-                    symbol_table,
-                    renamed_vars,
-                    loop_info,
-                    &expression,
-                    None,
-                )?;
+                let expr = if let Some(expr) = expression {
+                    let (ret_expr, mut ret_instrs, _) = self.generate_ir_expr(
+                        scope,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &expr,
+                        None,
+                    )?;
 
-                instructions.append(&mut ret_instrs);
-                instructions.push(IRInstr::Return(ret_expr));
+                    instructions.append(&mut ret_instrs);
+                    Some(ret_expr)
+                } else {
+                    None
+                };
+
+                instructions.push(IRInstr::Return(expr));
 
                 return Ok((IRValue::Literal(Literal::Int(0)), instructions, true));
             }
@@ -1214,7 +1248,7 @@ impl IRGen {
 
                 instructions.push(IRInstr::Assign(var_id, IRValue::Address(arr_addr)));
 
-                return Ok((IRValue::Variable(var_id), instructions, true));
+                return Ok((IRValue::Variable(var_id), instructions, curr_var.is_some()));
             }
             Expression::ArrayAccess(array_access) => {
                 let (index, mut index_instrs, _) = self.generate_ir_expr(
@@ -1480,22 +1514,26 @@ impl IRGen {
                 instructions.push(IRInstr::Goto(loop_cond_label.clone(), vec![]));
                 instructions.push(IRInstr::Label(loop_cond_label.clone()));
 
-                let (iterator_expr, mut iterator_instrs, _) = self.generate_ir_expr(
-                    scope,
-                    symbol_table,
-                    renamed_vars,
-                    loop_info,
-                    &for_expr.iterator,
-                    None,
-                )?;
-
                 let binding_var_id =
-                    self.symbol_idx_to_var(&for_expr.symbol_idx, self.ir_val_ty(&iterator_expr));
+                    self.symbol_idx_to_var(&for_expr.symbol_idx, for_expr.binding_type.clone());
+                let (iterator_expr, mut iterator_instrs, iterator_assigned) = self
+                    .generate_ir_expr(
+                        scope,
+                        symbol_table,
+                        renamed_vars,
+                        loop_info,
+                        &for_expr.iterator,
+                        Some(binding_var_id),
+                    )?;
+
                 let binding_var_name = self.ssa_ir.vars[binding_var_id].name.clone();
                 renamed_vars.insert(for_expr.binding.clone(), binding_var_name);
 
                 instructions.append(&mut iterator_instrs);
-                instructions.push(IRInstr::Assign(binding_var_id, iterator_expr.clone()));
+
+                if !iterator_assigned {
+                    instructions.push(IRInstr::Assign(binding_var_id, iterator_expr.clone()));
+                }
                 // instructions for condition checking here...
                 //
                 //  ---

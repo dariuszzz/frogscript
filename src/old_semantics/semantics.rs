@@ -314,8 +314,12 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Return(expr) => {
-                let ty = self.typecheck_expr(scope, expr)?;
-                return Ok(ty);
+                if let Some(expr) = expr {
+                    let ty = self.typecheck_expr(scope, expr)?;
+                    return Ok(ty);
+                } else {
+                    return Ok(Type::Void);
+                }
             }
             Expression::Assignment(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
@@ -848,7 +852,9 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Return(expr) => {
-                self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
+                if let Some(expr) = expr {
+                    self.populate_symbol_table_expr(curr_module_name, scope, expr, shadowing)?;
+                }
             }
             Expression::Assignment(expr) => {
                 self.populate_symbol_table_expr(curr_module_name, scope, &mut expr.lhs, shadowing)?;
@@ -1252,7 +1258,9 @@ impl SemanticAnalyzer {
                 }
             }
             Expression::Return(expr) => {
-                self.resolve_names_expr(curr_module_name, scope, expr)?;
+                if let Some(expr) = expr {
+                    self.resolve_names_expr(curr_module_name, scope, expr)?;
+                }
             }
             Expression::Assignment(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.lhs)?;

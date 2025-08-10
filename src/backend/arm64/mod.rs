@@ -251,7 +251,7 @@ impl<'a> ARM64Backend<'a> {
         for block in blocks.iter() {
             write!(out, "{}:\n", block.name).unwrap();
 
-            if block.is_func {
+            if let Some(_) = block.func_name {
                 used_registers.clear();
                 // setup stack frame
 
@@ -359,17 +359,19 @@ impl<'a> ARM64Backend<'a> {
                         write!(out, "\t{mov} {register}, {ir_var_str}\n").unwrap();
                     }
                     IRInstr::Return(val) => {
-                        let ir_var_str = self.ir_value_to_asm(&used_registers, &mut out, &val);
-                        let var_ty = self.get_ir_value_type(val);
+                        if let Some(val) = val {
+                            let ir_var_str = self.ir_value_to_asm(&used_registers, &mut out, &val);
+                            let var_ty = self.get_ir_value_type(val);
+                            let (reg_ty, instr_set) =
+                                self.get_register_ty_and_instructions(&var_ty);
 
-                        let (reg_ty, instr_set) = self.get_register_ty_and_instructions(&var_ty);
+                            let mov = instr_set["mov"];
 
-                        let mov = instr_set["mov"];
+                            let output_reg = Register { num: 0, ty: reg_ty };
 
-                        let output_reg = Register { num: 0, ty: reg_ty };
-
-                        // Put return value in x0/s0/d0 WHATEVER
-                        write!(out, "\t{mov} {output_reg}, {ir_var_str}\n").unwrap();
+                            // Put return value in x0/s0/d0 WHATEVER
+                            write!(out, "\t{mov} {output_reg}, {ir_var_str}\n").unwrap();
+                        }
 
                         // destroy stack frame and return
                         write!(out, "\tmov sp, fp\n").unwrap();

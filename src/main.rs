@@ -34,7 +34,7 @@ use parser::*;
 use pond::{find_pond_path, Pond, Target};
 use symbol_table::*;
 
-use crate::ast_graphviz::ASTGraphvizExporter;
+use crate::{ast_graphviz::ASTGraphvizExporter, backend::ssa_graphviz::SSAGraphvizExporter};
 
 #[derive(Debug, Options)]
 pub struct GenericOptions {
@@ -76,6 +76,9 @@ struct GenIrOpts {
 
     #[options(free, help = "path to project (defaults to cwd)")]
     path: Vec<String>,
+
+    #[options(help = "dump a dot graph of the ast")]
+    graph: Option<String>,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -507,7 +510,22 @@ fn main() -> Result<(), String> {
             let mut ir_gen = IRGen::default();
             let ssa_ir = ir_gen.generate_ir(program, target, &symbol_table)?;
 
-            ir_gen.pretty_print_ssa(&ssa_ir);
+            ssa_ir.pretty_print_ssa();
+
+            if let Some(output) = opts.graph {
+                println!(
+                    "dumping graphviz graph to {:?}",
+                    std::env::current_dir().unwrap().join(&output)
+                );
+                let mut outfile =
+                    std::fs::File::create(output).map_err(|_| format!("Cannot open out file"))?;
+
+                // Clone is okay since this is like a debug feature
+                let mut exporter = SSAGraphvizExporter::new(ssa_ir.clone());
+                let graph = exporter.export_naive();
+
+                _ = outfile.write(format!("{}", graph).as_bytes());
+            }
 
             if i_opts.perf {
                 println!(

@@ -337,7 +337,9 @@ impl<'a> NameResolver<'a> {
                 }
             }
             Expression::Return(expr) => {
-                self.resolve_names_expr(curr_module_name, scope, expr)?;
+                if let Some(expr) = expr {
+                    self.resolve_names_expr(curr_module_name, scope, expr)?;
+                }
             }
             Expression::Assignment(expr) => {
                 self.resolve_names_expr(curr_module_name, scope, &mut expr.lhs)?;

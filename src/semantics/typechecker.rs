@@ -325,8 +325,12 @@ impl<'a> Typechecker<'a> {
                 }
             }
             Expression::Return(expr) => {
-                let ty = self.typecheck_expr(scope, expr)?;
-                return Ok(ty);
+                if let Some(expr) = expr {
+                    let ty = self.typecheck_expr(scope, expr)?;
+                    return Ok(ty);
+                } else {
+                    return Ok(Type::Void);
+                }
             }
             Expression::Assignment(expr) => {
                 let rhs = self.typecheck_expr(scope, &mut expr.rhs)?;
@@ -539,6 +543,7 @@ impl<'a> Typechecker<'a> {
                             .find_symbol_rec_mut(*scope + 1, &expr.binding, SymbolType::Identifier)?
                             .1;
 
+                        expr.binding_type = *inner.clone();
                         binding.value_type = *inner;
                     }
                     _ => {

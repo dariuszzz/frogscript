@@ -1,8 +1,11 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{ast::Expression, BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable};
-
-use super::ir_gen::IRGen;
+use crate::{
+    arena::Arena,
+    ast::Expression,
+    backend::ir_gen::{CFGraph, CFGraphNode},
+    BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable,
+};
 
 #[derive(Debug, Clone)]
 pub struct SSAIR {
@@ -11,6 +14,7 @@ pub struct SSAIR {
     pub data: Vec<IRData>,
     pub entry_block: String,
     pub stack_vars: HashMap<usize, IRAddress>,
+    pub cf_graph: CFGraph,
 }
 
 impl Default for SSAIR {
@@ -21,6 +25,7 @@ impl Default for SSAIR {
             data: Vec::default(),
             stack_vars: HashMap::default(),
             entry_block: "main".to_string(),
+            cf_graph: CFGraph::default(),
         }
     }
 }
@@ -29,7 +34,7 @@ pub type VariableID = usize;
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub is_func: bool,
+    pub func_name: Option<String>,
     pub name: String,
     pub parameters: Vec<VariableID>,
     pub instructions: Vec<IRInstr>,
@@ -38,7 +43,7 @@ pub struct Block {
 impl Default for Block {
     fn default() -> Self {
         Self {
-            is_func: false,
+            func_name: None,
             name: String::new(),
             parameters: Vec::new(),
             instructions: Vec::new(),
@@ -139,7 +144,7 @@ pub enum IRInstr {
     Store(IRAddress, IRValue),
     Load(VariableID, IRAddress),
 
-    Return(IRValue),
+    Return(Option<IRValue>),
     Label(String),
 
     InlineTarget(Vec<InlineTargetPart>, Vec<String>), //Target parts, used registers
@@ -147,13 +152,13 @@ pub enum IRInstr {
     Unimplemented(VariableID, String),
 }
 
-impl IRGen {
+impl SSAIR {
     pub fn pretty_print_irval(&self, irval: &IRValue) -> String {
         match irval {
             IRValue::Address(address) => format!("{address}"),
             IRValue::Literal(literal) => format!("{literal:?}"),
             IRValue::Variable(variable) => {
-                let var = &self.ssa_ir.vars[*variable];
+                let var = &self.vars[*variable];
 
                 format!("{}", var.name)
             }
@@ -167,23 +172,23 @@ impl IRGen {
                 format!("store {addr} {val}")
             }
             IRInstr::Load(var, addr) => {
-                let variable = &self.ssa_ir.vars[*var];
+                let variable = &self.vars[*var];
                 format!("{} ({var}) = load {addr}", variable.name)
             }
             IRInstr::Assign(lhs, rhs) => {
                 let rhs = self.pretty_print_irval(rhs);
-                let variable = &self.ssa_ir.vars[*lhs];
+                let variable = &self.vars[*lhs];
                 format!("{} ({lhs}) = {rhs} ", variable.name)
             }
             IRInstr::BinOp(var, irvalue, irvalue1, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
                 let irvalue1 = self.pretty_print_irval(irvalue1);
-                let variable = &self.ssa_ir.vars[*var];
+                let variable = &self.vars[*var];
                 format!("{} ({var}) = {irvalue} {op} {irvalue1}", variable.name)
             }
             IRInstr::UnOp(var, irvalue, op) => {
                 let irvalue = self.pretty_print_irval(irvalue);
-                let variable = &self.ssa_ir.vars[*var];
+                let variable = &self.vars[*var];
                 format!("{} ({var}) = {op}{irvalue}", variable.name)
             }
             IRInstr::Call(var, func, vec) => {
@@ -194,12 +199,16 @@ impl IRGen {
                 let params = params.join(", ");
 
                 let func = self.pretty_print_irval(func);
-                let variable = &self.ssa_ir.vars[*var];
+                let variable = &self.vars[*var];
                 format!("{} ({var}) = call {func}({params})", variable.name)
             }
             IRInstr::Return(val) => {
-                let val = self.pretty_print_irval(val);
-                format!("ret {val}")
+                if let Some(val) = val {
+                    let val = self.pretty_print_irval(val);
+                    format!("ret {val}")
+                } else {
+                    format!("ret")
+                }
             }
             IRInstr::Label(label) => format!("LABEL {label}"),
             IRInstr::Goto(label, args) => {
@@ -234,36 +243,49 @@ impl IRGen {
             }
 
             IRInstr::Unimplemented(var, str) => {
-                let var = &self.ssa_ir.vars[*var];
+                let var = &self.vars[*var];
                 format!("{} = [[{str}]]", var.name)
             }
         }
     }
 
-    pub fn pretty_print_ssa(&self, ssa: &SSAIR) {
-        if !ssa.data.is_empty() {
+    pub fn pretty_print_ssa(&self) {
+        if !self.data.is_empty() {
             println!("data:");
-            for data in &ssa.data {
+            for data in &self.data {
                 println!("\t{}: {:?}", data.alias, data.value);
             }
         }
 
-        for block in &ssa.blocks {
-            let params = block
-                .parameters
-                .iter()
-                .map(|param| {
-                    let param = &self.ssa_ir.vars[*param];
-                    format!("{}: {}", param.name, param.ty)
-                })
-                .collect::<Vec<_>>();
-            let params = params.join(", ");
-
-            println!("\n{}({}):", block.name, params);
-            for instr in &block.instructions {
-                let instr = self.pretty_print_instr(instr);
-                println!("\t{instr}");
-            }
+        for block in &self.blocks {
+            println!("{}", self.pretty_print_block_name(block));
+            println!("{}", self.pretty_print_block(block));
         }
+    }
+
+    pub fn pretty_print_block_name(&self, block: &Block) -> String {
+        let mut out = String::new();
+        let params = block
+            .parameters
+            .iter()
+            .map(|param| {
+                let param = &self.vars[*param];
+                format!("{}: {}", param.name, param.ty)
+            })
+            .collect::<Vec<_>>();
+        let params = params.join(", ");
+        out += &format!("{}({}):", block.name, params);
+        out
+    }
+
+    pub fn pretty_print_block(&self, block: &Block) -> String {
+        let mut out = String::new();
+
+        for instr in &block.instructions {
+            let instr = self.pretty_print_instr(instr);
+            out += &format!("\t{instr}\n")
+        }
+
+        out
     }
 }

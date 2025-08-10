@@ -89,7 +89,9 @@ impl Transpiler {
                 }
             }
             Expression::Return(ret) => {
-                Transpiler::replace_names_in_expr(module_name, mapped_names, ret)
+                if let Some(ret) = ret {
+                    Transpiler::replace_names_in_expr(module_name, mapped_names, ret)
+                }
             }
             Expression::Assignment(assignment) => {
                 let Assignment { lhs, rhs } = assignment;
@@ -318,7 +320,9 @@ impl Transpiler {
                 }
             }
             Expression::Return(expr) => {
-                Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
+                if let Some(expr) = expr {
+                    Transpiler::ensure_pass_by_value_expr(expr, symbol_table, scope);
+                }
             }
             Expression::Assignment(expr) => {
                 // Transpiler::ensure_pass_by_value_expr(&mut expr.lhs, symbol_table, scope);

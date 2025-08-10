@@ -547,7 +547,7 @@ pub enum Expression {
     UnaryOp(UnaryOp),
     FunctionCall(FunctionCall),
     Variable(Variable),
-    Return(Box<Expression>),
+    Return(Option<Box<Expression>>),
     Assignment(Assignment),
     AnonStruct(AnonStruct),
     ArrayLiteral(ArrayLiteral),
@@ -585,8 +585,12 @@ impl ToJS for Expression {
             Self::Range(range) => range.to_js(st),
             Self::For(for_expr) => for_expr.to_js(st),
             Self::Return(expr) => {
-                let expr = expr.to_js(st);
-                format!("return ({expr});")
+                if let Some(expr) = expr {
+                    let expr = expr.to_js(st);
+                    format!("return ({expr});")
+                } else {
+                    format!("return;")
+                }
             }
             Self::Break => {
                 format!("break;")
