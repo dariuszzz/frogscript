@@ -13,7 +13,6 @@ use gumdrop::Options;
 
 mod arena;
 mod ast;
-mod ast_graphviz;
 mod backend;
 mod js_backend;
 mod lexer;
@@ -22,6 +21,7 @@ mod parser;
 mod pond;
 mod semantics;
 mod symbol_table;
+mod visualizers;
 
 use arena::*;
 use ast::*;
@@ -34,7 +34,7 @@ use parser::*;
 use pond::{find_pond_path, Pond, Target};
 use symbol_table::*;
 
-use crate::{ast_graphviz::ASTGraphvizExporter, backend::ssa_graphviz::SSAGraphvizExporter};
+use crate::visualizers::{ast_graphviz::ASTGraphvizExporter, ssa_graphviz::SSAGraphvizExporter};
 
 #[derive(Debug, Options)]
 pub struct GenericOptions {
@@ -496,7 +496,7 @@ fn main() -> Result<(), String> {
 
             let target_name = opts.target.unwrap_or("main".to_string());
             let pond = find_project(&path)?;
-            let target = pond.targets.get(&target_name).expect("Invalid target");
+            let target = pond.targets.get(&target_name);
 
             let mut program = parse_project(&pond, i_opts.perf)?;
 
@@ -509,8 +509,6 @@ fn main() -> Result<(), String> {
 
             let mut ir_gen = IRGen::default();
             let ssa_ir = ir_gen.generate_ir(program, target, &symbol_table)?;
-
-            ssa_ir.pretty_print_ssa();
 
             if let Some(output) = opts.graph {
                 println!(
@@ -525,6 +523,8 @@ fn main() -> Result<(), String> {
                 let graph = exporter.export_naive();
 
                 _ = outfile.write(format!("{}", graph).as_bytes());
+            } else {
+                ssa_ir.pretty_print_ssa();
             }
 
             if i_opts.perf {
@@ -555,7 +555,7 @@ fn main() -> Result<(), String> {
                 semantics::perform_analysis(&mut program, &i_opts)?
             };
 
-            let ssa_ir = backend::generate_ir(program, target, &symbol_table)?;
+            let ssa_ir = backend::generate_ir(program, Some(target), &symbol_table)?;
 
             let mut backend = backend::arm64::ARM64Backend::new(&ssa_ir);
             let asm = backend.compile_ir(&symbol_table)?;

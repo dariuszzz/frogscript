@@ -23,7 +23,6 @@ fn main =
 
 */
 
-
 fn foo(a int) =
     mut ret_val = 2 * a
 
@@ -32,6 +31,8 @@ fn foo(a int) =
             let wdawd = 29
 
         let b = 25 + ret_val
+
+    let fofo = "baba"
 
     return ret_val
 

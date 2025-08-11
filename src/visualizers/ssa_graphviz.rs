@@ -68,7 +68,7 @@ impl SSAGraphvizExporter {
         let mut in_func = false;
         let blocks = self.ssa.blocks.clone();
         for (block_idx, block) in blocks.iter().enumerate() {
-            if let Some(func_name) = &block.func_name {
+            if let Some((_, func_name)) = &block.func_name {
                 if in_func {
                     self.end_cluster(&mut out);
                 }

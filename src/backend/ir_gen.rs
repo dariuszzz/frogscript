@@ -21,6 +21,8 @@ pub struct LoopInfo {
 pub struct IRGen {
     pub var_counter: u32,
     pub ssa_ir: SSAIR,
+
+    pub func_names: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -106,31 +108,52 @@ impl IRGen {
     pub fn generate_ir(
         &mut self,
         program: Program,
-        target: &Target,
+        target: Option<&Target>,
         symbol_table: &SymbolTable,
     ) -> Result<SSAIR, String> {
         let mut scope = 0;
 
         for module in &program.modules {
-            // self.generate_ir_codeblock(&mut scope, &module.toplevel_scope, symbol_table)?;
+            let mod_scope_idx = symbol_table
+                .module_to_scope
+                .get(&module.module_name)
+                .unwrap();
+
+            let mod_scope = symbol_table.table.get(*mod_scope_idx).unwrap();
 
             for func in &module.function_defs {
                 scope += 1;
 
-                let name = Self::symbol_idx_to_name(&func.symbol_idx);
+                let func_name = Self::symbol_idx_to_name(&func.symbol_idx);
 
-                if func.func_name == target.func {
-                    self.ssa_ir.entry_block = name.clone();
+                if let Some(target) = target {
+                    if func.func_name == target.func {
+                        self.ssa_ir.entry_block = func_name.clone();
+                    }
                 }
 
+                // hacky way to get func_symbol
+                let func_symbol = mod_scope.symbols.get(func.symbol_idx.1).unwrap();
+
+                self.func_names.push(func_name.clone());
+
                 self.ssa_ir.vars.push(IRVariable {
-                    name: name.clone(),
-                    ty: Type::Function(FunctionType {
-                        env_args: vec![],
-                        args: vec![], // TODO: ADD ARG PARAMS
-                        ret: Box::new(func.return_type.clone()),
-                    }),
+                    name: func_name.clone(),
+                    ty: func_symbol.value_type.clone(),
+                    // Type::Function(FunctionType {
+                    //     env_args: vec![],
+                    //     args: vec![], // TODO: ADD ARG PARAMS
+                    //     ret: Box::new(func.return_type.clone()),
+                    // }),
                 });
+            }
+        }
+
+        let mut func_block_indexes = vec![];
+
+        for module in &program.modules {
+            for func in &module.function_defs {
+                let func_name = Self::symbol_idx_to_name(&func.symbol_idx);
 
                 let mut parameters = Vec::new();
 
@@ -140,16 +163,30 @@ impl IRGen {
                     let arg_id = self.symbol_idx_to_var(&arg.symbol_idx, arg.arg_type.clone());
                     let var_name = self.ssa_ir.vars[arg_id].name.clone();
                     parameters.push(arg_id);
-                    renamed_vars.insert(arg.arg_name.clone(), var_name);
+                    renamed_vars.insert(arg.arg_name.clone(), var_name.clone());
+
+                    match &arg.arg_type {
+                        Type::Array(inner) => {
+                            let addr = IRAddress {
+                                addr: IRAddressType::Register(format!("{var_name}")),
+                                stored_data_type: *inner.clone(),
+                                offset: IRAddressOffset::Literal(0),
+                            };
+                            self.ssa_ir.stack_vars.insert(arg_id, addr);
+                        }
+                        _ => {}
+                    }
                 }
 
                 self.ssa_ir.blocks.push(Block {
-                    func_name: Some(func.func_name.clone()),
-                    name,
+                    func_name: Some((func.symbol_idx, func.func_name.clone())),
+                    name: func_name,
                     parameters,
                     instructions: vec![],
                 });
                 let block_idx = self.ssa_ir.blocks.len() - 1;
+
+                func_block_indexes.push(block_idx);
 
                 let instructions = self.generate_ir_codeblock(
                     &mut scope,
@@ -171,6 +208,10 @@ impl IRGen {
             }
 
             scope += 1;
+        }
+
+        for func_block_idx in func_block_indexes {
+            self.fix_passing_parameters_by_gotos(func_block_idx);
         }
 
         let mut cf_graph = self.build_partial_cf_graph(0);
@@ -271,9 +312,9 @@ impl IRGen {
             return false;
         }
 
-        for param in &block.parameters {
-            local_vars.push(*param);
-        }
+        // for param in &block.parameters {
+        //     local_vars.push(*param);
+        // }
 
         for instr in &block.instructions {
             match instr {
@@ -342,6 +383,20 @@ impl IRGen {
                 }
                 IRInstr::Call(res, irvalue, args) => {
                     local_vars.push(res.clone());
+
+                    if let IRValue::Variable(called) = irvalue {
+                        let var_name = &self.ssa_ir.vars[*called].name;
+
+                        // Dont act like a defined function is a new variable
+                        if !self.func_names.contains(&var_name) {
+                            let contained =
+                                contains_named_var(&self.ssa_ir.vars, &local_vars, &called);
+                            if !contained {
+                                new_params.push(*called);
+                            }
+                        }
+                    }
+
                     for arg in args {
                         if let IRValue::Variable(val) = arg {
                             let contained =
@@ -382,6 +437,7 @@ impl IRGen {
                 IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
             }
         }
+
         // println!(
         //     "New ({}): {}",
         //     block.name,
@@ -718,8 +774,6 @@ impl IRGen {
             &mut vec![],
             last_block_idx,
         );
-
-        self.fix_passing_parameters_by_gotos(func_block_idx);
     }
 
     fn fix_passing_parameters_by_gotos(&mut self, func_block_idx: usize) {
@@ -763,7 +817,10 @@ impl IRGen {
 
                         for arg in &true_block.parameters {
                             let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
-                            true_args.push(IRValue::Variable(**var_in_this_block));
+                            let var = IRValue::Variable(**var_in_this_block);
+                            if !true_args.contains(&var) {
+                                true_args.push(var);
+                            }
                         }
 
                         let false_block = block_copies
@@ -773,7 +830,10 @@ impl IRGen {
 
                         for arg in &false_block.parameters {
                             let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
-                            false_args.push(IRValue::Variable(**var_in_this_block));
+                            let var = IRValue::Variable(**var_in_this_block);
+                            if !false_args.contains(&var) {
+                                false_args.push(var);
+                            }
                         }
                     }
                     IRInstr::Goto(label, args) => {
@@ -782,12 +842,21 @@ impl IRGen {
                         let block = block_copies.iter().find(|b| b.name == *label).unwrap();
 
                         for arg in &block.parameters {
-                            let var_in_this_block = local_vars.iter().find(|v| **v == arg);
-                            if var_in_this_block.is_none() {
-                                self.ssa_ir.pretty_print_ssa();
-                                panic!("Cant find {arg}");
+                            let arg_name = &self.ssa_ir.vars[*arg].name;
+
+                            // Ignore variables that are actually function names
+                            if !self.func_names.contains(arg_name) {
+                                let var_in_this_block = local_vars.iter().find(|v| **v == arg);
+                                if var_in_this_block.is_none() {
+                                    let label = label.clone();
+                                    self.ssa_ir.pretty_print_ssa();
+                                    panic!("Cant find {arg} -- {arg_name}\n{label:?}");
+                                }
+                                let var = IRValue::Variable(**var_in_this_block.unwrap());
+                                if !args.contains(&var) {
+                                    args.push(var);
+                                }
                             }
-                            args.push(IRValue::Variable(**var_in_this_block.unwrap()));
                         }
                     }
                     IRInstr::Return(irvalue) => {}
@@ -918,16 +987,22 @@ impl IRGen {
             Expression::Literal(literal) => {
                 let (value, alr_assigned) = match literal {
                     Literal::String(parts) => {
-                        if parts.len() != 1 {
-                            unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
-                        }
-                        if let FStringPart::String(str) = &parts[0] {
-                            let var_id = if let Some(curr_var) = curr_var {
-                                curr_var
-                            } else {
-                                self.temp_var(Type::String)
-                            };
+                        let var_id = if let Some(curr_var) = curr_var {
+                            curr_var
+                        } else {
+                            self.temp_var(Type::String)
+                        };
 
+                        if parts.len() != 1 {
+                            // unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
+                            instructions.push(IRInstr::Unimplemented(
+                                var_id,
+                                "Idk how to handle fstrings".to_string(),
+                            ))
+                        }
+
+                        // FIGURE OUT HOW TO HANDLE EMPTY STRINGS
+                        if let FStringPart::String(str) = &parts[0] {
                             let alias = format!("str{}", self.ssa_ir.data.len());
 
                             self.ssa_ir.data.push(IRData {
@@ -1531,9 +1606,11 @@ impl IRGen {
 
                 instructions.append(&mut iterator_instrs);
 
-                if !iterator_assigned {
-                    instructions.push(IRInstr::Assign(binding_var_id, iterator_expr.clone()));
-                }
+                // FIXME: this shouldnt be commented out, breaks on some iterators, redo the whole loop binding thing
+                // if !iterator_assigned {
+                instructions.push(IRInstr::Assign(binding_var_id, iterator_expr.clone()));
+                // }
+
                 // instructions for condition checking here...
                 //
                 //  ---

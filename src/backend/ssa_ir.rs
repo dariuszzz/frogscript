@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     arena::Arena,
-    ast::Expression,
+    ast::{Expression, SymbolIdx},
     backend::ir_gen::{CFGraph, CFGraphNode},
     BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable,
 };
@@ -34,7 +34,7 @@ pub type VariableID = usize;
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub func_name: Option<String>,
+    pub func_name: Option<(SymbolIdx, String)>,
     pub name: String,
     pub parameters: Vec<VariableID>,
     pub instructions: Vec<IRInstr>,
@@ -268,9 +268,9 @@ impl SSAIR {
         let params = block
             .parameters
             .iter()
-            .map(|param| {
-                let param = &self.vars[*param];
-                format!("{}: {}", param.name, param.ty)
+            .map(|param_idx| {
+                let param = &self.vars[*param_idx];
+                format!("{} ({}): {}", param.name, param_idx, param.ty)
             })
             .collect::<Vec<_>>();
         let params = params.join(", ");
