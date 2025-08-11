@@ -779,7 +779,7 @@ impl IRGen {
     fn fix_passing_parameters_by_gotos(&mut self, func_block_idx: usize) {
         let len = self.ssa_ir.blocks.len();
 
-        let block_copies = self.ssa_ir.blocks.clone();
+        let blocks_copy = self.ssa_ir.blocks.clone();
 
         for idx in func_block_idx..len {
             let block = &mut self.ssa_ir.blocks[idx];
@@ -813,7 +813,7 @@ impl IRGen {
                     IRInstr::If(cond, irvalue, true_label, true_args, false_label, false_args) => {
                         // add all params of branches
                         let true_block =
-                            block_copies.iter().find(|b| b.name == *true_label).unwrap();
+                            blocks_copy.iter().find(|b| b.name == *true_label).unwrap();
 
                         for arg in &true_block.parameters {
                             let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
@@ -823,10 +823,8 @@ impl IRGen {
                             }
                         }
 
-                        let false_block = block_copies
-                            .iter()
-                            .find(|b| b.name == *false_label)
-                            .unwrap();
+                        let false_block =
+                            blocks_copy.iter().find(|b| b.name == *false_label).unwrap();
 
                         for arg in &false_block.parameters {
                             let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
@@ -839,7 +837,7 @@ impl IRGen {
                     IRInstr::Goto(label, args) => {
                         // add all params of goto
                         //
-                        let block = block_copies.iter().find(|b| b.name == *label).unwrap();
+                        let block = blocks_copy.iter().find(|b| b.name == *label).unwrap();
 
                         for arg in &block.parameters {
                             let arg_name = &self.ssa_ir.vars[*arg].name;
@@ -986,72 +984,71 @@ impl IRGen {
             }
             Expression::Literal(literal) => {
                 let (value, alr_assigned) = match literal {
-                    Literal::String(parts) => {
-                        let var_id = if let Some(curr_var) = curr_var {
-                            curr_var
-                        } else {
-                            self.temp_var(Type::String)
-                        };
+                    // Literal::String(parts) => {
+                    //     let var_id = if let Some(curr_var) = curr_var {
+                    //         curr_var
+                    //     } else {
+                    //         self.temp_var(Type::String)
+                    //     };
 
-                        if parts.len() != 1 {
-                            // unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
-                            instructions.push(IRInstr::Unimplemented(
-                                var_id,
-                                "Idk how to handle fstrings".to_string(),
-                            ))
-                        }
+                    //     if parts.len() != 1 {
+                    //         // unimplemented!("FStrings not supported yet (OR EMPTY STRINGS)")
+                    //         instructions.push(IRInstr::Unimplemented(
+                    //             var_id,
+                    //             "Idk how to handle fstrings".to_string(),
+                    //         ))
+                    //     }
 
-                        // FIGURE OUT HOW TO HANDLE EMPTY STRINGS
-                        if let FStringPart::String(str) = &parts[0] {
-                            let alias = format!("str{}", self.ssa_ir.data.len());
+                    //     // FIGURE OUT HOW TO HANDLE EMPTY STRINGS
+                    //     if let FStringPart::String(str) = &parts[0] {
+                    //         let alias = format!("str{}", self.ssa_ir.data.len());
 
-                            self.ssa_ir.data.push(IRData {
-                                alias: alias.clone(),
-                                value: IRDataLiteral::String(str.clone()),
-                            });
+                    //         self.ssa_ir.data.push(IRData {
+                    //             alias: alias.clone(),
+                    //             value: IRDataLiteral::String(str.clone()),
+                    //         });
 
-                            instructions.push(IRInstr::Load(
-                                var_id,
-                                IRAddress {
-                                    addr: IRAddressType::Data(alias),
-                                    stored_data_type: Type::String,
-                                    offset: IRAddressOffset::Literal(0),
-                                },
-                            ));
+                    //         instructions.push(IRInstr::Load(
+                    //             var_id,
+                    //             IRAddress {
+                    //                 addr: IRAddressType::Data(alias),
+                    //                 stored_data_type: Type::String,
+                    //                 offset: IRAddressOffset::Literal(0),
+                    //             },
+                    //         ));
 
-                            (IRValue::Variable(var_id), curr_var.is_some())
-                        } else {
-                            unimplemented!("FStrings not supported yet")
-                        }
-                    }
-                    Literal::Float(float) => {
-                        let alias = format!("fl{}", self.ssa_ir.data.len());
+                    //         (IRValue::Variable(var_id), curr_var.is_some())
+                    //     } else {
+                    //         unimplemented!("FStrings not supported yet")
+                    //     }
+                    // }
+                    // Literal::Float(float) => {
+                    //     let alias = format!("fl{}", self.ssa_ir.data.len());
 
-                        self.ssa_ir.data.push(IRData {
-                            alias: alias.clone(),
-                            value: IRDataLiteral::Float(*float),
-                        });
+                    //     self.ssa_ir.data.push(IRData {
+                    //         alias: alias.clone(),
+                    //         value: IRDataLiteral::Float(*float),
+                    //     });
 
-                        let var_id = if let Some(curr_var) = curr_var {
-                            curr_var
-                        } else {
-                            self.temp_var(Type::Float)
-                        };
+                    //     let var_id = if let Some(curr_var) = curr_var {
+                    //         curr_var
+                    //     } else {
+                    //         self.temp_var(Type::Float)
+                    //     };
 
-                        instructions.push(IRInstr::Load(
-                            var_id,
-                            IRAddress {
-                                addr: IRAddressType::Data(alias),
-                                stored_data_type: Type::Float,
-                                offset: IRAddressOffset::Literal(0),
-                            },
-                        ));
+                    //     instructions.push(IRInstr::Load(
+                    //         var_id,
+                    //         IRAddress {
+                    //             addr: IRAddressType::Data(alias),
+                    //             stored_data_type: Type::Float,
+                    //             offset: IRAddressOffset::Literal(0),
+                    //         },
+                    //     ));
 
-                        (IRValue::Variable(var_id), curr_var.is_some())
-                    }
-                    lit @ Literal::Int(_) | lit @ Literal::Uint(_) | lit @ Literal::Boolean(_) => {
-                        (IRValue::Literal(lit.clone()), false)
-                    }
+                    //     (IRValue::Variable(var_id), curr_var.is_some())
+                    // }
+                    // lit @ Literal::Int(_) | lit @ Literal::Uint(_) | lit @ Literal::Boolean(_) => {
+                    lit => (IRValue::Literal(lit.clone()), false),
                     _ => unimplemented!(),
                 };
 
@@ -1143,7 +1140,7 @@ impl IRGen {
 
                 let mut args = vec![];
                 for arg in &function_call.arguments {
-                    let (arg_expr, mut arg_instrs, _) = self.generate_ir_expr(
+                    let (mut arg_expr, mut arg_instrs, assigned) = self.generate_ir_expr(
                         scope,
                         symbol_table,
                         renamed_vars,
@@ -1405,16 +1402,15 @@ impl IRGen {
                         BinaryOperation::Add,
                     ));
 
-                    // instructions.push(IRInstr::Load(
-                    //     res_var,
                     let final_addr = IRAddress {
                         addr: expr_addr.addr.clone(),
                         stored_data_type: *inner,
                         offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
                     };
-                    // ));
 
-                    return Ok((IRValue::Address(final_addr), instructions, false));
+                    instructions.push(IRInstr::Load(res_var, final_addr.clone()));
+
+                    return Ok((IRValue::Variable(res_var), instructions, curr_var.is_some()));
                 } else {
                     unreachable!("Tried to access non-array type?")
                 }

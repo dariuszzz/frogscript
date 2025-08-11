@@ -1,4 +1,4 @@
-/*
+;-
 type Foo =
     val int
 
@@ -21,30 +21,18 @@ fn other_foo(arr [int]) =
 fn main =
     other_foo([1, 2, 3])
 
-*/
+-;
 
-fn foo(a int) =
-    mut ret_val = 2 * a
-
-    for i in [1,2,3]:
-        if i == 2:
-            let wdawd = 29
-
-        let b = 25 + ret_val
-
-    let fofo = "baba"
-
-    return ret_val
 
 fn main =
-    mut arr = ["siema", "czesc"]
+    let a = 2
+    let b = 3
 
-    mut val = 100
-    val = 10
 
-    let out = foo(val)
+    let out = 100
+    if (true && false) || (a == 2):
+        out = 0
 
-    let msg = @type(arr)
 
     @instr("
     mov x0, {out}
@@ -53,9 +41,9 @@ fn main =
     | x0 x16
     ")
 
-
-/*
-    // print message
+    ; let msg = @type(arr)
+;-
+    ; print message
     @instr("
     mov x0, 1
     mov x1, {msg}
@@ -65,12 +53,12 @@ fn main =
     | x0 x1 x2 x16
     ")
 
-    // convert c to int and store in d
+    ; convert c to int and store in d
     @instr("fcvtzs {d}, {c}")
-*/
+-;
 
-/*
-    // print message
+;-
+    ; print message
     @instr("
     mov x0, 1
     mov x1, {message}
@@ -79,4 +67,4 @@ fn main =
     svc 0
     | x0 x1 x2 x16
     ")
-*/
+-;

@@ -1,8 +1,8 @@
 fn main =
-    //use core { print, assert }
+    ; use core { print, assert }
 
 
-    //print("siema")
+    ; print("siema")
 
     let a = 23
 

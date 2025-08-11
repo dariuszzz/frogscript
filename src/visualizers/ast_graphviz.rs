@@ -524,9 +524,9 @@ impl ASTGraphvizExporter {
                     self.connect_label(&cond_val, &in_false_block[0], "false", ConnStyle::Regular);
                     out_vec.append(&mut out_false_block);
                 } else {
-                    if out_vec.is_empty() {
-                        out_vec.append(&mut cond_val.clone())
-                    }
+                    // if out_vec.is_empty() {
+                    out_vec.append(&mut cond_val.clone())
+                    // }
                 }
 
                 (cond_val, out_vec)

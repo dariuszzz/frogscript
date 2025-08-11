@@ -555,10 +555,25 @@ fn main() -> Result<(), String> {
                 semantics::perform_analysis(&mut program, &i_opts)?
             };
 
-            let ssa_ir = backend::generate_ir(program, Some(target), &symbol_table)?;
+            let mut ssa_ir = backend::generate_ir(program, Some(target), &symbol_table)?;
 
-            let mut backend = backend::arm64::ARM64Backend::new(&ssa_ir);
+            let mut backend = backend::arm64::ARM64Backend::new(&mut ssa_ir);
             let asm = backend.compile_ir(&symbol_table)?;
+
+            if let Some(output) = opts.graph {
+                println!(
+                    "dumping graphviz graph to {:?}",
+                    std::env::current_dir().unwrap().join(&output)
+                );
+                let mut outfile =
+                    std::fs::File::create(output).map_err(|_| format!("Cannot open out file"))?;
+
+                // Clone is okay since this is like a debug feature
+                let mut exporter = SSAGraphvizExporter::new(ssa_ir.clone());
+                let graph = exporter.export_naive();
+
+                _ = outfile.write(format!("{}", graph).as_bytes());
+            }
 
             let out_path = target.outpath.join("out.asm");
 

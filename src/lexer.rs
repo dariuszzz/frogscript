@@ -322,10 +322,10 @@ impl Lexer {
     fn parse_multiline_comment(&mut self) -> Result<(), String> {
         self.parsing_multiline_comment.increment();
         while let (Some(c), Some(nc)) = (self.peek(), self.peek_next()) {
-            if c == '/' && nc == '*' {
+            if c == ';' && nc == '-' {
                 self.parsing_multiline_comment.increment();
             }
-            if c == '*' && nc == '/' {
+            if c == '-' && nc == ';' {
                 self.parsing_multiline_comment.decrement();
 
                 match self.parsing_multiline_comment {
@@ -589,15 +589,18 @@ impl Lexer {
                         self.add_token(TokenKind::Exclamation);
                     }
                 }
-                '/' => {
-                    if self.match_char('/') {
+                ';' => {
+                    if self.match_char('-') {
+                        self.parse_multiline_comment()?;
+                    } else {
                         if self.consume_until('\n') {
                             self.add_token(TokenKind::Comment);
                             self.add_token(TokenKind::Newline);
                         }
-                    } else if self.match_char('*') {
-                        self.parse_multiline_comment()?;
-                    } else if self.match_char('=') {
+                    }
+                }
+                '/' => {
+                    if self.match_char('=') {
                         self.add_token(TokenKind::DivEqual);
                     } else {
                         self.add_token(TokenKind::Slash);

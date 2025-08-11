@@ -16,6 +16,8 @@ use std::{
     thread::current,
 };
 
+mod ssa_fix;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RegisterType {
     General,
@@ -41,7 +43,7 @@ impl std::fmt::Display for Register {
 
 #[derive(Debug)]
 pub struct ARM64Backend<'a> {
-    ssa_ir: &'a SSAIR,
+    ssa_ir: &'a mut SSAIR,
     register_counter: usize,
 }
 
@@ -60,7 +62,7 @@ static BASE_INSTR_SET: LazyLock<InstrSet> = LazyLock::new(|| {
 });
 
 impl<'a> ARM64Backend<'a> {
-    pub fn new(ssa_ir: &'a SSAIR) -> Self {
+    pub fn new(ssa_ir: &'a mut SSAIR) -> Self {
         Self {
             ssa_ir,
             register_counter: 1,
@@ -238,12 +240,13 @@ impl<'a> ARM64Backend<'a> {
     }
 
     pub fn compile_ir(&mut self, symbol_table: &SymbolTable) -> Result<String, String> {
+        self.adjust_ssa_for_target(symbol_table);
+
         let mut out = ".text\n.globl _main\n".to_string();
 
         write!(out, "_main:\n").unwrap();
         let blocks = self.ssa_ir.blocks.clone();
 
-        let main_block = &blocks.last().unwrap().name;
         write!(out, "\tb {}\n", self.ssa_ir.entry_block).unwrap();
 
         let mut used_registers: StoredVariables = HashMap::new();

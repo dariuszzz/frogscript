@@ -70,11 +70,14 @@ pub struct IRAddress {
     pub offset: IRAddressOffset,
 }
 
-impl std::fmt::Display for IRAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IRAddress {
+    fn pretty_print(&self, vars: &Vec<IRVariable>) -> String {
         let offset = match &self.offset {
             IRAddressOffset::Literal(offset) => format!("{offset}"),
-            IRAddressOffset::IRVariable(offset_var) => format!("${offset_var}$"),
+            IRAddressOffset::IRVariable(offset_var) => {
+                let var_name = &vars[*offset_var].name;
+                format!("{var_name}")
+            }
         };
 
         match &self.addr {
@@ -82,11 +85,11 @@ impl std::fmt::Display for IRAddress {
             | IRAddressType::RawAddr(addr)
             | IRAddressType::Register(addr) => {
                 if offset == "0" {
-                    f.write_fmt(format_args!("[{addr}]"))
+                    format!("[{addr}]")
                 } else if offset.starts_with("-") {
-                    f.write_fmt(format_args!("[{addr}{offset}]"))
+                    format!("[{addr}{offset}]")
                 } else {
-                    f.write_fmt(format_args!("[{addr}+{offset}]"))
+                    format!("[{addr}+{offset}]")
                 }
             }
         }
@@ -155,7 +158,7 @@ pub enum IRInstr {
 impl SSAIR {
     pub fn pretty_print_irval(&self, irval: &IRValue) -> String {
         match irval {
-            IRValue::Address(address) => format!("{address}"),
+            IRValue::Address(address) => address.pretty_print(&self.vars),
             IRValue::Literal(literal) => format!("{literal:?}"),
             IRValue::Variable(variable) => {
                 let var = &self.vars[*variable];
@@ -169,10 +172,12 @@ impl SSAIR {
         match instr {
             IRInstr::Store(addr, val) => {
                 let val = self.pretty_print_irval(val);
+                let addr = addr.pretty_print(&self.vars);
                 format!("store {addr} {val}")
             }
             IRInstr::Load(var, addr) => {
                 let variable = &self.vars[*var];
+                let addr = addr.pretty_print(&self.vars);
                 format!("{} ({var}) = load {addr}", variable.name)
             }
             IRInstr::Assign(lhs, rhs) => {
