@@ -1,10 +1,10 @@
 use crate::{
-    ast::Type,
+    ast::{BinaryOp, BinaryOperation, Expression, Type},
     backend::{
         arm64::ARM64Backend,
         ssa_ir::{
-            IRAddress, IRAddressOffset, IRAddressType, IRData, IRDataLiteral, IRInstr, IRValue,
-            IRVariable, SSAIR,
+            self, IRAddress, IRAddressOffset, IRAddressType, IRData, IRDataLiteral, IRInstr,
+            IRValue, IRVariable, SSAIR,
         },
     },
     lexer::{FStringPart, Literal},
@@ -30,12 +30,14 @@ impl ARM64Backend<'_> {
     }
 
     pub fn move_floats_and_strings_to_data(
+        &mut self,
         val: IRValue,
         curr_var: Option<usize>,
-        data: &mut Vec<IRData>,
         instrs: &mut Vec<IRInstr>,
-        vars: &mut Vec<IRVariable>,
     ) -> (IRValue, bool) {
+        let vars = &mut self.ssa_ir.vars;
+        let data = &mut self.ssa_ir.data;
+
         if let IRValue::Literal(lit) = val {
             match lit {
                 Literal::String(parts) => {
@@ -109,109 +111,187 @@ impl ARM64Backend<'_> {
     }
 
     pub fn adjust_ssa_for_target(&mut self, symbol_table: &SymbolTable) {
-        let SSAIR {
-            blocks, data, vars, ..
-        } = &mut self.ssa_ir;
+        let blocks = std::mem::take(&mut self.ssa_ir.blocks);
+        let mut new_blocks = Vec::with_capacity(blocks.len() * 2);
 
-        for block in blocks {
+        for mut block in blocks {
             let old_instrs = std::mem::take(&mut block.instructions);
-            block.instructions = Vec::with_capacity(old_instrs.len() * 2);
-            let block_instrs = &mut block.instructions;
+            block.instructions = Vec::with_capacity(old_instrs.len());
+            let mut new_instrs = Vec::with_capacity(old_instrs.len());
             for instr in old_instrs {
                 match instr {
                     IRInstr::Assign(res, irvalue) => {
-                        let (val, assigned) = Self::move_floats_and_strings_to_data(
+                        let (val, assigned) = self.move_floats_and_strings_to_data(
                             irvalue,
                             Some(res),
-                            data,
-                            block_instrs,
-                            vars,
+                            &mut new_instrs,
                         );
 
                         if !assigned {
-                            block_instrs.push(IRInstr::Assign(res, val))
+                            new_instrs.push(IRInstr::Assign(res, val))
                         }
                     }
                     IRInstr::BinOp(res, lhs, rhs, op) => {
-                        let (lhs_val, lhs_assigned) = Self::move_floats_and_strings_to_data(
-                            lhs,
-                            None,
-                            data,
-                            block_instrs,
-                            vars,
-                        );
+                        let (lhs_val, lhs_assigned) =
+                            self.move_floats_and_strings_to_data(lhs, None, &mut new_instrs);
 
-                        let (rhs_val, rhs_assigned) = Self::move_floats_and_strings_to_data(
-                            rhs,
-                            None,
-                            data,
-                            block_instrs,
-                            vars,
-                        );
+                        let (rhs_val, rhs_assigned) =
+                            self.move_floats_and_strings_to_data(rhs, None, &mut new_instrs);
 
-                        block_instrs.push(IRInstr::BinOp(res, lhs_val, rhs_val, op))
+                        // short circuiting and nested conditions support
+
+                        let faux_if_expr = Box::new(Expression::BinaryOp(BinaryOp {
+                            lhs: Box::new(Expression::Placeholder),
+                            rhs: Box::new(Expression::Placeholder),
+                            op: op.clone(),
+                        }));
+
+                        // Handle && and ||, this is here and not in ir_gen because different targets might need different handling here
+                        match op {
+                            BinaryOperation::And => {
+                                let and_end = self.ssa_ir.make_name_unique("and_end");
+                                let and_chk_rhs = self.ssa_ir.make_name_unique("and_chk_rhs");
+                                let and_true = self.ssa_ir.make_name_unique("and_true");
+
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(false)),
+                                ));
+
+                                // If lhs is true
+                                new_instrs.push(IRInstr::If(
+                                    faux_if_expr.clone(),
+                                    lhs_val,
+                                    and_chk_rhs.clone(),
+                                    vec![],
+                                    and_end.clone(),
+                                    vec![],
+                                ));
+
+                                new_instrs.push(IRInstr::Label(and_chk_rhs.clone()));
+
+                                // let temp_var = self.temp_var(ty.clone());
+                                // instructions.push(IRInstr::UnOp(temp_var, rhs, UnaryOperation::Negate));
+
+                                // If rhs is true
+                                new_instrs.push(IRInstr::If(
+                                    faux_if_expr.clone(),
+                                    rhs_val,
+                                    and_true.clone(),
+                                    vec![],
+                                    and_end.clone(),
+                                    vec![],
+                                ));
+
+                                new_instrs.push(IRInstr::Label(and_true.clone()));
+
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(true)),
+                                ));
+
+                                new_instrs.push(IRInstr::Goto(and_end.clone(), vec![]));
+                                new_instrs.push(IRInstr::Label(and_end.clone()));
+                            }
+                            BinaryOperation::Or => {
+                                let or_end = self.ssa_ir.make_name_unique("or_end");
+                                let or_chk_rhs = self.ssa_ir.make_name_unique("or_chk_rhs");
+                                let or_false = self.ssa_ir.make_name_unique("or_false");
+
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(true)),
+                                ));
+
+                                // If lhs is true
+                                new_instrs.push(IRInstr::If(
+                                    faux_if_expr.clone(),
+                                    lhs_val,
+                                    or_end.clone(),
+                                    vec![],
+                                    or_chk_rhs.clone(),
+                                    vec![],
+                                ));
+
+                                new_instrs.push(IRInstr::Label(or_chk_rhs.clone()));
+
+                                // If rhs is true
+                                new_instrs.push(IRInstr::If(
+                                    faux_if_expr.clone(),
+                                    rhs_val,
+                                    or_end.clone(),
+                                    vec![],
+                                    or_false.clone(),
+                                    vec![],
+                                ));
+
+                                new_instrs.push(IRInstr::Label(or_false.clone()));
+
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(false)),
+                                ));
+
+                                new_instrs.push(IRInstr::Goto(or_end.clone(), vec![]));
+
+                                new_instrs.push(IRInstr::Label(or_end.clone()));
+                            }
+                            _ => {
+                                new_instrs.push(IRInstr::BinOp(res, lhs_val, rhs_val, op));
+                            }
+                        }
                     }
                     IRInstr::UnOp(res, operand, op) => {
-                        let (operand_val, operand_assigned) = Self::move_floats_and_strings_to_data(
-                            operand,
-                            None,
-                            data,
-                            block_instrs,
-                            vars,
-                        );
+                        let (operand_val, operand_assigned) =
+                            self.move_floats_and_strings_to_data(operand, None, &mut new_instrs);
 
-                        block_instrs.push(IRInstr::UnOp(res, operand_val, op))
+                        new_instrs.push(IRInstr::UnOp(res, operand_val, op))
                     }
                     IRInstr::Call(res, called, args) => {
                         let mut new_args = vec![];
                         for arg in args {
-                            let (arg_val, _) = Self::move_floats_and_strings_to_data(
-                                arg,
-                                None,
-                                data,
-                                block_instrs,
-                                vars,
-                            );
+                            let (arg_val, _) =
+                                self.move_floats_and_strings_to_data(arg, None, &mut new_instrs);
 
                             new_args.push(arg_val);
                         }
 
-                        block_instrs.push(IRInstr::Call(res, called, new_args))
+                        new_instrs.push(IRInstr::Call(res, called, new_args))
                     }
-                    _if @ IRInstr::If(..) => block_instrs.push(_if),
-                    goto @ IRInstr::Goto(..) => block_instrs.push(goto),
+                    _if @ IRInstr::If(..) => new_instrs.push(_if),
+                    goto @ IRInstr::Goto(..) => new_instrs.push(goto),
                     IRInstr::Store(addr, val) => {
-                        let (new_val, _) = Self::move_floats_and_strings_to_data(
-                            val,
-                            None,
-                            data,
-                            block_instrs,
-                            vars,
-                        );
+                        let (new_val, _) =
+                            self.move_floats_and_strings_to_data(val, None, &mut new_instrs);
 
-                        block_instrs.push(IRInstr::Store(addr, new_val));
+                        new_instrs.push(IRInstr::Store(addr, new_val));
                     }
-                    load @ IRInstr::Load(..) => block_instrs.push(load),
+                    load @ IRInstr::Load(..) => new_instrs.push(load),
                     IRInstr::Return(ret) => {
                         if let Some(ret) = ret {
-                            let (ret_val, _) = Self::move_floats_and_strings_to_data(
-                                ret,
-                                None,
-                                data,
-                                block_instrs,
-                                vars,
-                            );
+                            let (ret_val, _) =
+                                self.move_floats_and_strings_to_data(ret, None, &mut new_instrs);
 
-                            block_instrs.push(IRInstr::Return(Some(ret_val)))
+                            new_instrs.push(IRInstr::Return(Some(ret_val)))
                         } else {
-                            block_instrs.push(IRInstr::Return(ret))
+                            new_instrs.push(IRInstr::Return(ret))
                         }
                     }
-                    label @ IRInstr::Label(..) => block_instrs.push(label),
-                    inline @ IRInstr::InlineTarget(..) => block_instrs.push(inline),
-                    unimpl @ IRInstr::Unimplemented(..) => block_instrs.push(unimpl),
+                    label @ IRInstr::Label(..) => new_instrs.push(label),
+                    inline @ IRInstr::InlineTarget(..) => new_instrs.push(inline),
+                    unimpl @ IRInstr::Unimplemented(..) => new_instrs.push(unimpl),
                 }
             }
+
+            let (instrs, mut blocks) = ssa_ir::split_labels_into_blocks(new_instrs);
+            block.instructions = instrs;
+            new_blocks.push(block);
+            new_blocks.append(&mut blocks);
         }
+
+        self.ssa_ir.blocks = new_blocks;
+        self.ssa_ir.figure_out_block_params_for_func(0);
+        self.ssa_ir.fix_passing_parameters_by_gotos(0);
+        self.ssa_ir.build_partial_cf_graph(0);
     }
 }

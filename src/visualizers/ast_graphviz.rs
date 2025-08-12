@@ -1,7 +1,9 @@
 use std::{collections::HashMap, thread::AccessError};
 
 use crate::{
-    ast::{AnonStruct, BinaryOperation, CodeBlock, Expression, Module, SymbolIdx, Variable},
+    ast::{
+        AnonStruct, BinaryOp, BinaryOperation, CodeBlock, Expression, Module, SymbolIdx, Variable,
+    },
     lexer::{FStringPart, Literal},
     symbol_table::SymbolTable,
 };
@@ -337,8 +339,8 @@ impl ASTGraphvizExporter {
                 self.output_one(this_node)
             }
             Expression::BinaryOp(bin_op) => {
-                let (_, lhs_val) = self.expr_to_graphviz(out, &bin_op.lhs);
-                let (_, rhs_val) = self.expr_to_graphviz(out, &bin_op.rhs);
+                let (_, mut lhs_val) = self.expr_to_graphviz(out, &bin_op.lhs);
+                let (_, mut rhs_val) = self.expr_to_graphviz(out, &bin_op.rhs);
 
                 let this_node = self.get_unique_name();
                 let op_label = bin_op.op.to_string();

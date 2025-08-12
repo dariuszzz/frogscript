@@ -23,16 +23,16 @@ fn main =
 
 -;
 
-
 fn main =
-    let a = 2
-    let b = 3
-
+    let a = 0
 
     let out = 100
-    if (true && false) || (a == 2):
+
+    if false || (a == 2):
         out = 0
 
+    ; if (true && true) || (a == 2):
+    ;     out = 0
 
     @instr("
     mov x0, {out}

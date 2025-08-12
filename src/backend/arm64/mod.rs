@@ -483,7 +483,9 @@ impl<'a> ARM64Backend<'a> {
                                 // This will only work correctly for ints and floats and maybe checking equality for addresses
                                 write!(out, "\t{cmp} {lhs_str}, {rhs_str}\n").unwrap();
                             }
-                            _ => unimplemented!(),
+                            other => {
+                                write!(out, "\t// {other:?}\n").unwrap();
+                            }
                         }
                     }
                     IRInstr::If(cond, irval, true_label, true_args, false_label, false_args) => {
@@ -496,7 +498,17 @@ impl<'a> ARM64Backend<'a> {
                                     BinaryOperation::LessEqual => "b.le",
                                     BinaryOperation::Greater => "b.gt",
                                     BinaryOperation::GreaterEqual => "b.ge",
-                                    _ => unreachable!("tf"),
+                                    _ => {
+                                        let cond =
+                                            self.ir_value_to_asm(&used_registers, &mut out, &irval);
+
+                                        let temp = self.temp_register(RegisterType::General);
+
+                                        write!(out, "\tmov {temp}, {cond}\n").unwrap();
+                                        write!(out, "\tcmp {temp}, #0\n").unwrap();
+
+                                        "b.ne"
+                                    }
                                 };
                                 write!(out, "\t{true_instr} {true_label}\n").unwrap();
                                 write!(out, "\tb {false_label}\n").unwrap();
