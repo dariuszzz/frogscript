@@ -16,7 +16,7 @@ use std::{
     thread::current,
 };
 
-mod ssa_fix;
+mod ssa_adjustment;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RegisterType {

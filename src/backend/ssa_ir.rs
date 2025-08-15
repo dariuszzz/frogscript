@@ -290,13 +290,17 @@ impl SSAIR {
                             blocks_copy.iter().find(|b| b.name == *true_label).unwrap();
 
                         for arg in &true_block.parameters {
-                            let var_in_this_block = local_vars
-                                .iter()
-                                .find(|v| **v == arg)
-                                .expect(&format!("cant find {arg}"));
-                            let var = IRValue::Variable(**var_in_this_block);
-                            if !true_args.contains(&var) {
-                                true_args.push(var);
+                            let arg_name = &self.vars[*arg].name;
+                            let var_in_this_block = local_vars.iter().find(|v| **v == arg);
+
+                            if let Some(var_in_this_block) = var_in_this_block {
+                                let var = IRValue::Variable(**var_in_this_block);
+                                if !true_args.contains(&var) {
+                                    true_args.push(var);
+                                }
+                            } else {
+                                eprintln!("true args: Missing var {arg_name}");
+                                continue;
                             }
                         }
 
@@ -304,10 +308,17 @@ impl SSAIR {
                             blocks_copy.iter().find(|b| b.name == *false_label).unwrap();
 
                         for arg in &false_block.parameters {
-                            let var_in_this_block = local_vars.iter().find(|v| **v == arg).unwrap();
-                            let var = IRValue::Variable(**var_in_this_block);
-                            if !false_args.contains(&var) {
-                                false_args.push(var);
+                            let arg_name = &self.vars[*arg].name;
+                            let var_in_this_block = local_vars.iter().find(|v| **v == arg);
+                            // .expect(&format!("CANNOT FIND VALUE!!!!! {arg_name}\n{cond:?}"));
+                            if let Some(var_in_this_block) = var_in_this_block {
+                                let var = IRValue::Variable(**var_in_this_block);
+                                if !false_args.contains(&var) {
+                                    false_args.push(var);
+                                }
+                            } else {
+                                eprintln!("false args: Missing var {arg_name}");
+                                continue;
                             }
                         }
                     }
@@ -510,6 +521,10 @@ impl SSAIR {
             return false;
         }
 
+        // for param in &block.parameters {
+        //     local_vars.push(*param);
+        // }
+
         for instr in &block.instructions {
             match instr {
                 IRInstr::Load(res, _) => {
@@ -612,8 +627,39 @@ impl SSAIR {
                             new_params.push(*val);
                         }
                     }
+
+                    // make sure goto params are also searched for potential new parameters (maybe fails for cyclic graphs)
+                    let block_params = self
+                        .blocks
+                        .iter()
+                        .filter(|b| b.name == *true_label || b.name == *false_label)
+                        .flat_map(|b| &b.parameters)
+                        .collect::<Vec<_>>();
+
+                    for param in block_params {
+                        let contained = contains_named_var(&self.vars, &local_vars, &param);
+                        if !contained {
+                            new_params.push(*param);
+                        }
+                    }
                 }
-                IRInstr::Goto(label, args) => {}
+                IRInstr::Goto(label, args) => {
+                    // make sure goto params are also searched for potential new parameters (maybe fails for cyclic graphs)
+                    let block_params = self
+                        .blocks
+                        .iter()
+                        .find(|b| b.name == *label)
+                        .into_iter()
+                        .flat_map(|b| &b.parameters)
+                        .collect::<Vec<_>>();
+
+                    for param in block_params {
+                        let contained = contains_named_var(&self.vars, &local_vars, &param);
+                        if !contained {
+                            new_params.push(*param);
+                        }
+                    }
+                }
                 IRInstr::Return(irvalue) => {
                     if let Some(IRValue::Variable(val)) = irvalue {
                         let contained = contains_named_var(&self.vars, &local_vars, &val);

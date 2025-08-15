@@ -146,17 +146,46 @@ impl ARM64Backend<'_> {
                             op: op.clone(),
                         }));
 
-                        // Handle && and ||, this is here and not in ir_gen because different targets might need different handling here
+                        // Handle boolean statements, this is here and not in ir_gen because different targets might need different handling here
                         match op {
-                            BinaryOperation::And => {
-                                let and_end = self.ssa_ir.make_name_unique("and_end");
-                                let and_chk_rhs = self.ssa_ir.make_name_unique("and_chk_rhs");
-                                let and_true = self.ssa_ir.make_name_unique("and_true");
+                            BinaryOperation::Equal
+                            | BinaryOperation::NotEqual
+                            | BinaryOperation::Greater
+                            | BinaryOperation::GreaterEqual
+                            | BinaryOperation::Less
+                            | BinaryOperation::LessEqual => {
+                                new_instrs.push(IRInstr::BinOp(res, lhs_val, rhs_val, op.clone()));
+                                let cmp_is_true = self.ssa_ir.make_name_unique("cond_is_true");
+                                let cmp_is_false = self.ssa_ir.make_name_unique("cond_is_false");
+                                let cmp_end = self.ssa_ir.make_name_unique("cond_end");
 
+                                new_instrs.push(IRInstr::If(
+                                    faux_if_expr,
+                                    IRValue::Variable(res),
+                                    cmp_is_true.clone(),
+                                    vec![],
+                                    cmp_is_false.clone(),
+                                    vec![],
+                                ));
+                                new_instrs.push(IRInstr::Label(cmp_is_true.clone()));
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(true)),
+                                ));
+                                new_instrs.push(IRInstr::Goto(cmp_end.clone(), vec![]));
+                                new_instrs.push(IRInstr::Label(cmp_is_false.clone()));
                                 new_instrs.push(IRInstr::Assign(
                                     res,
                                     IRValue::Literal(Literal::Boolean(false)),
                                 ));
+                                new_instrs.push(IRInstr::Goto(cmp_end.clone(), vec![]));
+                                new_instrs.push(IRInstr::Label(cmp_end.clone()));
+                            }
+                            BinaryOperation::And => {
+                                let and_end = self.ssa_ir.make_name_unique("and_end");
+                                let and_chk_rhs = self.ssa_ir.make_name_unique("and_chk_rhs");
+                                let and_true = self.ssa_ir.make_name_unique("and_true");
+                                let and_false = self.ssa_ir.make_name_unique("and_false");
 
                                 // If lhs is true
                                 new_instrs.push(IRInstr::If(
@@ -164,7 +193,7 @@ impl ARM64Backend<'_> {
                                     lhs_val,
                                     and_chk_rhs.clone(),
                                     vec![],
-                                    and_end.clone(),
+                                    and_false.clone(),
                                     vec![],
                                 ));
 
@@ -179,10 +208,17 @@ impl ARM64Backend<'_> {
                                     rhs_val,
                                     and_true.clone(),
                                     vec![],
-                                    and_end.clone(),
+                                    and_false.clone(),
                                     vec![],
                                 ));
 
+                                new_instrs.push(IRInstr::Label(and_false.clone()));
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(false)),
+                                ));
+
+                                new_instrs.push(IRInstr::Goto(and_end.clone(), vec![]));
                                 new_instrs.push(IRInstr::Label(and_true.clone()));
 
                                 new_instrs.push(IRInstr::Assign(
@@ -197,17 +233,13 @@ impl ARM64Backend<'_> {
                                 let or_end = self.ssa_ir.make_name_unique("or_end");
                                 let or_chk_rhs = self.ssa_ir.make_name_unique("or_chk_rhs");
                                 let or_false = self.ssa_ir.make_name_unique("or_false");
-
-                                new_instrs.push(IRInstr::Assign(
-                                    res,
-                                    IRValue::Literal(Literal::Boolean(true)),
-                                ));
+                                let or_true = self.ssa_ir.make_name_unique("or_true");
 
                                 // If lhs is true
                                 new_instrs.push(IRInstr::If(
                                     faux_if_expr.clone(),
                                     lhs_val,
-                                    or_end.clone(),
+                                    or_true.clone(),
                                     vec![],
                                     or_chk_rhs.clone(),
                                     vec![],
@@ -219,7 +251,7 @@ impl ARM64Backend<'_> {
                                 new_instrs.push(IRInstr::If(
                                     faux_if_expr.clone(),
                                     rhs_val,
-                                    or_end.clone(),
+                                    or_true.clone(),
                                     vec![],
                                     or_false.clone(),
                                     vec![],
@@ -230,6 +262,12 @@ impl ARM64Backend<'_> {
                                 new_instrs.push(IRInstr::Assign(
                                     res,
                                     IRValue::Literal(Literal::Boolean(false)),
+                                ));
+                                new_instrs.push(IRInstr::Goto(or_end.clone(), vec![]));
+                                new_instrs.push(IRInstr::Label(or_true.clone()));
+                                new_instrs.push(IRInstr::Assign(
+                                    res,
+                                    IRValue::Literal(Literal::Boolean(true)),
                                 ));
 
                                 new_instrs.push(IRInstr::Goto(or_end.clone(), vec![]));
@@ -282,7 +320,6 @@ impl ARM64Backend<'_> {
                     unimpl @ IRInstr::Unimplemented(..) => new_instrs.push(unimpl),
                 }
             }
-
             let (instrs, mut blocks) = ssa_ir::split_labels_into_blocks(new_instrs);
             block.instructions = instrs;
             new_blocks.push(block);
@@ -290,6 +327,12 @@ impl ARM64Backend<'_> {
         }
 
         self.ssa_ir.blocks = new_blocks;
+
+        // for block_idx in 0..self.ssa_ir.blocks.len() {
+        //     let func_name = self.ssa_ir.blocks[block_idx].func_name.clone();
+        //     if func_name.is_some() {
+        //     }
+        // }
         self.ssa_ir.figure_out_block_params_for_func(0);
         self.ssa_ir.fix_passing_parameters_by_gotos(0);
         self.ssa_ir.build_partial_cf_graph(0);
