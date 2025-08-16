@@ -16,6 +16,7 @@ use std::{
     thread::current,
 };
 
+mod asm_ir;
 mod ssa_adjustment;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -242,6 +243,9 @@ impl<'a> ARM64Backend<'a> {
     pub fn compile_ir(&mut self, symbol_table: &SymbolTable) -> Result<String, String> {
         self.adjust_ssa_for_target(symbol_table);
 
+        let asm_ir = asm_ir::ssa_to_asm(&self.ssa_ir);
+        println!("{asm_ir:?}");
+
         let mut out = ".text\n.globl _main\n".to_string();
 
         write!(out, "_main:\n").unwrap();
@@ -420,7 +424,7 @@ impl<'a> ARM64Backend<'a> {
                         }
                     }
                     IRInstr::BinOp(res, lhs, rhs, op) => {
-                        let ty = self.get_var_type(*res);
+                        let ty = self.get_ir_value_type(lhs);
                         let (reg_type, instr_set) = self.get_register_ty_and_instructions(&ty);
 
                         let mov = instr_set["mov"];
@@ -677,3 +681,5 @@ impl<'a> ARM64Backend<'a> {
         Ok(out)
     }
 }
+
+pub fn compile_ir(ssa_ir: &mut SSAIR) {}

@@ -72,6 +72,7 @@ pub struct IRAddress {
     pub addr: IRAddressType,
     pub stored_data_type: Type,
     pub offset: IRAddressOffset,
+    pub page: Option<bool>,
 }
 
 impl IRAddress {

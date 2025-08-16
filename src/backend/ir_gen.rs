@@ -139,6 +139,7 @@ impl IRGen {
                                 addr: IRAddressType::Register(format!("{var_name}")),
                                 stored_data_type: *inner.clone(),
                                 offset: IRAddressOffset::Literal(0),
+                                page: None,
                             };
                             self.ssa_ir.stack_vars.insert(arg_id, addr);
                         }
@@ -267,7 +268,18 @@ impl IRGen {
                 instructions.append(&mut lhs_instrs);
                 instructions.append(&mut rhs_instrs);
 
-                let ty = self.ir_val_ty(&lhs);
+                let ty = match binary_op.op {
+                    BinaryOperation::And
+                    | BinaryOperation::Or
+                    | BinaryOperation::Equal
+                    | BinaryOperation::NotEqual
+                    | BinaryOperation::LessEqual
+                    | BinaryOperation::Less
+                    | BinaryOperation::Greater
+                    | BinaryOperation::GreaterEqual => Type::Boolean,
+                    _ => self.ir_val_ty(&lhs),
+                };
+
                 let var_id = if let Some(curr_var) = curr_var {
                     curr_var
                 } else {
@@ -489,6 +501,7 @@ impl IRGen {
                             addr: IRAddressType::Register("fp".to_string()),
                             stored_data_type: inner_ty.clone(),
                             offset: IRAddressOffset::Literal(offset),
+                            page: None,
                         },
                         el,
                     ));
@@ -506,6 +519,7 @@ impl IRGen {
                     addr: IRAddressType::Register("fp".to_string()),
                     stored_data_type: array_type,
                     offset: IRAddressOffset::Literal(-offset_size),
+                    page: None,
                 };
 
                 self.ssa_ir.stack_vars.insert(var_id, arr_addr.clone());
@@ -600,6 +614,7 @@ impl IRGen {
                         addr: expr_addr.addr.clone(),
                         stored_data_type: *inner,
                         offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
+                        page: None,
                     };
 
                     instructions.push(IRInstr::Load(res_var, final_addr.clone()));

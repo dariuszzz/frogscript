@@ -24,12 +24,23 @@ fn main =
 -;
 
 fn main =
-    let a = 2
+    let a = 2.50
 
+    let msg = "siema"
     let out = 100
 
+    ; print message
+    @instr("
+    mov x0, 1
+    mov x1, {msg}
+    mov x2, 5
+    mov x16, 4
+    svc 0
+    | x0 x1 x2 x16
+    ")
+
     ; true args error
-    if false || ((a == 2) || false):
+    if false || ((a == 2.50) || false):
         out = 0
 
     ; false args error
@@ -48,15 +59,6 @@ fn main =
 
     ; let msg = @type(arr)
 ;-
-    ; print message
-    @instr("
-    mov x0, 1
-    mov x1, {msg}
-    mov x2, {len}
-    mov x16, 4
-    svc 0
-    | x0 x1 x2 x16
-    ")
 
     ; convert c to int and store in d
     @instr("fcvtzs {d}, {c}")

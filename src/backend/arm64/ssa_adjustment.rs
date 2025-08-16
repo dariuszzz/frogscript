@@ -70,6 +70,7 @@ impl ARM64Backend<'_> {
                                 addr: IRAddressType::Data(alias),
                                 stored_data_type: Type::String,
                                 offset: IRAddressOffset::Literal(0),
+                                page: None,
                             },
                         ));
 
@@ -98,6 +99,7 @@ impl ARM64Backend<'_> {
                             addr: IRAddressType::Data(alias),
                             stored_data_type: Type::Float,
                             offset: IRAddressOffset::Literal(0),
+                            page: None,
                         },
                     ));
 
@@ -132,11 +134,17 @@ impl ARM64Backend<'_> {
                         }
                     }
                     IRInstr::BinOp(res, lhs, rhs, op) => {
-                        let (lhs_val, lhs_assigned) =
-                            self.move_floats_and_strings_to_data(lhs, None, &mut new_instrs);
+                        let (mut lhs_val, lhs_assigned) = self.move_floats_and_strings_to_data(
+                            lhs.clone(),
+                            None,
+                            &mut new_instrs,
+                        );
 
-                        let (rhs_val, rhs_assigned) =
-                            self.move_floats_and_strings_to_data(rhs, None, &mut new_instrs);
+                        let (mut rhs_val, rhs_assigned) = self.move_floats_and_strings_to_data(
+                            rhs.clone(),
+                            None,
+                            &mut new_instrs,
+                        );
 
                         // short circuiting and nested conditions support
 
@@ -275,6 +283,47 @@ impl ARM64Backend<'_> {
                                 new_instrs.push(IRInstr::Label(or_end.clone()));
                             }
                             _ => {
+                                // fix for `op lit reg` - most instrs dont support this order
+                                if matches!(lhs, IRValue::Literal(_)) {
+                                    // turn it into `op reg lit`
+                                    let tmp = lhs_val;
+                                    lhs_val = rhs_val;
+                                    rhs_val = tmp;
+
+                                    // if its `op lit1 lit2` now then turn into
+                                    // `mov temp_reg lit1`
+                                    // `op temp_reg lit2`
+                                    // fixme: this is stupid sometimes i think
+                                    if let IRValue::Literal(ref lit) = rhs {
+                                        // hacky but ok
+                                        let temp_name = self.ssa_ir.make_name_unique("_");
+                                        self.ssa_ir.vars.push(IRVariable {
+                                            name: temp_name,
+                                            ty: lit.ty().clone(),
+                                        });
+                                        let temp_var_id = self.ssa_ir.vars.len() - 1;
+
+                                        new_instrs.push(IRInstr::Assign(temp_var_id, lhs_val));
+
+                                        lhs_val = IRValue::Variable(temp_var_id);
+                                    }
+                                }
+
+                                // multiply doesnt support multiplying by literal
+                                if let BinaryOperation::Multiply = op {
+                                    if let IRValue::Literal(ref lit) = rhs {
+                                        let temp_name = self.ssa_ir.make_name_unique("_");
+                                        self.ssa_ir.vars.push(IRVariable {
+                                            name: temp_name,
+                                            ty: lit.ty().clone(),
+                                        });
+                                        let temp_var_id = self.ssa_ir.vars.len() - 1;
+
+                                        new_instrs.push(IRInstr::Assign(temp_var_id, rhs_val));
+                                        rhs_val = IRValue::Variable(temp_var_id);
+                                    }
+                                }
+
                                 new_instrs.push(IRInstr::BinOp(res, lhs_val, rhs_val, op));
                             }
                         }
@@ -299,8 +348,24 @@ impl ARM64Backend<'_> {
                     _if @ IRInstr::If(..) => new_instrs.push(_if),
                     goto @ IRInstr::Goto(..) => new_instrs.push(goto),
                     IRInstr::Store(addr, val) => {
-                        let (new_val, _) =
-                            self.move_floats_and_strings_to_data(val, None, &mut new_instrs);
+                        let (mut new_val, _) = self.move_floats_and_strings_to_data(
+                            val.clone(),
+                            None,
+                            &mut new_instrs,
+                        );
+
+                        // Store needs a register to read from and not a literal
+                        if let IRValue::Literal(ref lit) = val {
+                            let temp_name = self.ssa_ir.make_name_unique("_");
+                            self.ssa_ir.vars.push(IRVariable {
+                                name: temp_name,
+                                ty: lit.ty().clone(),
+                            });
+                            let temp_var_id = self.ssa_ir.vars.len() - 1;
+
+                            new_instrs.push(IRInstr::Assign(temp_var_id, new_val));
+                            new_val = IRValue::Variable(temp_var_id);
+                        }
 
                         new_instrs.push(IRInstr::Store(addr, new_val));
                     }
