@@ -67,10 +67,10 @@ impl ARM64Backend<'_> {
                         instrs.push(IRInstr::Load(
                             var_id,
                             IRAddress {
-                                addr: IRAddressType::Data(alias),
+                                addr: IRAddressType::DataPage(alias.clone()),
                                 stored_data_type: Type::String,
-                                offset: IRAddressOffset::Literal(0),
-                                page: None,
+                                offset: IRAddressOffset::DataPageOffset(alias),
+                                increment: None,
                             },
                         ));
 
@@ -87,23 +87,23 @@ impl ARM64Backend<'_> {
                         value: IRDataLiteral::Float(num),
                     });
 
-                    let var_id = if let Some(curr_var) = curr_var {
+                    let res_var = if let Some(curr_var) = curr_var {
                         curr_var
                     } else {
                         Self::temp_var(vars, Type::Float)
                     };
 
                     instrs.push(IRInstr::Load(
-                        var_id,
+                        res_var,
                         IRAddress {
-                            addr: IRAddressType::Data(alias),
+                            addr: IRAddressType::DataPage(alias.clone()),
                             stored_data_type: Type::Float,
-                            offset: IRAddressOffset::Literal(0),
-                            page: None,
+                            offset: IRAddressOffset::DataPageOffset(alias),
+                            increment: None,
                         },
                     ));
 
-                    (IRValue::Variable(var_id), curr_var.is_some())
+                    (IRValue::Variable(res_var), curr_var.is_some())
                 }
                 lit => (IRValue::Literal(lit), false),
             }
@@ -118,7 +118,6 @@ impl ARM64Backend<'_> {
 
         for mut block in blocks {
             let old_instrs = std::mem::take(&mut block.instructions);
-            block.instructions = Vec::with_capacity(old_instrs.len());
             let mut new_instrs = Vec::with_capacity(old_instrs.len());
             for instr in old_instrs {
                 match instr {
@@ -311,7 +310,7 @@ impl ARM64Backend<'_> {
 
                                 // multiply doesnt support multiplying by literal
                                 if let BinaryOperation::Multiply = op {
-                                    if let IRValue::Literal(ref lit) = rhs {
+                                    if let IRValue::Literal(ref lit) = rhs_val {
                                         let temp_name = self.ssa_ir.make_name_unique("_");
                                         self.ssa_ir.vars.push(IRVariable {
                                             name: temp_name,

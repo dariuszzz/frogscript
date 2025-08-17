@@ -23,11 +23,19 @@ fn main =
 
 -;
 
+fn foo(a int) = return 20 * a
+
 fn main =
-    let a = 2.50
+    let a = [2.50, 24.0, 29.4]
+    let b = 20
+    let c = 30
+    let d = 4
+    let e = 6
 
     let msg = "siema"
-    let out = 100
+
+
+    let bar = b + c + d + e
 
     ; print message
     @instr("
@@ -39,19 +47,8 @@ fn main =
     | x0 x1 x2 x16
     ")
 
-    ; true args error
-    if false || ((a == 2.50) || false):
-        out = 0
-
-    ; false args error
-    ; if true && ((a == 2) && false):
-    ;     out = 0
-
-    ; if (true && true) || (a == 2):
-    ;     out = 0
-
     @instr("
-    mov x0, {out}
+    mov x0, {bar}
     mov x16, 1
     svc 0
     | x0 x16
@@ -62,7 +59,13 @@ fn main =
 
     ; convert c to int and store in d
     @instr("fcvtzs {d}, {c}")
+
+    let msg = "siema"
+    let out = 0 ; foo(6)
 -;
+
+    ;-
+    -;
 
 ;-
     ; print message

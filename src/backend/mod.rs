@@ -10,6 +10,7 @@ use crate::{
 
 pub mod arm64;
 pub mod ir_gen;
+pub mod liveness;
 pub mod ssa_ir;
 
 pub fn generate_ir(

@@ -68,7 +68,7 @@ impl SSAGraphvizExporter {
         let mut in_func = false;
         let blocks = self.ssa.blocks.clone();
         for (block_idx, block) in blocks.iter().enumerate() {
-            if let Some((_, func_name)) = &block.func_name {
+            if let Some((_, func_name)) = &block.starts_func {
                 if in_func {
                     self.end_cluster(&mut out);
                 }
@@ -79,7 +79,7 @@ impl SSAGraphvizExporter {
             self.block_to_node
                 .insert(block.name.clone(), this_node.clone());
             let name = self.ssa.pretty_print_block_name(&block);
-            let instrs = self.ssa.pretty_print_block(&block);
+            let instrs = self.ssa.pretty_print_block(&block, block_idx);
 
             let block_content = format!("{name}\n{instrs}")
                 .replace("&", "&amp;")

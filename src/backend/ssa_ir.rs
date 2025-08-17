@@ -3,6 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use crate::{
     arena::Arena,
     ast::{Expression, SymbolIdx},
+    backend::liveness::{InstrIndex, VarLifespans},
     BinaryOp, BinaryOperation, Literal, Type, UnaryOperation, Variable,
 };
 
@@ -15,6 +16,8 @@ pub struct SSAIR {
     pub stack_vars: HashMap<usize, IRAddress>,
     pub cf_graph: CFGraph,
     pub func_names: Vec<String>,
+
+    pub var_lifespans: VarLifespans,
 
     pub var_counter: u32,
 }
@@ -30,6 +33,7 @@ impl Default for SSAIR {
             cf_graph: CFGraph::default(),
             func_names: Vec::default(),
             var_counter: 0,
+            var_lifespans: VarLifespans::default(),
         }
     }
 }
@@ -38,7 +42,7 @@ pub type VariableID = usize;
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub func_name: Option<(SymbolIdx, String)>,
+    pub starts_func: Option<(SymbolIdx, String)>,
     pub name: String,
     pub parameters: Vec<VariableID>,
     pub instructions: Vec<IRInstr>,
@@ -47,7 +51,7 @@ pub struct Block {
 impl Default for Block {
     fn default() -> Self {
         Self {
-            func_name: None,
+            starts_func: None,
             name: String::new(),
             parameters: Vec::new(),
             instructions: Vec::new(),
@@ -72,16 +76,24 @@ pub struct IRAddress {
     pub addr: IRAddressType,
     pub stored_data_type: Type,
     pub offset: IRAddressOffset,
-    pub page: Option<bool>,
+    pub increment: Option<AddrIncrement>,
 }
 
 impl IRAddress {
-    fn pretty_print(&self, vars: &Vec<IRVariable>) -> String {
+    pub fn pretty_print(&self, vars: &Vec<IRVariable>) -> String {
+        let var_names = vars.iter().map(|var| var.name.clone()).collect();
+        self.pretty_print_names(&var_names)
+    }
+
+    pub fn pretty_print_names(&self, var_names: &Vec<String>) -> String {
         let offset = match &self.offset {
-            IRAddressOffset::Literal(offset) => format!("{offset}"),
+            IRAddressOffset::Literal(offset) => format!("#{offset}"),
             IRAddressOffset::IRVariable(offset_var) => {
-                let var_name = &vars[*offset_var].name;
+                let var_name = &var_names[*offset_var];
                 format!("{var_name}")
+            }
+            IRAddressOffset::DataPageOffset(data) => {
+                format!("{data}@PAGEOFF")
             }
         };
 
@@ -89,13 +101,25 @@ impl IRAddress {
             IRAddressType::Data(addr)
             | IRAddressType::RawAddr(addr)
             | IRAddressType::Register(addr) => {
-                if offset == "0" {
+                if offset == "#0" {
                     format!("[{addr}]")
-                } else if offset.starts_with("-") {
-                    format!("[{addr}{offset}]")
                 } else {
-                    format!("[{addr}+{offset}]")
+                    if let Some(increment) = &self.increment {
+                        match increment {
+                            AddrIncrement::PreIncrement => format!("[{addr},{offset}]!"),
+                            AddrIncrement::PostIncrement => format!("[{addr}], {offset}"),
+                        }
+                    } else {
+                        format!("[{addr},{offset}]")
+                    }
                 }
+            }
+            IRAddressType::VarReg(var) => {
+                let var_name = &var_names[*var];
+                format!("{var_name}")
+            }
+            IRAddressType::DataPage(data) => {
+                format!("{data}@PAGE")
             }
         }
     }
@@ -105,13 +129,22 @@ impl IRAddress {
 pub enum IRAddressOffset {
     Literal(isize),
     IRVariable(usize),
+    DataPageOffset(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IRAddressType {
     RawAddr(String),
     Register(String),
+    VarReg(usize),
     Data(String),
+    DataPage(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AddrIncrement {
+    PreIncrement,
+    PostIncrement,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -200,7 +233,7 @@ pub fn split_labels_into_blocks(instructions: Vec<IRInstr>) -> (Vec<IRInstr>, Ve
                 }
 
                 curr_block = Some(Block {
-                    func_name: None,
+                    starts_func: None,
                     name: label,
                     parameters: vec![],
                     instructions: vec![],
@@ -449,7 +482,7 @@ impl SSAIR {
 
             // Figure out which params are needed from uninit vars
             let (mut foreign_vars, local_vars) =
-                self.find_block_variables(func_block_idx, block_idx);
+                self.find_block_variables_and_update_lifespans(func_block_idx, block_idx);
 
             // Get remove newly discovered variables from unresolved_vars
             unresolved_vars.retain(|var| {
@@ -494,13 +527,14 @@ impl SSAIR {
         }
     }
 
-    fn find_block_variables(
+    fn find_block_variables_and_update_lifespans(
         &mut self,
         func_block_idx: usize,
         block_idx: usize,
         // Foreign, Locals
     ) -> (Vec<VariableID>, Vec<VariableID>) {
-        let block = &self.blocks[func_block_idx + block_idx];
+        let block_idx = func_block_idx + block_idx;
+        let block = &self.blocks[block_idx];
 
         let mut local_vars = vec![];
         let mut new_params = vec![];
@@ -526,10 +560,17 @@ impl SSAIR {
         //     local_vars.push(*param);
         // }
 
-        for instr in &block.instructions {
+        for (instr_idx, instr) in block.instructions.iter().enumerate() {
             match instr {
                 IRInstr::Load(res, _) => {
                     local_vars.push(*res);
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                 }
                 IRInstr::Store(_, val) => {
                     if let IRValue::Variable(val) = val {
@@ -540,13 +581,35 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::Unimplemented(res, _) => {
                     local_vars.push(res.clone());
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                 }
                 IRInstr::Assign(res, irvalue) => {
                     local_vars.push(res.clone());
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                     if let IRValue::Variable(val) = irvalue {
                         let contained = contains_named_var(&self.vars, &local_vars, &val);
                         if !contained {
@@ -555,10 +618,24 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::BinOp(res, irvalue, irvalue1, _) => {
                     local_vars.push(res.clone());
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                     if let IRValue::Variable(val) = irvalue {
                         let contained = contains_named_var(&self.vars, &local_vars, &val);
                         if !contained {
@@ -567,6 +644,14 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
 
                     if let IRValue::Variable(val) = irvalue1 {
@@ -577,10 +662,24 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::UnOp(res, irvalue, unary_operation) => {
                     local_vars.push(res.clone());
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                     if let IRValue::Variable(val) = irvalue {
                         let contained = contains_named_var(&self.vars, &local_vars, &val);
                         if !contained {
@@ -589,11 +688,25 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::Call(res, irvalue, args) => {
                     local_vars.push(res.clone());
 
+                    self.var_lifespans.extend_lifespan(
+                        *res,
+                        InstrIndex {
+                            block_idx,
+                            instr_idx,
+                        },
+                    );
                     if let IRValue::Variable(called) = irvalue {
                         let var_name = &self.vars[*called].name;
 
@@ -603,6 +716,14 @@ impl SSAIR {
                             if !contained {
                                 new_params.push(*called);
                             }
+
+                            self.var_lifespans.extend_lifespan(
+                                *called,
+                                InstrIndex {
+                                    block_idx,
+                                    instr_idx,
+                                },
+                            );
                         }
                     }
 
@@ -615,6 +736,13 @@ impl SSAIR {
                                 // let param_id = self.named_var(&name, ty);
                                 new_params.push(*val);
                             }
+                            self.var_lifespans.extend_lifespan(
+                                *val,
+                                InstrIndex {
+                                    block_idx,
+                                    instr_idx,
+                                },
+                            );
                         }
                     }
                 }
@@ -627,6 +755,13 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
 
                     // make sure goto params are also searched for potential new parameters (maybe fails for cyclic graphs)
@@ -642,6 +777,13 @@ impl SSAIR {
                         if !contained {
                             new_params.push(*param);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *param,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::Goto(label, args) => {
@@ -659,6 +801,13 @@ impl SSAIR {
                         if !contained {
                             new_params.push(*param);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *param,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
                 IRInstr::Return(irvalue) => {
@@ -670,9 +819,36 @@ impl SSAIR {
                             // let param_id = self.named_var(&name, ty);
                             new_params.push(*val);
                         }
+                        self.var_lifespans.extend_lifespan(
+                            *val,
+                            InstrIndex {
+                                block_idx,
+                                instr_idx,
+                            },
+                        );
                     }
                 }
-                IRInstr::InlineTarget(_, _) => {}
+                IRInstr::InlineTarget(parts, _) => {
+                    for part in parts {
+                        match part {
+                            InlineTargetPart::SSAIRVarRef(var) => {
+                                let contained = contains_named_var(&self.vars, &local_vars, var);
+                                if !contained {
+                                    new_params.push(*var);
+                                }
+
+                                self.var_lifespans.extend_lifespan(
+                                    *var,
+                                    InstrIndex {
+                                        block_idx,
+                                        instr_idx,
+                                    },
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 IRInstr::Label(_) => unreachable!("There shouldnt be any labels at this point"),
             }
         }
@@ -706,7 +882,8 @@ impl SSAIR {
         let v = visits.get_mut(&block_idx).unwrap();
         *v = curr_v + 1;
 
-        let (mut foreign_vars, local_vars) = self.find_block_variables(func_block_idx, block_idx);
+        let (mut foreign_vars, local_vars) =
+            self.find_block_variables_and_update_lifespans(func_block_idx, block_idx);
 
         let cf_graph = &mut self.cf_graph;
         let graph = &mut cf_graph.nodes;
@@ -1015,9 +1192,9 @@ impl SSAIR {
             }
         }
 
-        for block in &self.blocks {
+        for (block_idx, block) in self.blocks.iter().enumerate() {
             println!("{}", self.pretty_print_block_name(block));
-            println!("{}", self.pretty_print_block(block));
+            println!("{}", self.pretty_print_block(block, block_idx));
         }
     }
 
@@ -1036,12 +1213,24 @@ impl SSAIR {
         out
     }
 
-    pub fn pretty_print_block(&self, block: &Block) -> String {
+    pub fn pretty_print_block(&self, block: &Block, block_idx: usize) -> String {
         let mut out = String::new();
 
-        for instr in &block.instructions {
+        for (instr_idx, instr) in block.instructions.iter().enumerate() {
+            let instr_idx = InstrIndex {
+                block_idx,
+                instr_idx,
+            };
+            let live_vars = self.var_lifespans.get_live_vars(instr_idx);
+            let live_vars = live_vars
+                .iter()
+                .map(|v| self.vars[*v].name.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+
             let instr = self.pretty_print_instr(instr);
-            out += &format!("\t{instr}\n")
+            // out += &format!("{}\t\t{instr}\n", "#".repeat(live_vars.len()))
+            out += &format!("\t{instr:<40}\t{live_vars}\n")
         }
 
         out

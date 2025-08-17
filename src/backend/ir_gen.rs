@@ -139,7 +139,7 @@ impl IRGen {
                                 addr: IRAddressType::Register(format!("{var_name}")),
                                 stored_data_type: *inner.clone(),
                                 offset: IRAddressOffset::Literal(0),
-                                page: None,
+                                increment: None,
                             };
                             self.ssa_ir.stack_vars.insert(arg_id, addr);
                         }
@@ -148,7 +148,7 @@ impl IRGen {
                 }
 
                 self.ssa_ir.blocks.push(Block {
-                    func_name: Some((func.symbol_idx, func.func_name.clone())),
+                    starts_func: Some((func.symbol_idx, func.func_name.clone())),
                     name: func_name,
                     parameters,
                     instructions: vec![],
@@ -501,7 +501,7 @@ impl IRGen {
                             addr: IRAddressType::Register("fp".to_string()),
                             stored_data_type: inner_ty.clone(),
                             offset: IRAddressOffset::Literal(offset),
-                            page: None,
+                            increment: None,
                         },
                         el,
                     ));
@@ -519,7 +519,7 @@ impl IRGen {
                     addr: IRAddressType::Register("fp".to_string()),
                     stored_data_type: array_type,
                     offset: IRAddressOffset::Literal(-offset_size),
-                    page: None,
+                    increment: None,
                 };
 
                 self.ssa_ir.stack_vars.insert(var_id, arr_addr.clone());
@@ -590,6 +590,9 @@ impl IRGen {
                     let expr_addr_offset = match expr_addr.offset {
                         IRAddressOffset::Literal(lit) => lit,
                         IRAddressOffset::IRVariable(_) => unreachable!("prob not gonna happen?"),
+                        IRAddressOffset::DataPageOffset(_) => {
+                            unimplemented!("Idk what should even happen here")
+                        }
                     };
 
                     let el_size = 8;
@@ -614,7 +617,7 @@ impl IRGen {
                         addr: expr_addr.addr.clone(),
                         stored_data_type: *inner,
                         offset: ssa_ir::IRAddressOffset::IRVariable(idx_var),
-                        page: None,
+                        increment: None,
                     };
 
                     instructions.push(IRInstr::Load(res_var, final_addr.clone()));
