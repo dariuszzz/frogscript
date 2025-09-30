@@ -1,3 +1,5 @@
+toy programming language
+
 # Syntax overview
 ```
 // Comments
@@ -159,8 +161,3 @@ baz()
 let num = 59
 @instr("console.log({num})") // will transpile to console.log(num)
 ```
-
-# Semantics
-pass by value by default
-no top level mut variables
-compiled to js
